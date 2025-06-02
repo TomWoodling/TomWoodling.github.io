@@ -17,14 +17,15 @@
       align-items: center;
     }
     header {
-      margin-top: 2rem;
+      margin-top: 2.5rem;
       text-align: center;
     }
     h1 {
       font-family: 'Press Start 2P', cursive;
-      font-size: 2.2rem;
+      font-size: 2.5rem;
       color: #9a8c98;
       letter-spacing: 2px;
+      margin-bottom: 1rem;
     }
     p {
       color: #f2e9e4;
@@ -32,38 +33,57 @@
     }
     .games-list {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-      gap: 1.5rem;
-      width: 90%;
-      max-width: 900px;
-      margin: 2rem auto;
+      grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+      gap: 2.2rem;
+      width: 96%;
+      max-width: 1280px;
+      margin: 2.5rem auto 0 auto;
     }
     .game-card {
-      background: rgba(255,255,255,0.07);
-      border-radius: 1rem;
-      padding: 1.5rem;
-      box-shadow: 0 4px 20px rgba(34,34,59,0.12);
-      transition: transform 0.2s, box-shadow 0.2s;
-      text-align: center;
+      background: rgba(255,255,255,0.10);
+      border-radius: 1.2rem;
+      padding: 2.3rem 1.3rem 1.3rem 1.3rem;
+      box-shadow: 0 6px 32px rgba(34,34,59,0.15);
       display: flex;
       flex-direction: column;
       align-items: center;
+      transition: transform 0.2s, box-shadow 0.2s, background 0.2s;
+      min-height: 420px;
+      position: relative;
+      overflow: hidden;
     }
     .game-card:hover {
-      transform: translateY(-8px) scale(1.02);
-      box-shadow: 0 8px 28px rgba(34,34,59,0.20);
-      background: rgba(255,255,255,0.12);
+      transform: translateY(-7px) scale(1.03);
+      box-shadow: 0 12px 36px rgba(34,34,59,0.28);
+      background: rgba(255,255,255,0.16);
+    }
+    .game-cover {
+      width: 95%;
+      min-width: 180px;
+      max-width: 260px;
+      max-height: 180px;
+      border-radius: 0.9rem;
+      margin-bottom: 1.3rem;
+      object-fit: cover;
+      box-shadow: 0 2px 14px rgba(0,0,0,0.13);
+      background: #22223b;
     }
     .game-title {
       font-family: 'Press Start 2P', cursive;
-      font-size: 1.1rem;
+      font-size: 1.25rem;
       color: #c9ada7;
-      margin-bottom: 0.5rem;
+      margin-bottom: 0.8rem;
+      text-align: center;
+      word-break: break-word;
+      line-height: 1.2;
     }
     .game-desc {
-      font-size: 1rem;
+      font-size: 1.09rem;
       color: #f2e9e4;
-      margin-bottom: 1rem;
+      margin-bottom: 1.35rem;
+      text-align: center;
+      min-height: 64px;
+      line-height: 1.35;
     }
     .game-link {
       display: inline-block;
@@ -71,33 +91,29 @@
       color: #22223b;
       font-family: 'Roboto', Arial, sans-serif;
       font-weight: bold;
-      padding: 0.5rem 1rem;
-      border-radius: 0.5rem;
+      padding: 0.7rem 1.7rem;
+      border-radius: 0.7rem;
+      font-size: 1.15rem;
       text-decoration: none;
       transition: background 0.2s, color 0.2s;
+      box-shadow: 0 2px 10px rgba(34,34,59,0.12);
+      margin-top: auto;
     }
     .game-link:hover {
       background: #f2e9e4;
       color: #4a4e69;
     }
-    .game-cover {
-      width: 100%;
-      max-width: 170px;
-      border-radius: 0.5rem;
-      margin-bottom: 0.8rem;
-      object-fit: cover;
-      box-shadow: 0 1px 8px rgba(0,0,0,0.15);
-    }
-    @media (max-width: 600px) {
+    @media (max-width: 800px) {
       .games-list {
         grid-template-columns: 1fr;
+        gap: 1.7rem;
       }
-      h1 { font-size: 1.3rem; }
+      h1 { font-size: 1.42rem; }
     }
     footer {
-      margin: 3rem 0 1rem;
+      margin: 3.2rem 0 1rem;
       color: #9a8c98;
-      font-size: 0.95rem;
+      font-size: 1.06rem;
       text-align: center;
     }
   </style>
@@ -117,61 +133,61 @@
   </footer>
 
   <script>
-    // Change these if you fork!
+    // --- Configuration ---
     const GITHUB_USER = "TomWoodling";
     const GITHUB_REPO = "TomWoodling.github.io";
+    const GAMES_FOLDERS = [
+      { name: "2D_Drive_shoot" },
+      { name: "2D_platformer_Advanced" },
+      { name: "2Dplatformer_basic" }
+    ];
 
-    async function fetchGames() {
-      // 1. Get the list of folders in /games using the GitHub API
-      const apiUrl = `https://api.github.com/repos/${GITHUB_USER}/${GITHUB_REPO}/contents/games`;
-      const resp = await fetch(apiUrl);
-      if (!resp.ok) return [];
-      const data = await resp.json();
-
-      // 2. Only include folders (type === 'dir')
-      return data.filter(item => item.type === "dir");
-    }
-
-    async function fetchGameInfo(gameFolder) {
-      // Try to fetch info.json from the game folder
-      const infoUrl = `https://raw.githubusercontent.com/${GITHUB_USER}/${GITHUB_REPO}/main/games/${gameFolder}/info.json`;
+    // Helper to fetch and decode base64 JSON (from GitHub API)
+    async function fetchInfoJson(folder) {
+      const apiUrl = `https://api.github.com/repos/${GITHUB_USER}/${GITHUB_REPO}/contents/games/${folder}/info.json`;
       try {
-        const resp = await fetch(infoUrl);
+        const resp = await fetch(apiUrl);
         if (!resp.ok) return null;
-        const info = await resp.json();
-        return info;
+        const { content, encoding } = await resp.json();
+        if (encoding === "base64") {
+          return JSON.parse(atob(content.replace(/\n/g, "")));
+        }
       } catch {
         return null;
       }
     }
 
-    function createGameCard(game, info) {
+    function createGameCard(folder, info) {
       const card = document.createElement('div');
       card.className = 'game-card';
 
+      // Cover image
       if (info && info.cover) {
         const img = document.createElement('img');
-        img.src = `games/${game.name}/${info.cover}`;
-        img.alt = info.title + " cover image";
+        img.src = `games/${folder}/${info.cover}`;
+        img.alt = (info.title || folder) + " cover image";
         img.className = "game-cover";
         card.appendChild(img);
       }
+
+      // Title
       const title = document.createElement('div');
       title.className = 'game-title';
-      title.textContent = info?.title || game.name;
+      title.textContent = info?.title || folder;
+      card.appendChild(title);
 
+      // Description
       const desc = document.createElement('div');
       desc.className = 'game-desc';
       desc.textContent = info?.description || "No description provided.";
+      card.appendChild(desc);
 
+      // Play Link
       const link = document.createElement('a');
       link.className = 'game-link';
-      link.href = `games/${game.name}/index.html`;
+      link.href = `games/${folder}/index.html`;
       link.target = '_blank';
       link.textContent = "Play";
-
-      card.appendChild(title);
-      card.appendChild(desc);
       card.appendChild(link);
 
       return card;
@@ -180,15 +196,13 @@
     async function displayGames() {
       const gamesList = document.getElementById('games-list');
       gamesList.innerHTML = '<div>Loading games...</div>';
-      const games = await fetchGames();
-      if (!games.length) {
-        gamesList.innerHTML = "<div>No games found.</div>";
-        return;
-      }
       gamesList.innerHTML = "";
-      for (const game of games) {
-        const info = await fetchGameInfo(game.name);
-        const card = createGameCard(game, info);
+
+      // Use fixed list for now (GitHub API CORS makes folder listing complex for static sites)
+      for (const folderObj of GAMES_FOLDERS) {
+        const folder = folderObj.name;
+        const info = await fetchInfoJson(folder);
+        const card = createGameCard(folder, info);
         gamesList.appendChild(card);
       }
     }
