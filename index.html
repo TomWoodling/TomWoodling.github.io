@@ -4,7 +4,6 @@
   <meta charset="UTF-8">
   <title>Tom Woodling’s Game Hub</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <!-- Google Fonts: Roboto & Press Start 2P for a retro touch -->
   <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&family=Press+Start+2P&display=swap" rel="stylesheet">
   <style>
     body {
@@ -46,6 +45,9 @@
       box-shadow: 0 4px 20px rgba(34,34,59,0.12);
       transition: transform 0.2s, box-shadow 0.2s;
       text-align: center;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
     }
     .game-card:hover {
       transform: translateY(-8px) scale(1.02);
@@ -78,6 +80,14 @@
       background: #f2e9e4;
       color: #4a4e69;
     }
+    .game-cover {
+      width: 100%;
+      max-width: 170px;
+      border-radius: 0.5rem;
+      margin-bottom: 0.8rem;
+      object-fit: cover;
+      box-shadow: 0 1px 8px rgba(0,0,0,0.15);
+    }
     @media (max-width: 600px) {
       .games-list {
         grid-template-columns: 1fr;
@@ -98,18 +108,92 @@
     <p>Welcome! Here you’ll find my browser games and projects. Click a title to play!</p>
   </header>
 
-  <section class="games-list">
-    <!-- Example Game Card -->
-    <div class="game-card">
-      <div class="game-title">Example Game</div>
-      <div class="game-desc">A short description of what this game is about.</div>
-      <a class="game-link" href="games/example-game/index.html" target="_blank">Play</a>
-    </div>
-    <!-- Add more game cards here as you publish new games! -->
+  <section class="games-list" id="games-list">
+    <!-- Game cards injected by JavaScript -->
   </section>
 
   <footer>
     &copy; 2025 Tom Woodling &mdash; <a href="https://github.com/TomWoodling" style="color:#c9ada7;text-decoration:underline;">GitHub</a>
   </footer>
+
+  <script>
+    // Change these if you fork!
+    const GITHUB_USER = "TomWoodling";
+    const GITHUB_REPO = "TomWoodling.github.io";
+
+    async function fetchGames() {
+      // 1. Get the list of folders in /games using the GitHub API
+      const apiUrl = `https://api.github.com/repos/${GITHUB_USER}/${GITHUB_REPO}/contents/games`;
+      const resp = await fetch(apiUrl);
+      if (!resp.ok) return [];
+      const data = await resp.json();
+
+      // 2. Only include folders (type === 'dir')
+      return data.filter(item => item.type === "dir");
+    }
+
+    async function fetchGameInfo(gameFolder) {
+      // Try to fetch info.json from the game folder
+      const infoUrl = `https://raw.githubusercontent.com/${GITHUB_USER}/${GITHUB_REPO}/main/games/${gameFolder}/info.json`;
+      try {
+        const resp = await fetch(infoUrl);
+        if (!resp.ok) return null;
+        const info = await resp.json();
+        return info;
+      } catch {
+        return null;
+      }
+    }
+
+    function createGameCard(game, info) {
+      const card = document.createElement('div');
+      card.className = 'game-card';
+
+      if (info && info.cover) {
+        const img = document.createElement('img');
+        img.src = `games/${game.name}/${info.cover}`;
+        img.alt = info.title + " cover image";
+        img.className = "game-cover";
+        card.appendChild(img);
+      }
+      const title = document.createElement('div');
+      title.className = 'game-title';
+      title.textContent = info?.title || game.name;
+
+      const desc = document.createElement('div');
+      desc.className = 'game-desc';
+      desc.textContent = info?.description || "No description provided.";
+
+      const link = document.createElement('a');
+      link.className = 'game-link';
+      link.href = `games/${game.name}/index.html`;
+      link.target = '_blank';
+      link.textContent = "Play";
+
+      card.appendChild(title);
+      card.appendChild(desc);
+      card.appendChild(link);
+
+      return card;
+    }
+
+    async function displayGames() {
+      const gamesList = document.getElementById('games-list');
+      gamesList.innerHTML = '<div>Loading games...</div>';
+      const games = await fetchGames();
+      if (!games.length) {
+        gamesList.innerHTML = "<div>No games found.</div>";
+        return;
+      }
+      gamesList.innerHTML = "";
+      for (const game of games) {
+        const info = await fetchGameInfo(game.name);
+        const card = createGameCard(game, info);
+        gamesList.appendChild(card);
+      }
+    }
+
+    displayGames();
+  </script>
 </body>
 </html>
