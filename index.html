@@ -134,24 +134,18 @@
 
   <script>
     // --- Configuration ---
-    const GITHUB_USER = "TomWoodling";
-    const GITHUB_REPO = "TomWoodling.github.io";
     const GAMES_FOLDERS = [
       { name: "2D_Drive_shoot" },
       { name: "2D_platformer_Advanced" },
       { name: "2Dplatformer_basic" }
     ];
-
-    // Helper to fetch and decode base64 JSON (from GitHub API)
+    
     async function fetchInfoJson(folder) {
-      const apiUrl = `https://api.github.com/repos/${GITHUB_USER}/${GITHUB_REPO}/contents/games/${folder}/info.json`;
+      // Use relative path for GitHub Pages hosting
       try {
-        const resp = await fetch(apiUrl);
+        const resp = await fetch(`games/${folder}/info.json`);
         if (!resp.ok) return null;
-        const { content, encoding } = await resp.json();
-        if (encoding === "base64") {
-          return JSON.parse(atob(content.replace(/\n/g, "")));
-        }
+        return await resp.json();
       } catch {
         return null;
       }
