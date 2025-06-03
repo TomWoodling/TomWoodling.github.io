@@ -1,0 +1,893 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Luigi's Spectral Squad</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: #1a1a2e;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            font-family: 'Courier New', monospace;
+            color: white;
+        }
+        
+        canvas {
+            border: 4px solid #16213e;
+            background: #0f0f23;
+            cursor: crosshair;
+        }
+        
+        .game-container {
+            text-align: center;
+        }
+        
+        .ui-text {
+            margin: 10px 0;
+            font-size: 18px;
+            color: #00ff00;
+            text-shadow: 2px 2px 0px #003300;
+        }
+    </style>
+</head>
+<body>
+    <div class="game-container">
+        <canvas id="gameCanvas" width="800" height="600"></canvas>
+        <div class="ui-text" id="gameUI">Luigi's Spectral Squad - Click to Start</div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const uiElement = document.getElementById('gameUI');
+        
+        // Game state
+        let gameState = 'start'; // start, call, driving, ghostCatch, boss, win, gameOver
+        let score = 0;
+        let ghostsCaught = 0;
+        let lives = 3;
+        let frameCount = 0;
+        
+        // Game objects
+        let player = { x: 100, y: 400, width: 32, height: 48, targetX: 100, targetY: 400 };
+        let yoshi = { x: 400, y: 300, width: 80, height: 60, vx: 0, vy: 0 };
+        let ghosts = [];
+        let npcs = {
+            mario: { x: 200, y: 400, width: 32, height: 48, dragging: false },
+            peach: { x: 300, y: 400, width: 32, height: 48, dragging: false },
+            toad: { x: 400, y: 400, width: 28, height: 44, dragging: false }
+        };
+        let trap = { x: 600, y: 500, width: 60, height: 40, active: false, cooldown: 0 };
+        let boss = { x: 350, y: 200, width: 100, height: 120, offsetY: 0, direction: 1 };
+        let obstacles = [];
+        let pickups = [];
+        let particles = [];
+        
+        // Input keys for driving
+        let keys = { up: false, down: false, left: false, right: false };
+        
+        // Input handling
+        let mouse = { x: 0, y: 0, down: false, dragTarget: null };
+        
+        canvas.addEventListener('mousemove', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            mouse.x = e.clientX - rect.left;
+            mouse.y = e.clientY - rect.top;
+        });
+        
+        canvas.addEventListener('mousedown', (e) => {
+            mouse.down = true;
+            handleClick(mouse.x, mouse.y);
+        });
+        
+        canvas.addEventListener('mouseup', () => {
+            mouse.down = false;
+            if (mouse.dragTarget) {
+                mouse.dragTarget.dragging = false;
+                mouse.dragTarget = null;
+            }
+        });
+        
+        // Keyboard controls for driving
+        document.addEventListener('keydown', (e) => {
+            switch(e.key.toLowerCase()) {
+                case 'arrowup':
+                case 'w':
+                    keys.up = true;
+                    e.preventDefault();
+                    break;
+                case 'arrowdown':
+                case 's':
+                    keys.down = true;
+                    e.preventDefault();
+                    break;
+                case 'arrowleft':
+                case 'a':
+                    keys.left = true;
+                    e.preventDefault();
+                    break;
+                case 'arrowright':
+                case 'd':
+                    keys.right = true;
+                    e.preventDefault();
+                    break;
+            }
+        });
+        
+        document.addEventListener('keyup', (e) => {
+            switch(e.key.toLowerCase()) {
+                case 'arrowup':
+                case 'w':
+                    keys.up = false;
+                    break;
+                case 'arrowdown':
+                case 's':
+                    keys.down = false;
+                    break;
+                case 'arrowleft':
+                case 'a':
+                    keys.left = false;
+                    break;
+                case 'arrowright':
+                case 'd':
+                    keys.right = false;
+                    break;
+            }
+        });
+        
+        // Drawing functions
+        function drawPixelRect(x, y, width, height, color) {
+            ctx.fillStyle = color;
+            ctx.fillRect(Math.floor(x), Math.floor(y), width, height);
+        }
+        
+        function drawLuigi(x, y) {
+            // Green hat
+            drawPixelRect(x + 8, y, 16, 12, '#228B22');
+            // Face
+            drawPixelRect(x + 6, y + 12, 20, 16, '#FFDBAC');
+            // Mustache
+            drawPixelRect(x + 10, y + 20, 12, 4, '#8B4513');
+            // Green shirt
+            drawPixelRect(x + 4, y + 28, 24, 20, '#228B22');
+            // Blue overalls
+            drawPixelRect(x + 8, y + 32, 16, 16, '#4169E1');
+            // White gloves
+            drawPixelRect(x, y + 28, 8, 12, '#FFFFFF');
+            drawPixelRect(x + 24, y + 28, 8, 12, '#FFFFFF');
+            // Legs
+            drawPixelRect(x + 8, y + 48, 6, 12, '#8B4513');
+            drawPixelRect(x + 18, y + 48, 6, 12, '#8B4513');
+            // Eyes
+            drawPixelRect(x + 10, y + 16, 3, 3, '#000');
+            drawPixelRect(x + 19, y + 16, 3, 3, '#000');
+        }
+        
+        function drawMario(x, y) {
+            // Red hat
+            drawPixelRect(x + 8, y, 16, 12, '#DC143C');
+            // Face
+            drawPixelRect(x + 6, y + 12, 20, 16, '#FFDBAC');
+            // Mustache
+            drawPixelRect(x + 10, y + 20, 12, 4, '#8B4513');
+            // Red shirt
+            drawPixelRect(x + 4, y + 28, 24, 20, '#DC143C');
+            // Blue overalls
+            drawPixelRect(x + 8, y + 32, 16, 16, '#4169E1');
+            // White gloves
+            drawPixelRect(x, y + 28, 8, 12, '#FFFFFF');
+            drawPixelRect(x + 24, y + 28, 8, 12, '#FFFFFF');
+            // Legs
+            drawPixelRect(x + 8, y + 48, 6, 12, '#8B4513');
+            drawPixelRect(x + 18, y + 48, 6, 12, '#8B4513');
+            // Eyes
+            drawPixelRect(x + 10, y + 16, 3, 3, '#000');
+            drawPixelRect(x + 19, y + 16, 3, 3, '#000');
+        }
+        
+        function drawPeach(x, y) {
+            // Crown
+            drawPixelRect(x + 10, y, 12, 8, '#FFD700');
+            // Hair
+            drawPixelRect(x + 8, y + 8, 16, 12, '#FFA500');
+            // Face
+            drawPixelRect(x + 6, y + 12, 20, 16, '#FFDBAC');
+            // Pink dress
+            drawPixelRect(x + 2, y + 28, 28, 20, '#FF69B4');
+            // White accents
+            drawPixelRect(x + 4, y + 30, 24, 4, '#FFFFFF');
+            drawPixelRect(x + 4, y + 42, 24, 4, '#FFFFFF');
+            // Eyes
+            drawPixelRect(x + 10, y + 16, 3, 3, '#000');
+            drawPixelRect(x + 19, y + 16, 3, 3, '#000');
+        }
+        
+        function drawToad(x, y) {
+            // White head with red spots
+            drawPixelRect(x + 6, y, 16, 20, '#F5F5DC');
+            drawPixelRect(x + 8, y + 2, 4, 4, '#DC143C');
+            drawPixelRect(x + 16, y + 6, 4, 4, '#DC143C');
+            // Blue vest
+            drawPixelRect(x + 4, y + 20, 20, 20, '#4169E1');
+            // White trim
+            drawPixelRect(x + 6, y + 22, 16, 4, '#FFFFFF');
+            // Eyes
+            drawPixelRect(x + 10, y + 8, 3, 3, '#000');
+            drawPixelRect(x + 15, y + 8, 3, 3, '#000');
+        }
+        
+        function drawYoshi(x, y) {
+            // Main body (green)
+            drawPixelRect(x + 10, y + 20, 60, 30, '#32CD32');
+            // Head
+            drawPixelRect(x + 20, y, 40, 30, '#32CD32');
+            // Nose
+            drawPixelRect(x + 15, y + 15, 15, 8, '#32CD32');
+            // Saddle
+            drawPixelRect(x + 25, y + 20, 30, 15, '#8B4513');
+            // Eyes
+            drawPixelRect(x + 25, y + 8, 6, 6, '#FFFFFF');
+            drawPixelRect(x + 45, y + 8, 6, 6, '#FFFFFF');
+            drawPixelRect(x + 27, y + 10, 2, 2, '#000');
+            drawPixelRect(x + 47, y + 10, 2, 2, '#000');
+            // Wheels
+            drawPixelRect(x + 5, y + 45, 15, 15, '#444');
+            drawPixelRect(x + 60, y + 45, 15, 15, '#444');
+        }
+        
+        function drawGhost(x, y, wiggle = 0) {
+            // Main body (bright green)
+            drawPixelRect(x + 4, y + 8, 24, 20, '#00FF00');
+            // Head
+            drawPixelRect(x + 2, y, 28, 16, '#00FF00');
+            // Wispy bottom
+            const wispOffset = Math.sin(wiggle) * 2;
+            drawPixelRect(x + 4, y + 28, 6, 8, '#00FF00');
+            drawPixelRect(x + 12 + wispOffset, y + 30, 6, 6, '#00FF00');
+            drawPixelRect(x + 20, y + 28, 6, 8, '#00FF00');
+            // Eyes
+            drawPixelRect(x + 8, y + 6, 4, 4, '#FF0000');
+            drawPixelRect(x + 20, y + 6, 4, 4, '#FF0000');
+            // Mouth
+            drawPixelRect(x + 14, y + 14, 4, 6, '#000');
+        }
+        
+        function drawBoss(x, y) {
+            // Large white marshmallow body
+            drawPixelRect(x + 10, y + 20, 80, 80, '#FFFACD');
+            drawPixelRect(x + 5, y + 30, 90, 60, '#FFFACD');
+            // Face
+            drawPixelRect(x + 25, y + 40, 12, 12, '#FF0000'); // Left eye
+            drawPixelRect(x + 63, y + 40, 12, 12, '#FF0000'); // Right eye
+            drawPixelRect(x + 35, y + 65, 30, 8, '#000'); // Mouth
+            // Arms
+            drawPixelRect(x, y + 50, 15, 30, '#FFFACD');
+            drawPixelRect(x + 85, y + 50, 15, 30, '#FFFACD');
+        }
+        
+        function drawTrap(x, y, active = false) {
+            // Trap base
+            drawPixelRect(x, y, 60, 40, '#666');
+            drawPixelRect(x + 5, y + 5, 50, 30, '#444');
+            
+            if (active) {
+                // Trap beam (cone)
+                ctx.fillStyle = 'rgba(255, 255, 0, 0.3)';
+                ctx.beginPath();
+                ctx.moveTo(x + 30, y);
+                ctx.lineTo(x - 50, y - 100);
+                ctx.lineTo(x + 110, y - 100);
+                ctx.closePath();
+                ctx.fill();
+                
+                // Beam edges
+                ctx.strokeStyle = '#FFFF00';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+            }
+            
+            // Button
+            const buttonColor = active ? '#FF0000' : '#00FF00';
+            drawPixelRect(x + 20, y + 10, 20, 20, buttonColor);
+        }
+        
+        // Game logic functions
+        function initGhosts() {
+            ghosts = [];
+            for (let i = 0; i < 3; i++) {
+                ghosts.push({
+                    x: 150 + i * 200,
+                    y: 200 + Math.random() * 100,
+                    width: 32,
+                    height: 36,
+                    vx: (Math.random() - 0.5) * 2,
+                    vy: (Math.random() - 0.5) * 2,
+                    caught: false,
+                    wiggle: 0
+                });
+            }
+        }
+        
+        function initObstacles() {
+            obstacles = [];
+            pickups = [];
+            for (let i = 0; i < 15; i++) {
+                if (Math.random() < 0.7) {
+                    obstacles.push({
+                        x: 900 + i * 150 + Math.random() * 100,
+                        y: 50 + Math.random() * (canvas.height - 150),
+                        width: 40 + Math.random() * 20,
+                        height: 40 + Math.random() * 20,
+                        type: 'rock'
+                    });
+                } else {
+                    pickups.push({
+                        x: 900 + i * 150 + Math.random() * 100,
+                        y: 50 + Math.random() * (canvas.height - 150),
+                        width: 20,
+                        height: 20,
+                        type: 'coin',
+                        collected: false
+                    });
+                }
+            }
+        }
+        
+        function checkCollision(a, b) {
+            return a.x < b.x + b.width &&
+                   a.x + a.width > b.x &&
+                   a.y < b.y + b.height &&
+                   a.y + a.height > b.y;
+        }
+        
+        function updateUI() {
+            let text = '';
+            switch (gameState) {
+                case 'start':
+                    text = "Luigi's Spectral Squad - Click to Start";
+                    break;
+                case 'call':
+                    text = "Incoming Ghost Call! Click to Accept";
+                    break;
+                case 'driving':
+                    text = `Score: ${score} | Lives: ${lives} | Use WASD or Arrow Keys to Drive`;
+                    break;
+                case 'ghostCatch':
+                    text = `Score: ${score} | Ghosts: ${ghostsCaught}/3 | Click to move Luigi, drag NPCs, click trap`;
+                    break;
+                case 'boss':
+                    text = `Score: ${score} | Click to send characters past the boss!`;
+                    break;
+                case 'win':
+                    text = `You Win! Final Score: ${score} | Click to Restart`;
+                    break;
+                case 'gameOver':
+                    text = `Game Over! Final Score: ${score} | Click to Restart`;
+                    break;
+            }
+            uiElement.textContent = text;
+        }
+        
+        function handleClick(x, y) {
+            switch (gameState) {
+                case 'start':
+                case 'win':
+                case 'gameOver':
+                    resetGame();
+                    gameState = 'call';
+                    break;
+                    
+                case 'call':
+                    gameState = 'driving';
+                    initObstacles();
+                    break;
+                    
+                case 'driving':
+                    // No longer need mouse controls for driving - using keyboard
+                    break;
+                    
+                case 'ghostCatch':
+                    // Check if clicking on NPCs for dragging
+                    for (let npc of Object.values(npcs)) {
+                        if (x >= npc.x && x <= npc.x + npc.width && 
+                            y >= npc.y && y <= npc.y + npc.height) {
+                            npc.dragging = true;
+                            mouse.dragTarget = npc;
+                            return;
+                        }
+                    }
+                    
+                    // Check if clicking on trap
+                    if (x >= trap.x && x <= trap.x + trap.width && 
+                        y >= trap.y && y <= trap.y + trap.height && trap.cooldown <= 0) {
+                        trap.active = true;
+                        trap.cooldown = 60;
+                        
+                        // Check for ghosts in trap beam
+                        for (let ghost of ghosts) {
+                            if (!ghost.caught && ghost.x > trap.x - 80 && ghost.x < trap.x + 80 && 
+                                ghost.y < trap.y) {
+                                ghost.caught = true;
+                                ghostsCaught++;
+                                score += 100;
+                                
+                                if (ghostsCaught >= 3) {
+                                    setTimeout(() => {
+                                        gameState = 'boss';
+                                        boss.offsetY = 0;
+                                    }, 1000);
+                                }
+                            }
+                        }
+                    } else {
+                        // Move Luigi towards click position
+                        player.targetX = x - player.width / 2;
+                        player.targetY = y - player.height / 2;
+                    }
+                    break;
+                    
+                case 'boss':
+                    // Send an NPC past the boss
+                    for (let [name, npc] of Object.entries(npcs)) {
+                        if (!npc.sent) {
+                            npc.sent = true;
+                            npc.running = true;
+                            npc.targetX = 750;
+                            break;
+                        }
+                    }
+                    break;
+            }
+        }
+        
+        function resetGame() {
+            score = 0;
+            ghostsCaught = 0;
+            lives = 3;
+            frameCount = 0;
+            
+            player = { x: 100, y: 400, width: 32, height: 48, targetX: 100, targetY: 400 };
+            yoshi = { x: 400, y: 300, width: 80, height: 60, vx: 0, vy: 0 };
+            
+            npcs = {
+                mario: { x: 200, y: 400, width: 32, height: 48, dragging: false, sent: false, running: false },
+                peach: { x: 300, y: 400, width: 32, height: 48, dragging: false, sent: false, running: false },
+                toad: { x: 400, y: 400, width: 28, height: 44, dragging: false, sent: false, running: false }
+            };
+            
+            trap = { x: 600, y: 500, width: 60, height: 40, active: false, cooldown: 0 };
+            boss = { x: 350, y: 200, width: 100, height: 120, offsetY: 0, direction: 1 };
+            
+            initGhosts();
+        }
+        
+        function update() {
+            frameCount++;
+            
+            switch (gameState) {
+                case 'driving':
+                    // Handle keyboard input for 4-directional movement
+                    const acceleration = 0.3;
+                    const maxSpeed = 4;
+                    const friction = 0.85;
+                    
+                    if (keys.up) yoshi.vy -= acceleration;
+                    if (keys.down) yoshi.vy += acceleration;
+                    if (keys.left) yoshi.vx -= acceleration;
+                    if (keys.right) yoshi.vx += acceleration;
+                    
+                    // Apply speed limits
+                    yoshi.vx = Math.max(-maxSpeed, Math.min(maxSpeed, yoshi.vx));
+                    yoshi.vy = Math.max(-maxSpeed, Math.min(maxSpeed, yoshi.vy));
+                    
+                    // Apply friction when no keys pressed
+                    if (!keys.left && !keys.right) yoshi.vx *= friction;
+                    if (!keys.up && !keys.down) yoshi.vy *= friction;
+                    
+                    // Update position
+                    yoshi.x += yoshi.vx;
+                    yoshi.y += yoshi.vy;
+                    
+                    // Keep Yoshi on screen
+                    if (yoshi.x < 0) {
+                        yoshi.x = 0;
+                        yoshi.vx = 0;
+                    }
+                    if (yoshi.x > canvas.width - yoshi.width) {
+                        yoshi.x = canvas.width - yoshi.width;
+                        yoshi.vx = 0;
+                    }
+                    if (yoshi.y < 0) {
+                        yoshi.y = 0;
+                        yoshi.vy = 0;
+                    }
+                    if (yoshi.y > canvas.height - yoshi.height) {
+                        yoshi.y = canvas.height - yoshi.height;
+                        yoshi.vy = 0;
+                    }
+                    
+                    // Move obstacles and pickups
+                    for (let obstacle of obstacles) {
+                        obstacle.x -= 3;
+                        if (checkCollision(yoshi, obstacle)) {
+                            lives--;
+                            if (lives <= 0) {
+                                gameState = 'gameOver';
+                            } else {
+                                // Reset positions
+                                yoshi.x = 100;
+                                yoshi.y = 300;
+                                yoshi.vx = 0;
+                                yoshi.vy = 0;
+                                initObstacles();
+                            }
+                        }
+                    }
+                    
+                    for (let pickup of pickups) {
+                        if (!pickup.collected) {
+                            pickup.x -= 3;
+                            if (checkCollision(yoshi, pickup)) {
+                                pickup.collected = true;
+                                score += 50;
+                            }
+                        }
+                    }
+                    
+                    // Check if driving section is complete
+                    if (obstacles.length > 0 && obstacles[obstacles.length - 1].x < -100) {
+                        gameState = 'ghostCatch';
+                        initGhosts();
+                    }
+                    break;
+                    
+                case 'ghostCatch':
+                    // Move Luigi towards target
+                    const dx = player.targetX - player.x;
+                    const dy = player.targetY - player.y;
+                    player.x += dx * 0.1;
+                    player.y += dy * 0.1;
+                    
+                    // Update dragged NPCs
+                    if (mouse.dragTarget) {
+                        mouse.dragTarget.x = mouse.x - mouse.dragTarget.width / 2;
+                        mouse.dragTarget.y = mouse.y - mouse.dragTarget.height / 2;
+                    }
+                    
+                    // Update ghosts
+                    for (let ghost of ghosts) {
+                        if (!ghost.caught) {
+                            ghost.wiggle += 0.2;
+                            
+                            // Move away from Luigi
+                            const ghostDx = ghost.x - player.x;
+                            const ghostDy = ghost.y - player.y;
+                            const distance = Math.sqrt(ghostDx * ghostDx + ghostDy * ghostDy);
+                            
+                            if (distance < 100) {
+                                ghost.vx += (ghostDx / distance) * 0.5;
+                                ghost.vy += (ghostDy / distance) * 0.5;
+                            }
+                            
+                            // Move away from NPCs
+                            for (let npc of Object.values(npcs)) {
+                                const npcDx = ghost.x - npc.x;
+                                const npcDy = ghost.y - npc.y;
+                                const npcDistance = Math.sqrt(npcDx * npcDx + npcDy * npcDy);
+                                
+                                if (npcDistance < 80) {
+                                    ghost.vx += (npcDx / npcDistance) * 0.3;
+                                    ghost.vy += (npcDy / npcDistance) * 0.3;
+                                }
+                            }
+                            
+                            ghost.x += ghost.vx;
+                            ghost.y += ghost.vy;
+                            
+                            // Add some randomness
+                            ghost.vx += (Math.random() - 0.5) * 0.5;
+                            ghost.vy += (Math.random() - 0.5) * 0.5;
+                            
+                            // Damping
+                            ghost.vx *= 0.95;
+                            ghost.vy *= 0.95;
+                            
+                            // Keep on screen
+                            if (ghost.x < 0 || ghost.x > canvas.width - ghost.width) ghost.vx *= -0.5;
+                            if (ghost.y < 0 || ghost.y > canvas.height - 200) ghost.vy *= -0.5;
+                        }
+                    }
+                    
+                    // Update trap
+                    if (trap.cooldown > 0) {
+                        trap.cooldown--;
+                        if (trap.cooldown === 0) {
+                            trap.active = false;
+                        }
+                    }
+                    break;
+                    
+                case 'boss':
+                    // Animate boss
+                    boss.offsetY += boss.direction * 2;
+                    if (boss.offsetY > 30 || boss.offsetY < -30) {
+                        boss.direction *= -1;
+                    }
+                    
+                    // Update running NPCs
+                    let anyPassed = false;
+                    for (let npc of Object.values(npcs)) {
+                        if (npc.running) {
+                            npc.x += 5;
+                            
+                            // Check collision with boss
+                            if (checkCollision(npc, { 
+                                x: boss.x, 
+                                y: boss.y + boss.offsetY, 
+                                width: boss.width, 
+                                height: boss.height 
+                            })) {
+                                npc.running = false;
+                                npc.failed = true;
+                            }
+                            
+                            // Check if passed
+                            if (npc.x > canvas.width) {
+                                npc.running = false;
+                                anyPassed = true;
+                            }
+                        }
+                    }
+                    
+                    // Check win condition
+                    if (anyPassed) {
+                        score += 500;
+                        gameState = 'win';
+                    }
+                    
+                    // Check if all NPCs failed
+                    let allFailed = true;
+                    for (let npc of Object.values(npcs)) {
+                        if (!npc.sent || !npc.failed) {
+                            allFailed = false;
+                            break;
+                        }
+                    }
+                    if (allFailed) {
+                        gameState = 'gameOver';
+                    }
+                    break;
+            }
+        }
+        
+        function render() {
+            // Clear screen
+            ctx.fillStyle = '#0f0f23';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            switch (gameState) {
+                case 'start':
+                    // Title screen
+                    ctx.fillStyle = '#00FF00';
+                    ctx.font = '48px Courier New';
+                    ctx.textAlign = 'center';
+                    ctx.fillText("Luigi's Spectral Squad", canvas.width/2, 200);
+                    
+                    ctx.fillStyle = '#FFFFFF';
+                    ctx.font = '24px Courier New';
+                    ctx.fillText("Click to Start", canvas.width/2, 400);
+                    break;
+                    
+                case 'call':
+                    // Phone call scene
+                    ctx.fillStyle = '#2F4F4F';
+                    ctx.fillRect(0, 0, canvas.width, canvas.height);
+                    
+                    // Draw characters
+                    drawLuigi(100, 200);
+                    drawMario(200, 200);
+                    drawPeach(300, 200);
+                    drawToad(400, 200);
+                    
+                    // Phone
+                    drawPixelRect(150, 350, 40, 60, '#000');
+                    drawPixelRect(155, 355, 30, 50, '#333');
+                    
+                    // Ring effect
+                    if (Math.floor(frameCount / 30) % 2) {
+                        ctx.strokeStyle = '#FFFF00';
+                        ctx.lineWidth = 3;
+                        ctx.beginPath();
+                        ctx.arc(170, 380, 30, 0, Math.PI * 2);
+                        ctx.stroke();
+                    }
+                    
+                    ctx.fillStyle = '#FFFFFF';
+                    ctx.font = '32px Courier New';
+                    ctx.textAlign = 'center';
+                    ctx.fillText("RING RING!", canvas.width/2, 100);
+                    break;
+                    
+                case 'driving':
+                    // Full-screen road background with scrolling pattern
+                    ctx.fillStyle = '#333';
+                    ctx.fillRect(0, 0, canvas.width, canvas.height);
+                    
+                    // Road surface texture
+                    ctx.fillStyle = '#444';
+                    for (let y = 0; y < canvas.height; y += 40) {
+                        for (let x = 0; x < canvas.width; x += 40) {
+                            if ((x + y + frameCount) % 80 < 40) {
+                                ctx.fillRect(x, y, 40, 40);
+                            }
+                        }
+                    }
+                    
+                    // Road lines - vertical and horizontal grid
+                    ctx.strokeStyle = '#FFFF00';
+                    ctx.lineWidth = 2;
+                    
+                    // Vertical lines moving right to left
+                    for (let x = -100; x < canvas.width + 100; x += 100) {
+                        const lineX = x - (frameCount * 2) % 100;
+                        ctx.beginPath();
+                        ctx.moveTo(lineX, 0);
+                        ctx.lineTo(lineX, canvas.height);
+                        ctx.stroke();
+                    }
+                    
+                    // Horizontal lines
+                    for (let y = 0; y < canvas.height; y += 100) {
+                        ctx.beginPath();
+                        ctx.moveTo(0, y);
+                        ctx.lineTo(canvas.width, y);
+                        ctx.stroke();
+                    }
+                    
+                    // Draw Yoshi
+                    drawYoshi(yoshi.x, yoshi.y);
+                    
+                    // Draw obstacles and pickups
+                    obstacles.forEach(obstacle => {
+                        drawPixelRect(obstacle.x, obstacle.y, obstacle.width, obstacle.height, '#8B4513');
+                        // Add some detail to obstacles
+                        drawPixelRect(obstacle.x + 5, obstacle.y + 5, obstacle.width - 10, obstacle.height - 10, '#A0522D');
+                    });
+                    
+                    pickups.forEach(pickup => {
+                        if (!pickup.collected) {
+                            drawPixelRect(pickup.x, pickup.y, pickup.width, pickup.height, '#FFD700');
+                            // Coin sparkle animation
+                            if (Math.floor(frameCount / 10) % 3 === 0) {
+                                drawPixelRect(pickup.x - 6, pickup.y - 6, 4, 4, '#FFFF00');
+                                drawPixelRect(pickup.x + pickup.width + 2, pickup.y - 6, 4, 4, '#FFFF00');
+                                drawPixelRect(pickup.x - 6, pickup.y + pickup.height + 2, 4, 4, '#FFFF00');
+                                drawPixelRect(pickup.x + pickup.width + 2, pickup.y + pickup.height + 2, 4, 4, '#FFFF00');
+                            }
+                        }
+                    });
+                    
+                    // Speed lines effect
+                    ctx.strokeStyle = '#FFFFFF';
+                    ctx.lineWidth = 1;
+                    for (let i = 0; i < 10; i++) {
+                        const x = Math.random() * canvas.width;
+                        const y = Math.random() * canvas.height;
+                        ctx.beginPath();
+                        ctx.moveTo(x, y);
+                        ctx.lineTo(x - 20, y);
+                        ctx.stroke();
+                    }
+                    break;
+                    
+                case 'ghostCatch':
+                    // Building background
+                    ctx.fillStyle = '#2F4F2F';
+                    ctx.fillRect(0, 0, canvas.width, canvas.height);
+                    
+                    // Building
+                    drawPixelRect(300, 100, 200, 300, '#4A4A4A');
+                    // Door
+                    drawPixelRect(375, 250, 50, 100, '#8B4513');
+                    
+                    // Draw Luigi
+                    drawLuigi(player.x, player.y);
+                    
+                    // Draw NPCs
+                    drawMario(npcs.mario.x, npcs.mario.y);
+                    drawPeach(npcs.peach.x, npcs.peach.y);
+                    drawToad(npcs.toad.x, npcs.toad.y);
+                    
+                    // Draw ghosts
+                    ghosts.forEach(ghost => {
+                        if (!ghost.caught) {
+                            drawGhost(ghost.x, ghost.y, ghost.wiggle);
+                        }
+                    });
+                    
+                    // Draw trap
+                    drawTrap(trap.x, trap.y, trap.active);
+                    break;
+                    
+                case 'boss':
+                    // Same background as ghost catch
+                    ctx.fillStyle = '#2F4F2F';
+                    ctx.fillRect(0, 0, canvas.width, canvas.height);
+                    
+                    // Building
+                    drawPixelRect(300, 100, 200, 300, '#4A4A4A');
+                    // Door
+                    drawPixelRect(375, 250, 50, 100, '#8B4513');
+                    
+                    // Draw boss
+                    drawBoss(boss.x, boss.y + boss.offsetY);
+                    
+                    // Draw NPCs
+                    for (let [name, npc] of Object.entries(npcs)) {
+                        if (!npc.sent) {
+                            if (name === 'mario') drawMario(npc.x, npc.y);
+                            else if (name === 'peach') drawPeach(npc.x, npc.y);
+                            else if (name === 'toad') drawToad(npc.x, npc.y);
+                        } else if (npc.running) {
+                            if (name === 'mario') drawMario(npc.x, npc.y);
+                            else if (name === 'peach') drawPeach(npc.x, npc.y);
+                            else if (name === 'toad') drawToad(npc.x, npc.y);
+                        }
+                    }
+                    break;
+                    
+                case 'win':
+                    ctx.fillStyle = '#00FF00';
+                    ctx.font = '48px Courier New';
+                    ctx.textAlign = 'center';
+                    ctx.fillText("YOU WIN!", canvas.width/2, 250);
+                    
+                    ctx.fillStyle = '#FFFFFF';
+                    ctx.font = '32px Courier New';
+                    ctx.fillText(`Final Score: ${score}`, canvas.width/2, 320);
+                    ctx.font = '24px Courier New';
+                    ctx.fillText("Click to Play Again", canvas.width/2, 400);
+                    
+                    // Victory celebration
+                    for (let i = 0; i < 20; i++) {
+                        const x = Math.random() * canvas.width;
+                        const y = Math.random() * canvas.height;
+                        const color = ['#FFD700', '#FF69B4', '#00FF00', '#FF4500'][Math.floor(Math.random() * 4)];
+                        drawPixelRect(x, y, 4, 4, color);
+                    }
+                    break;
+                    
+                case 'gameOver':
+                    ctx.fillStyle = '#FF0000';
+                    ctx.font = '48px Courier New';
+                    ctx.textAlign = 'center';
+                    ctx.fillText("GAME OVER", canvas.width/2, 250);
+                    
+                    ctx.fillStyle = '#FFFFFF';
+                    ctx.font = '32px Courier New';
+                    ctx.fillText(`Final Score: ${score}`, canvas.width/2, 320);
+                    ctx.font = '24px Courier New';
+                    ctx.fillText("Click to Try Again", canvas.width/2, 400);
+                    break;
+            }
+        }
+        
+        function gameLoop() {
+            update();
+            render();
+            updateUI();
+            requestAnimationFrame(gameLoop);
+        }
+        
+        // Initialize game
+        resetGame();
+        gameState = 'start';
+        gameLoop();
+    </script>
+</body>
+</html>
