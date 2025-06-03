@@ -1,0 +1,1011 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Spy Hunter - Driving Combat</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: #000;
+            color: #fff;
+            font-family: 'Courier New', monospace;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            overflow: hidden;
+        }
+
+        #gameContainer {
+            position: relative;
+            background: #000;
+            border: 2px solid #333;
+        }
+
+        #gameCanvas {
+            background: linear-gradient(180deg, #1a4a6b 0%, #2d5f3f 100%);
+            display: block;
+        }
+
+        #gameOverScreen {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.9);
+            padding: 30px;
+            border: 2px solid #ff4444;
+            text-align: center;
+            display: none;
+        }
+
+        #gameOverScreen h2 {
+            color: #ff4444;
+            margin-bottom: 20px;
+            font-size: 24px;
+        }
+
+        #gameOverScreen button {
+            background: #ff4444;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+            margin-top: 15px;
+        }
+
+        #gameOverScreen button:hover {
+            background: #cc3333;
+        }
+
+        .instructions {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            font-size: 12px;
+            color: #ccc;
+            line-height: 1.4;
+        }
+
+        @media (max-width: 600px) {
+            #gameContainer {
+                width: 100vw;
+                height: 100vh;
+            }
+            .instructions {
+                display: none;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="gameContainer">
+        <canvas id="gameCanvas" width="800" height="600"></canvas>
+        <div class="instructions">
+            Controls:<br>
+            ← → or A/D: Steer<br>
+            ↑ or W: Accelerate<br>
+            ↓ or S: Brake<br>
+            Space/Q: Fire<br>
+            E: Oil Slick<br>
+            R: Restart
+        </div>
+        <div id="gameOverScreen">
+            <h2>MISSION FAILED</h2>
+            <p>Score: <span id="finalScore">0</span></p>
+            <p>Distance: <span id="finalDistance">0</span>m</p>
+            <button onclick="restartGame()">RESTART MISSION</button>
+        </div>
+    </div>
+
+    <script>
+        // Game constants
+        const CANVAS_WIDTH = 800;
+        const CANVAS_HEIGHT = 600;
+        const ROAD_WIDTH = 400;
+        const ROAD_LANES = 4;
+        const LANE_WIDTH = ROAD_WIDTH / ROAD_LANES;
+
+        // Game state
+        let gameState = 'playing'; // 'playing', 'gameOver'
+        let score = 0;
+        let distance = 0;
+        let gameSpeed = 2;
+        let roadOffset = 0;
+
+        // Canvas setup
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // Input handling
+        const keys = {};
+        let lastFireTime = 0;
+        const FIRE_RATE = 150; // milliseconds between shots
+
+        // Player object
+        const player = {
+            x: CANVAS_WIDTH / 2,
+            y: CANVAS_HEIGHT - 100,
+            width: 30,
+            height: 50,
+            speed: 0,
+            maxSpeed: 8,
+            acceleration: 0.3,
+            deceleration: 0.2,
+            armor: 100,
+            maxArmor: 100,
+            oilSlicks: 3,
+            smokeScreens: 2,
+            rapidFire: 0, // timer for rapid fire powerup
+            invulnerable: 0 // invulnerability frames after taking damage
+        };
+
+        // Game objects arrays
+        let bullets = [];
+        let enemies = [];
+        let enemyBullets = [];
+        let explosions = [];
+        let powerUps = [];
+        let roadHazards = [];
+        let particles = [];
+
+        // Spawn timers
+        let enemySpawnTimer = 0;
+        let hazardSpawnTimer = 0;
+
+        // Event listeners
+        document.addEventListener('keydown', (e) => {
+            keys[e.key.toLowerCase()] = true;
+            keys[e.code] = true;
+            
+            if (e.key === ' ' || e.key.toLowerCase() === 'q') {
+                e.preventDefault();
+                fireWeapon();
+            }
+            if (e.key.toLowerCase() === 'e') {
+                deployOilSlick();
+            }
+            if (e.key.toLowerCase() === 'r') {
+                restartGame();
+            }
+        });
+
+        document.addEventListener('keyup', (e) => {
+            keys[e.key.toLowerCase()] = false;
+            keys[e.code] = false;
+        });
+
+        // Utility functions
+        function randomBetween(min, max) {
+            return Math.random() * (max - min) + min;
+        }
+
+        function distance2D(x1, y1, x2, y2) {
+            return Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2);
+        }
+
+        function checkCollision(rect1, rect2) {
+            return rect1.x < rect2.x + rect2.width &&
+                   rect1.x + rect1.width > rect2.x &&
+                   rect1.y < rect2.y + rect2.height &&
+                   rect1.y + rect1.height > rect2.y;
+        }
+
+        // Weapon system
+        function fireWeapon() {
+            const now = Date.now();
+            const fireRate = player.rapidFire > 0 ? FIRE_RATE / 2 : FIRE_RATE;
+            
+            if (now - lastFireTime < fireRate) return;
+            
+            lastFireTime = now;
+            
+            // Create bullet
+            bullets.push({
+                x: player.x + player.width / 2 - 2,
+                y: player.y - 10,
+                width: 4,
+                height: 12,
+                speed: 15,
+                damage: 25
+            });
+
+            // Add muzzle flash effect
+            for (let i = 0; i < 3; i++) {
+                particles.push({
+                    x: player.x + player.width / 2 + randomBetween(-5, 5),
+                    y: player.y - 5,
+                    vx: randomBetween(-2, 2),
+                    vy: randomBetween(-3, -1),
+                    life: 10,
+                    color: '#ffff00'
+                });
+            }
+        }
+
+        function deployOilSlick() {
+            if (player.oilSlicks <= 0) return;
+            
+            player.oilSlicks--;
+            
+            // Create oil slick hazard behind player
+            roadHazards.push({
+                x: player.x + player.width / 2 - 15,
+                y: player.y + 60,
+                width: 30,
+                height: 20,
+                type: 'oil',
+                life: 300
+            });
+        }
+
+        // Enemy system
+        function spawnEnemy() {
+            const roadLeft = CANVAS_WIDTH / 2 - ROAD_WIDTH / 2;
+            const roadRight = CANVAS_WIDTH / 2 + ROAD_WIDTH / 2;
+            
+            const enemyTypes = ['standard', 'armored', 'motorcycle'];
+            const type = enemyTypes[Math.floor(Math.random() * enemyTypes.length)];
+            
+            let enemy = {
+                x: randomBetween(roadLeft + 10, roadRight - 40),
+                y: -60,
+                speed: randomBetween(1, 3),
+                lastShot: 0,
+                shootRate: randomBetween(1000, 3000),
+                type: type
+            };
+
+            switch (type) {
+                case 'standard':
+                    enemy.width = 30;
+                    enemy.height = 50;
+                    enemy.health = 25;
+                    enemy.color = '#ff4444';
+                    enemy.score = 100;
+                    break;
+                case 'armored':
+                    enemy.width = 35;
+                    enemy.height = 55;
+                    enemy.health = 75;
+                    enemy.color = '#666666';
+                    enemy.score = 200;
+                    enemy.speed *= 0.7;
+                    break;
+                case 'motorcycle':
+                    enemy.width = 20;
+                    enemy.height = 35;
+                    enemy.health = 15;
+                    enemy.color = '#00ff44';
+                    enemy.score = 150;
+                    enemy.speed *= 1.5;
+                    break;
+            }
+
+            enemies.push(enemy);
+        }
+
+        function updateEnemies() {
+            const roadLeft = CANVAS_WIDTH / 2 - ROAD_WIDTH / 2;
+            const roadRight = CANVAS_WIDTH / 2 + ROAD_WIDTH / 2;
+
+            for (let i = enemies.length - 1; i >= 0; i--) {
+                const enemy = enemies[i];
+                
+                // Move enemy
+                enemy.y += enemy.speed + gameSpeed;
+                
+                // Simple AI - try to get behind player and shoot
+                if (enemy.y > player.y - 200 && enemy.y < player.y + 100) {
+                    if (enemy.x < player.x - 20) {
+                        enemy.x += 0.5;
+                    } else if (enemy.x > player.x + 20) {
+                        enemy.x -= 0.5;
+                    }
+                }
+
+                // Keep enemies on road
+                if (enemy.x < roadLeft) enemy.x = roadLeft;
+                if (enemy.x + enemy.width > roadRight) enemy.x = roadRight - enemy.width;
+
+                // Enemy shooting
+                const now = Date.now();
+                if (now - enemy.lastShot > enemy.shootRate && 
+                    enemy.y > player.y - 300 && enemy.y < player.y) {
+                    
+                    enemy.lastShot = now;
+                    enemyBullets.push({
+                        x: enemy.x + enemy.width / 2 - 2,
+                        y: enemy.y + enemy.height,
+                        width: 4,
+                        height: 8,
+                        speed: 6,
+                        damage: 10
+                    });
+                }
+
+                // Remove enemies that are off screen
+                if (enemy.y > CANVAS_HEIGHT + 50) {
+                    enemies.splice(i, 1);
+                }
+            }
+        }
+
+        // Collision system
+        function checkCollisions() {
+            const roadLeft = CANVAS_WIDTH / 2 - ROAD_WIDTH / 2;
+            const roadRight = CANVAS_WIDTH / 2 + ROAD_WIDTH / 2;
+
+            // Player off-road damage
+            if (player.x < roadLeft || player.x + player.width > roadRight) {
+                if (Math.random() < 0.02) { // 2% chance per frame
+                    damagePlayer(1, false);
+                }
+                player.speed *= 0.95; // Slow down off-road
+            }
+
+            // Player bullets vs enemies
+            for (let i = bullets.length - 1; i >= 0; i--) {
+                const bullet = bullets[i];
+                
+                for (let j = enemies.length - 1; j >= 0; j--) {
+                    const enemy = enemies[j];
+                    
+                    if (checkCollision(bullet, enemy)) {
+                        // Damage enemy
+                        enemy.health -= bullet.damage;
+                        bullets.splice(i, 1);
+                        
+                        // Create hit effect
+                        createExplosion(enemy.x + enemy.width / 2, enemy.y + enemy.height / 2, 'small');
+                        
+                        if (enemy.health <= 0) {
+                            // Enemy destroyed
+                            score += enemy.score;
+                            createExplosion(enemy.x + enemy.width / 2, enemy.y + enemy.height / 2, 'large');
+                            
+                            // Chance to drop powerup
+                            if (Math.random() < 0.3) {
+                                spawnPowerUp(enemy.x + enemy.width / 2, enemy.y + enemy.height / 2);
+                            }
+                            
+                            enemies.splice(j, 1);
+                        }
+                        break;
+                    }
+                }
+            }
+
+            // Enemy bullets vs player
+            if (player.invulnerable <= 0) {
+                for (let i = enemyBullets.length - 1; i >= 0; i--) {
+                    const bullet = enemyBullets[i];
+                    
+                    if (checkCollision(bullet, player)) {
+                        damagePlayer(bullet.damage, true);
+                        enemyBullets.splice(i, 1);
+                    }
+                }
+
+                // Enemy vehicles vs player
+                for (let i = enemies.length - 1; i >= 0; i--) {
+                    const enemy = enemies[i];
+                    
+                    if (checkCollision(enemy, player)) {
+                        damagePlayer(15, true);
+                        
+                        // Push player
+                        if (enemy.x < player.x) {
+                            player.x += 5;
+                        } else {
+                            player.x -= 5;
+                        }
+                        
+                        // Damage enemy too
+                        enemy.health -= 10;
+                        if (enemy.health <= 0) {
+                            createExplosion(enemy.x + enemy.width / 2, enemy.y + enemy.height / 2, 'large');
+                            enemies.splice(i, 1);
+                        }
+                    }
+                }
+
+                // Road hazards vs player
+                for (let i = roadHazards.length - 1; i >= 0; i--) {
+                    const hazard = roadHazards[i];
+                    
+                    if (checkCollision(hazard, player)) {
+                        if (hazard.type === 'oil') {
+                            // Oil slick effect - loss of control
+                            player.x += randomBetween(-10, 10);
+                        } else {
+                            damagePlayer(20, true);
+                        }
+                        roadHazards.splice(i, 1);
+                    }
+                }
+            }
+
+            // Player vs powerups
+            for (let i = powerUps.length - 1; i >= 0; i--) {
+                const powerUp = powerUps[i];
+                
+                if (checkCollision(powerUp, player)) {
+                    applyPowerUp(powerUp.type);
+                    powerUps.splice(i, 1);
+                }
+            }
+        }
+
+        function damagePlayer(damage, showEffect) {
+            if (player.invulnerable > 0) return;
+            
+            player.armor -= damage;
+            player.invulnerable = 60; // 1 second of invulnerability
+            
+            if (showEffect) {
+                createExplosion(player.x + player.width / 2, player.y + player.height / 2, 'small');
+                
+                // Screen shake effect
+                canvas.style.transform = `translate(${randomBetween(-5, 5)}px, ${randomBetween(-5, 5)}px)`;
+                setTimeout(() => {
+                    canvas.style.transform = 'translate(0, 0)';
+                }, 100);
+            }
+            
+            if (player.armor <= 0) {
+                gameOver();
+            }
+        }
+
+        // PowerUp system
+        function spawnPowerUp(x, y) {
+            const types = ['oil', 'smoke', 'rapidfire', 'repair'];
+            const type = types[Math.floor(Math.random() * types.length)];
+            
+            powerUps.push({
+                x: x - 10,
+                y: y,
+                width: 20,
+                height: 20,
+                type: type,
+                bounce: 0
+            });
+        }
+
+        function applyPowerUp(type) {
+            switch (type) {
+                case 'oil':
+                    player.oilSlicks = Math.min(player.oilSlicks + 2, 5);
+                    break;
+                case 'smoke':
+                    player.smokeScreens = Math.min(player.smokeScreens + 1, 3);
+                    break;
+                case 'rapidfire':
+                    player.rapidFire = 300; // 5 seconds
+                    break;
+                case 'repair':
+                    player.armor = Math.min(player.armor + 30, player.maxArmor);
+                    break;
+            }
+        }
+
+        // Effects system
+        function createExplosion(x, y, size) {
+            const particleCount = size === 'large' ? 15 : 8;
+            const maxSpeed = size === 'large' ? 6 : 3;
+            
+            for (let i = 0; i < particleCount; i++) {
+                particles.push({
+                    x: x + randomBetween(-5, 5),
+                    y: y + randomBetween(-5, 5),
+                    vx: randomBetween(-maxSpeed, maxSpeed),
+                    vy: randomBetween(-maxSpeed, maxSpeed),
+                    life: randomBetween(20, 40),
+                    color: Math.random() < 0.5 ? '#ff4444' : '#ffaa00'
+                });
+            }
+        }
+
+        // Update functions
+        function updatePlayer() {
+            // Handle input
+            if (keys['arrowleft'] || keys['a']) {
+                player.x -= 5;
+            }
+            if (keys['arrowright'] || keys['d']) {
+                player.x += 5;
+            }
+            if (keys['arrowup'] || keys['w']) {
+                player.speed = Math.min(player.speed + player.acceleration, player.maxSpeed);
+            } else if (keys['arrowdown'] || keys['s']) {
+                player.speed = Math.max(player.speed - player.deceleration * 2, -player.maxSpeed / 2);
+            } else {
+                // Natural deceleration
+                if (player.speed > 0) {
+                    player.speed = Math.max(player.speed - player.deceleration, 0);
+                } else if (player.speed < 0) {
+                    player.speed = Math.min(player.speed + player.deceleration, 0);
+                }
+            }
+
+            // Apply speed
+            player.y -= player.speed;
+            
+            // Keep player on screen vertically
+            if (player.y < 100) player.y = 100;
+            if (player.y > CANVAS_HEIGHT - player.height - 20) {
+                player.y = CANVAS_HEIGHT - player.height - 20;
+            }
+
+            // Keep player roughly on road horizontally
+            const roadLeft = CANVAS_WIDTH / 2 - ROAD_WIDTH / 2;
+            const roadRight = CANVAS_WIDTH / 2 + ROAD_WIDTH / 2;
+            
+            if (player.x < roadLeft - 50) player.x = roadLeft - 50;
+            if (player.x + player.width > roadRight + 50) {
+                player.x = roadRight + 50 - player.width;
+            }
+
+            // Update timers
+            if (player.invulnerable > 0) player.invulnerable--;
+            if (player.rapidFire > 0) player.rapidFire--;
+        }
+
+        function updateBullets() {
+            // Update player bullets
+            for (let i = bullets.length - 1; i >= 0; i--) {
+                const bullet = bullets[i];
+                bullet.y -= bullet.speed;
+                
+                if (bullet.y < -10) {
+                    bullets.splice(i, 1);
+                }
+            }
+
+            // Update enemy bullets
+            for (let i = enemyBullets.length - 1; i >= 0; i--) {
+                const bullet = enemyBullets[i];
+                bullet.y += bullet.speed + gameSpeed;
+                
+                if (bullet.y > CANVAS_HEIGHT + 10) {
+                    enemyBullets.splice(i, 1);
+                }
+            }
+        }
+
+        function updateGameObjects() {
+            // Update road hazards
+            for (let i = roadHazards.length - 1; i >= 0; i--) {
+                const hazard = roadHazards[i];
+                hazard.y += gameSpeed;
+                hazard.life--;
+                
+                if (hazard.y > CANVAS_HEIGHT + 50 || hazard.life <= 0) {
+                    roadHazards.splice(i, 1);
+                }
+            }
+
+            // Update powerups
+            for (let i = powerUps.length - 1; i >= 0; i--) {
+                const powerUp = powerUps[i];
+                powerUp.y += gameSpeed;
+                powerUp.bounce += 0.2;
+                
+                if (powerUp.y > CANVAS_HEIGHT + 50) {
+                    powerUps.splice(i, 1);
+                }
+            }
+
+            // Update particles
+            for (let i = particles.length - 1; i >= 0; i--) {
+                const particle = particles[i];
+                particle.x += particle.vx;
+                particle.y += particle.vy;
+                particle.life--;
+                
+                if (particle.life <= 0) {
+                    particles.splice(i, 1);
+                }
+            }
+        }
+
+        function updateSpawning() {
+            // Spawn enemies
+            enemySpawnTimer++;
+            if (enemySpawnTimer > 120 - Math.floor(distance / 1000)) { // Increase spawn rate over time
+                if (enemies.length < 5) {
+                    spawnEnemy();
+                }
+                enemySpawnTimer = 0;
+            }
+
+            // Spawn hazards occasionally
+            hazardSpawnTimer++;
+            if (hazardSpawnTimer > 300) {
+                if (Math.random() < 0.3) {
+                    const roadLeft = CANVAS_WIDTH / 2 - ROAD_WIDTH / 2;
+                    const roadRight = CANVAS_WIDTH / 2 + ROAD_WIDTH / 2;
+                    
+                    roadHazards.push({
+                        x: randomBetween(roadLeft + 10, roadRight - 30),
+                        y: -30,
+                        width: 30,
+                        height: 20,
+                        type: 'barrier',
+                        life: 1000
+                    });
+                }
+                hazardSpawnTimer = 0;
+            }
+        }
+
+        // Rendering functions
+        function drawRoad() {
+            const roadLeft = CANVAS_WIDTH / 2 - ROAD_WIDTH / 2;
+            const roadRight = CANVAS_WIDTH / 2 + ROAD_WIDTH / 2;
+
+            // Road surface
+            ctx.fillStyle = '#333333';
+            ctx.fillRect(roadLeft, 0, ROAD_WIDTH, CANVAS_HEIGHT);
+
+            // Road shoulders
+            ctx.fillStyle = '#228B22';
+            ctx.fillRect(0, 0, roadLeft, CANVAS_HEIGHT);
+            ctx.fillRect(roadRight, 0, CANVAS_WIDTH - roadRight, CANVAS_HEIGHT);
+
+            // Lane markers
+            ctx.fillStyle = '#ffff00';
+            roadOffset += gameSpeed;
+            if (roadOffset > 40) roadOffset = 0;
+
+            for (let lane = 1; lane < ROAD_LANES; lane++) {
+                const x = roadLeft + lane * LANE_WIDTH;
+                for (let y = -roadOffset; y < CANVAS_HEIGHT; y += 40) {
+                    ctx.fillRect(x - 2, y, 4, 20);
+                }
+            }
+
+            // Road edges
+            ctx.fillStyle = '#ffffff';
+            for (let y = -roadOffset; y < CANVAS_HEIGHT; y += 20) {
+                ctx.fillRect(roadLeft - 3, y, 6, 10);
+                ctx.fillRect(roadRight - 3, y, 6, 10);
+            }
+        }
+
+        function drawPlayer() {
+            ctx.save();
+            
+            // Flicker effect when invulnerable
+            if (player.invulnerable > 0 && player.invulnerable % 10 < 5) {
+                ctx.globalAlpha = 0.5;
+            }
+
+            // Main body
+            ctx.fillStyle = player.rapidFire > 0 ? '#00ffff' : '#0088ff';
+            ctx.fillRect(player.x, player.y, player.width, player.height);
+
+            // Cockpit
+            ctx.fillStyle = '#333333';
+            ctx.fillRect(player.x + 8, player.y + 5, 14, 20);
+
+            // Weapon ports
+            ctx.fillStyle = '#ff4444';
+            ctx.fillRect(player.x + 5, player.y - 5, 4, 8);
+            ctx.fillRect(player.x + 21, player.y - 5, 4, 8);
+
+            // Exhaust effect
+            if (player.speed > 0) {
+                ctx.fillStyle = '#ffaa00';
+                ctx.fillRect(player.x + 12, player.y + player.height, 6, 8);
+                ctx.fillStyle = '#ff4400';
+                ctx.fillRect(player.x + 14, player.y + player.height + 2, 2, 4);
+            }
+
+            ctx.restore();
+        }
+
+        function drawEnemies() {
+            enemies.forEach(enemy => {
+                ctx.fillStyle = enemy.color;
+                ctx.fillRect(enemy.x, enemy.y, enemy.width, enemy.height);
+
+                // Cockpit
+                ctx.fillStyle = '#222222';
+                const cockpitWidth = enemy.width * 0.6;
+                const cockpitX = enemy.x + (enemy.width - cockpitWidth) / 2;
+                ctx.fillRect(cockpitX, enemy.y + 5, cockpitWidth, enemy.height * 0.4);
+
+                // Health indicator for armored enemies
+                if (enemy.type === 'armored' && enemy.health < 75) {
+                    ctx.fillStyle = '#ff0000';
+                    ctx.fillRect(enemy.x, enemy.y - 5, enemy.width * (enemy.health / 75), 2);
+                }
+            });
+        }
+
+        function drawBullets() {
+            // Player bullets
+            ctx.fillStyle = '#ffff00';
+            bullets.forEach(bullet => {
+                ctx.fillRect(bullet.x, bullet.y, bullet.width, bullet.height);
+            });
+
+            // Enemy bullets
+            ctx.fillStyle = '#ff4444';
+            enemyBullets.forEach(bullet => {
+                ctx.fillRect(bullet.x, bullet.y, bullet.width, bullet.height);
+            });
+        }
+
+        function drawEffects() {
+            // Particles
+            particles.forEach(particle => {
+                ctx.fillStyle = particle.color;
+                ctx.globalAlpha = particle.life / 40;
+                ctx.fillRect(particle.x, particle.y, 3, 3);
+                ctx.globalAlpha = 1;
+            });
+
+            // Road hazards
+            roadHazards.forEach(hazard => {
+                if (hazard.type === 'oil') {
+                    ctx.fillStyle = '#444444';
+                    ctx.fillRect(hazard.x, hazard.y, hazard.width, hazard.height);
+                    ctx.fillStyle = '#222222';
+                    ctx.fillRect(hazard.x + 5, hazard.y + 5, hazard.width - 10, hazard.height - 10);
+                } else {
+                    ctx.fillStyle = '#888888';
+                    ctx.fillRect(hazard.x, hazard.y, hazard.width, hazard.height);
+                }
+            });
+
+            // Power-ups
+            powerUps.forEach(powerUp => {
+                const bounce = Math.sin(powerUp.bounce) * 3;
+                
+                ctx.fillStyle = getPowerUpColor(powerUp.type);
+                ctx.fillRect(powerUp.x, powerUp.y + bounce, powerUp.width, powerUp.height);
+                
+                // Icon
+                ctx.fillStyle = '#ffffff';
+                ctx.font = '12px monospace';
+                ctx.textAlign = 'center';
+                const icon = getPowerUpIcon(powerUp.type);
+                ctx.fillText(icon, powerUp.x + 10, powerUp.y + bounce + 14);
+            });
+        }
+
+        function getPowerUpColor(type) {
+            switch (type) {
+                case 'oil': return '#666666';
+                case 'smoke': return '#cccccc';
+                case 'rapidfire': return '#ffff00';
+                case 'repair': return '#00ff00';
+                default: return '#ffffff';
+            }
+        }
+
+        function getPowerUpIcon(type) {
+            switch (type) {
+                case 'oil': return 'O';
+                case 'smoke': return 'S';
+                case 'rapidfire': return 'R';
+                case 'repair': return '+';
+                default: return '?';
+            }
+        }
+
+        function drawHUD() {
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+            ctx.fillRect(0, 0, CANVAS_WIDTH, 50);
+
+            ctx.fillStyle = '#ffffff';
+            ctx.font = '16px monospace';
+            ctx.textAlign = 'left';
+
+            // Score and distance
+            ctx.fillText(`Score: ${score}`, 10, 25);
+            ctx.fillText(`Distance: ${Math.floor(distance)}m`, 10, 42);
+
+            // Armor bar
+            ctx.fillText('Armor:', 200, 25);
+            ctx.fillStyle = '#333333';
+            ctx.fillRect(260, 15, 102, 12);
+            
+            const armorPercent = player.armor / player.maxArmor;
+            ctx.fillStyle = armorPercent > 0.5 ? '#00ff00' : armorPercent > 0.2 ? '#ffff00' : '#ff0000';
+            ctx.fillRect(261, 16, 100 * armorPercent, 10);
+
+            // Weapons
+            ctx.fillStyle = '#ffffff';
+            ctx.fillText(`Oil: ${player.oilSlicks}`, 380, 25);
+            ctx.fillText(`Smoke: ${player.smokeScreens}`, 380, 42);
+
+            // Rapid fire indicator
+            if (player.rapidFire > 0) {
+                ctx.fillStyle = '#ffff00';
+                ctx.fillText('RAPID FIRE!', 500, 25);
+            }
+
+            // Speed indicator
+            ctx.fillStyle = '#ffffff';
+            ctx.fillText(`Speed: ${Math.floor(player.speed * 10)}`, 600, 25);
+        }
+
+        // Game loop
+        function gameLoop() {
+            if (gameState === 'playing') {
+                // Update game state
+                distance += gameSpeed;
+                gameSpeed = Math.min(2 + distance / 5000, 6); // Gradually increase speed
+
+                updatePlayer();
+                updateEnemies();
+                updateBullets();
+                updateGameObjects();
+                updateSpawning();
+                checkCollisions();
+
+                // Clear canvas
+                ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+                // Draw everything
+                drawRoad();
+                drawEnemies();
+                drawPlayer();
+                drawBullets();
+                drawEffects();
+                drawHUD();
+            }
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Game state management
+        function gameOver() {
+            gameState = 'gameOver';
+            document.getElementById('finalScore').textContent = score;
+            document.getElementById('finalDistance').textContent = Math.floor(distance);
+            document.getElementById('gameOverScreen').style.display = 'block';
+        }
+
+        function restartGame() {
+            // Reset game state
+            gameState = 'playing';
+            score = 0;
+            distance = 0;
+            gameSpeed = 2;
+            roadOffset = 0;
+
+            // Reset player
+            player.x = CANVAS_WIDTH / 2;
+            player.y = CANVAS_HEIGHT - 100;
+            player.speed = 0;
+            player.armor = 100;
+            player.oilSlicks = 3;
+            player.smokeScreens = 2;
+            player.rapidFire = 0;
+            player.invulnerable = 0;
+
+            // Clear arrays
+            bullets = [];
+            enemies = [];
+            enemyBullets = [];
+            explosions = [];
+            powerUps = [];
+            roadHazards = [];
+            particles = [];
+
+            // Reset timers
+            enemySpawnTimer = 0;
+            hazardSpawnTimer = 0;
+            lastFireTime = 0;
+
+            // Hide game over screen
+            document.getElementById('gameOverScreen').style.display = 'none';
+        }
+
+        // Touch controls for mobile
+        let touchStartX = 0;
+        let touchStartY = 0;
+
+        canvas.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            const touch = e.touches[0];
+            touchStartX = touch.clientX;
+            touchStartY = touch.clientY;
+        });
+
+        canvas.addEventListener('touchmove', (e) => {
+            e.preventDefault();
+            const touch = e.touches[0];
+            const deltaX = touch.clientX - touchStartX;
+            const deltaY = touch.clientY - touchStartY;
+
+            // Steering
+            if (Math.abs(deltaX) > 10) {
+                if (deltaX > 0) {
+                    keys['arrowright'] = true;
+                    keys['arrowleft'] = false;
+                } else {
+                    keys['arrowleft'] = true;
+                    keys['arrowright'] = false;
+                }
+            } else {
+                keys['arrowleft'] = false;
+                keys['arrowright'] = false;
+            }
+
+            // Acceleration/braking
+            if (Math.abs(deltaY) > 10) {
+                if (deltaY < 0) {
+                    keys['arrowup'] = true;
+                    keys['arrowdown'] = false;
+                } else {
+                    keys['arrowdown'] = true;
+                    keys['arrowup'] = false;
+                }
+            } else {
+                keys['arrowup'] = false;
+                keys['arrowdown'] = false;
+            }
+        });
+
+        canvas.addEventListener('touchend', (e) => {
+            e.preventDefault();
+            keys['arrowleft'] = false;
+            keys['arrowright'] = false;
+            keys['arrowup'] = false;
+            keys['arrowdown'] = false;
+        });
+
+        canvas.addEventListener('touchstart', (e) => {
+            // Tap to fire
+            if (e.touches.length === 1) {
+                fireWeapon();
+            }
+        });
+
+        // Resize canvas for mobile
+        function resizeCanvas() {
+            const container = document.getElementById('gameContainer');
+            const containerWidth = container.clientWidth;
+            const containerHeight = container.clientHeight;
+            
+            if (window.innerWidth <= 600) {
+                canvas.width = containerWidth;
+                canvas.height = containerHeight;
+                
+                // Adjust game constants for mobile
+                const scaleX = containerWidth / CANVAS_WIDTH;
+                const scaleY = containerHeight / CANVAS_HEIGHT;
+                ctx.scale(scaleX, scaleY);
+            }
+        }
+
+        window.addEventListener('resize', resizeCanvas);
+
+        // Initialize game
+        resizeCanvas();
+        gameLoop();
+
+        // Add some initial enemies for immediate action
+        setTimeout(() => {
+            spawnEnemy();
+        }, 1000);
+
+        setTimeout(() => {
+            spawnEnemy();
+        }, 2000);
+    </script>
+</body>
+</html>
