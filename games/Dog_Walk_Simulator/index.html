@@ -1,0 +1,869 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Isometric Dog Walking Simulator - Refined</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: linear-gradient(135deg, #7AB2DD, #8AE08A); /* Slightly desaturated from original for a softer look */
+            font-family: 'Courier New', monospace;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            overflow: hidden;
+        }
+        
+        #gameContainer {
+            position: relative;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+            border-radius: 8px;
+            overflow: hidden; /* Important for containing the canvas */
+        }
+        
+        canvas {
+            display: block;
+            image-rendering: pixelated;
+            image-rendering: -moz-crisp-edges;
+            image-rendering: crisp-edges;
+        }
+        
+        #hud {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: white;
+            font-size: 16px; /* Slightly larger for readability */
+            text-shadow: 1px 1px 2px black; /* Softer shadow */
+            z-index: 10;
+        }
+        #hud div {
+            margin-bottom: 5px;
+        }
+        
+        #instructions {
+            position: absolute;
+            bottom: 10px;
+            right: 10px;
+            color: white;
+            font-size: 14px; /* Slightly larger */
+            text-shadow: 1px 1px 1px black;
+            text-align: right;
+            z-index: 10;
+        }
+        
+        .start-screen {
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0; /* Full overlay */
+            background-color: rgba(0,0,0,0.6); /* Semi-transparent overlay */
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            color: white;
+            text-shadow: 2px 2px 0px black;
+            z-index: 20;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+        .start-screen h1 {
+            font-size: 2.5em;
+            margin-bottom: 20px;
+        }
+        .start-screen p {
+            font-size: 1.2em;
+            margin-bottom: 15px;
+        }
+    </style>
+</head>
+<body>
+    <div id="gameContainer">
+        <canvas id="gameCanvas" width="800" height="600"></canvas>
+        <div id="hud">
+            <div>Happiness: <span id="happiness">100</span></div>
+            <div>Score: <span id="score">0</span></div>
+            <div>Poops Collected: <span id="poops">0</span></div>
+        </div>
+        <div id="instructions">
+            Arrow Keys/WASD: Move<br>
+            Space/E: Interact<br>
+            R: Restart
+        </div>
+        <div id="startScreen" class="start-screen">
+            <h1>🐕 Dog Walking Simulator 🐕</h1>
+            <p>Keep your dog happy by walking and cleaning up!</p>
+            <p>Press SPACE to Start</p>
+        </div>
+    </div>
+
+    <script>
+        // Game constants
+        const CANVAS_WIDTH = 800;
+        const CANVAS_HEIGHT = 600;
+        const TILE_SIZE = 32; // This is the base for isometric projection width
+        const ISO_TILE_WIDTH_HALF = TILE_SIZE; // For a diamond shape where width = 2 * height
+        const ISO_TILE_HEIGHT_HALF = TILE_SIZE / 2;
+
+        const WORLD_SIZE = 30;
+        
+        // Game states
+        const GAME_STATES = {
+            START: 'start',
+            PLAYING: 'playing',
+            GAME_OVER: 'game_over'
+        };
+        
+        // Initialize canvas and context
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        ctx.imageSmoothingEnabled = false;
+        
+        // Game state
+        let gameState = GAME_STATES.START;
+        let camera = { x: 0, y: 0 }; // Camera's ISO position
+        let animationFrame = 0; // Global animation counter for things like tail wag
+        let gameTime = 0; // General game timer
+        let lastPoopTime = 0;
+
+        // Input handling
+        const keys = {};
+        const keysPressedThisFrame = {}; // Tracks single press per frame
+        
+        // Isometric conversion functions
+        function worldToIso(worldX, worldY) {
+            const isoX = (worldX - worldY) * ISO_TILE_WIDTH_HALF;
+            const isoY = (worldX + worldY) * ISO_TILE_HEIGHT_HALF;
+            return { x: isoX, y: isoY };
+        }
+        
+        // Sprite drawing functions (Adapted from previous more detailed version)
+        function drawPlayer(worldX, worldY, animFrame) {
+            const iso = worldToIso(worldX, worldY);
+            const screenX = iso.x - camera.x + CANVAS_WIDTH / 2;
+            const screenY = iso.y - camera.y + CANVAS_HEIGHT / 2 - 16; // Player drawn slightly higher
+
+            const isMoving = player.moving; // Access player's moving state
+            const animationToggle = (Math.floor(animFrame / 10) % 2 === 0); // Simple 2-frame animation
+
+            // Body
+            ctx.fillStyle = '#4A90E2'; // Blue shirt
+            ctx.fillRect(screenX - 6, screenY - 12, 12, 16);
+            
+            // Head
+            ctx.fillStyle = '#FDBE8A'; // Skin tone
+            ctx.fillRect(screenX - 4, screenY - 20, 8, 8);
+            
+            // Hair
+            ctx.fillStyle = '#6A4C30'; // Dark Brown Hair
+            ctx.fillRect(screenX - 5, screenY - 23, 10, 5);
+            
+            // Legs (darker blue pants)
+            ctx.fillStyle = '#345F8E';
+            if (isMoving) {
+                if (animationToggle) {
+                    ctx.fillRect(screenX - 5, screenY + 4, 4, 8); // Left leg
+                    ctx.fillRect(screenX + 1, screenY + 4, 4, 7); // Right leg (shorter)
+                } else {
+                    ctx.fillRect(screenX - 5, screenY + 4, 4, 7);
+                    ctx.fillRect(screenX + 1, screenY + 4, 4, 8);
+                }
+            } else {
+                 ctx.fillRect(screenX - 5, screenY + 4, 4, 8);
+                 ctx.fillRect(screenX + 1, screenY + 4, 4, 8);
+            }
+            
+            // Arms (skin tone, simple animation)
+            ctx.fillStyle = '#FDBE8A';
+            if (isMoving && animationToggle) {
+                ctx.fillRect(screenX - 9, screenY - 10, 3, 10); // Left arm back
+                ctx.fillRect(screenX + 6, screenY - 10, 3, 9);  // Right arm front
+            } else if (isMoving) {
+                ctx.fillRect(screenX - 9, screenY - 10, 3, 9);
+                ctx.fillRect(screenX + 6, screenY - 10, 3, 10);
+            } else {
+                ctx.fillRect(screenX - 9, screenY - 10, 3, 10);
+                ctx.fillRect(screenX + 6, screenY - 10, 3, 10);
+            }
+        }
+        
+        function drawDog(worldX, worldY, animFrame) {
+            const iso = worldToIso(worldX, worldY);
+            const screenX = iso.x - camera.x + CANVAS_WIDTH / 2;
+            const screenY = iso.y - camera.y + CANVAS_HEIGHT / 2 - 8; // Dog drawn slightly higher
+
+            const isMoving = dog.moving; // Access dog's moving state
+            const animationToggle = (Math.floor(animFrame / 8) % 2 === 0); // Faster animation for dog
+
+            // Body (Golden brown)
+            ctx.fillStyle = '#DAA520'; 
+            ctx.fillRect(screenX - 10, screenY - 8, 20, 10); // Main body
+
+            // Head (Slightly lighter or same)
+            ctx.fillStyle = '#E4B45A';
+            ctx.fillRect(screenX + 5, screenY - 14, 9, 9); // Head positioned to one side
+
+            // Ears (Darker brown)
+            ctx.fillStyle = '#A0522D';
+            ctx.fillRect(screenX + 6, screenY - 16, 3, 6); // Ear 1
+            ctx.fillRect(screenX + 11, screenY - 16, 3, 5); // Ear 2
+
+            // Nose (Black)
+            ctx.fillStyle = '#000000';
+            ctx.fillRect(screenX + 12, screenY - 10, 2, 2);
+
+            // Eyes (Black)
+            ctx.fillRect(screenX + 7, screenY - 12, 1, 1);
+            ctx.fillRect(screenX + 10, screenY - 12, 1, 1);
+            
+            // Tail (Wagging)
+            ctx.fillStyle = '#DAA520';
+            const tailWagOffset = Math.sin(animationFrame * 0.2) * 3; // Use global animationFrame for continuous wag
+            ctx.save();
+            ctx.translate(screenX - 12, screenY - 5);
+            ctx.rotate(tailWagOffset * 0.1); // Slight rotation
+            ctx.fillRect(0, 0, 5, 3);
+            ctx.restore();
+            
+            // Legs (Darker brown)
+            ctx.fillStyle = '#B8860B';
+            if (isMoving) {
+                if (animationToggle) {
+                    ctx.fillRect(screenX - 7, screenY + 2, 3, 5); // Front left
+                    ctx.fillRect(screenX + 4, screenY + 2, 3, 4); // Front right
+                    ctx.fillRect(screenX - 5, screenY + 2, 3, 4); // Back left
+                    ctx.fillRect(screenX + 2, screenY + 2, 3, 5); // Back right
+                } else {
+                    ctx.fillRect(screenX - 7, screenY + 2, 3, 4);
+                    ctx.fillRect(screenX + 4, screenY + 2, 3, 5);
+                    ctx.fillRect(screenX - 5, screenY + 2, 3, 5);
+                    ctx.fillRect(screenX + 2, screenY + 2, 3, 4);
+                }
+            } else { // Standing still legs
+                ctx.fillRect(screenX - 6, screenY + 2, 3, 5);
+                ctx.fillRect(screenX + 3, screenY + 2, 3, 5);
+                ctx.fillRect(screenX - 4, screenY + 2, 3, 5);
+                ctx.fillRect(screenX + 1, screenY + 2, 3, 5);
+            }
+        }
+        
+        function drawLeash(playerWorldX, playerWorldY, dogWorldX, dogWorldY) {
+            const playerIso = worldToIso(playerWorldX, playerWorldY);
+            const dogIso = worldToIso(dogWorldX, dogWorldY);
+            
+            const playerScreenX = playerIso.x - camera.x + CANVAS_WIDTH / 2;
+            const playerScreenY = playerIso.y - camera.y + CANVAS_HEIGHT / 2 - 8; // Leash attaches mid-player
+            
+            const dogScreenX = dogIso.x - camera.x + CANVAS_WIDTH / 2;
+            const dogScreenY = dogIso.y - camera.y + CANVAS_HEIGHT / 2 - 2; // Leash attaches mid-dog
+            
+            ctx.strokeStyle = '#654321'; // Dark brown leash
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(playerScreenX, playerScreenY);
+            // Add a slight sag to the leash
+            const midX = (playerScreenX + dogScreenX) / 2;
+            const midY = (playerScreenY + dogScreenY) / 2 + 10; // Sag amount
+            ctx.quadraticCurveTo(midX, midY, dogScreenX, dogScreenY);
+            ctx.stroke();
+        }
+        
+        function drawHydrant(worldX, worldY) {
+            const iso = worldToIso(worldX, worldY);
+            const screenX = iso.x - camera.x + CANVAS_WIDTH / 2;
+            const screenY = iso.y - camera.y + CANVAS_HEIGHT / 2; // Base of hydrant on tile
+            
+            // Base
+            ctx.fillStyle = '#A0A0A0'; // Grey
+            ctx.fillRect(screenX - 5, screenY - 10, 10, 10); // Wider base
+            
+            // Body
+            ctx.fillStyle = '#FF4136'; // Red
+            ctx.fillRect(screenX - 4, screenY - 20, 8, 10);
+            
+            // Top cap
+            ctx.fillStyle = '#D0D0D0'; // Lighter Grey
+            ctx.fillRect(screenX - 5, screenY - 23, 10, 3);
+
+            // Side valves (simplified)
+            ctx.fillStyle = '#FFDC00'; // Yellow
+            ctx.fillRect(screenX - 7, screenY - 15, 3, 3);
+            ctx.fillRect(screenX + 4, screenY - 15, 3, 3);
+        }
+        
+        function drawTree(worldX, worldY) {
+            const iso = worldToIso(worldX, worldY);
+            const screenX = iso.x - camera.x + CANVAS_WIDTH / 2;
+            const screenY = iso.y - camera.y + CANVAS_HEIGHT / 2; // Base of tree on tile
+
+            // Trunk
+            ctx.fillStyle = '#8B4513'; // SaddleBrown
+            ctx.fillRect(screenX - 4, screenY - 20, 8, 20); // Trunk height
+            
+            // Leaves (more rounded)
+            ctx.fillStyle = '#2E8B57'; // SeaGreen
+            ctx.beginPath();
+            ctx.arc(screenX, screenY - 30, 18, 0, Math.PI * 2); // Main canopy
+            ctx.fill();
+            ctx.fillStyle = '#3CB371'; // MediumSeaGreen for highlight
+            ctx.beginPath();
+            ctx.arc(screenX - 5, screenY - 35, 10, 0, Math.PI * 2);
+            ctx.fill();
+        }
+        
+        function drawPoop(worldX, worldY) {
+            const iso = worldToIso(worldX, worldY);
+            const screenX = iso.x - camera.x + CANVAS_WIDTH / 2;
+            const screenY = iso.y - camera.y + CANVAS_HEIGHT / 2 + 3; // Poop sits on ground
+
+            ctx.fillStyle = '#6F4E37'; // Coffee brown
+            // Multiple small ovals/rects for a more "poop-like" shape
+            ctx.beginPath();
+            ctx.ellipse(screenX, screenY, 5, 3, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.ellipse(screenX + 3, screenY - 1, 4, 2.5, Math.PI / 4, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = '#5C3317'; // Darker shade for a little depth
+            ctx.beginPath();
+            ctx.ellipse(screenX - 2, screenY + 1, 3, 2, -Math.PI / 4, 0, Math.PI * 2);
+            ctx.fill();
+        }
+        
+        function drawTile(worldX, worldY, type) {
+            const iso = worldToIso(worldX, worldY);
+            const screenX = iso.x - camera.x + CANVAS_WIDTH / 2;
+            const screenY = iso.y - camera.y + CANVAS_HEIGHT / 2;
+            
+            ctx.beginPath();
+            ctx.moveTo(screenX, screenY - ISO_TILE_HEIGHT_HALF);
+            ctx.lineTo(screenX + ISO_TILE_WIDTH_HALF, screenY);
+            ctx.lineTo(screenX, screenY + ISO_TILE_HEIGHT_HALF);
+            ctx.lineTo(screenX - ISO_TILE_WIDTH_HALF, screenY);
+            ctx.closePath();
+            
+            let baseColor, detailColor;
+            if (type === 'grass') {
+                baseColor = '#90EE90'; // LightGreen
+                detailColor = '#82D882'; // Slightly darker
+            } else { // Pavement
+                baseColor = '#C0C0C0'; // Silver
+                detailColor = '#B0B0B0'; // Slightly darker
+            }
+            ctx.fillStyle = baseColor;
+            ctx.fill();
+            
+            // Simple texture/detail
+            ctx.fillStyle = detailColor;
+            for(let i=0; i<3; i++) {
+                ctx.fillRect(
+                    screenX - ISO_TILE_WIDTH_HALF + Math.random() * ISO_TILE_WIDTH_HALF*1.8,
+                    screenY - ISO_TILE_HEIGHT_HALF + Math.random() * ISO_TILE_HEIGHT_HALF*1.8,
+                    2, 2
+                );
+            }
+            
+            ctx.strokeStyle = '#777'; // Darker grey outline
+            ctx.lineWidth = 1;
+            ctx.stroke();
+        }
+        
+        function drawHeart(worldX, worldY) {
+            const iso = worldToIso(worldX, worldY);
+            const screenX = iso.x - camera.x + CANVAS_WIDTH / 2;
+            // Position heart above dog's head
+            const screenY = iso.y - camera.y + CANVAS_HEIGHT / 2 - 8 - 20; // dog's height offset - further up
+            
+            ctx.fillStyle = 'rgba(255, 105, 180, 0.8)'; // Pink with some transparency
+            ctx.strokeStyle = 'rgba(200, 80, 150, 0.9)';
+            ctx.lineWidth = 1;
+
+            ctx.beginPath();
+            ctx.moveTo(screenX, screenY + 2);
+            ctx.bezierCurveTo(screenX, screenY - 1, screenX - 4, screenY - 3, screenX - 4, screenY - 1);
+            ctx.bezierCurveTo(screenX - 4, screenY + 2, screenX, screenY + 3, screenX, screenY + 5);
+            ctx.bezierCurveTo(screenX, screenY + 3, screenX + 4, screenY + 2, screenX + 4, screenY - 1);
+            ctx.bezierCurveTo(screenX + 4, screenY - 3, screenX, screenY - 1, screenX, screenY + 2);
+            ctx.fill();
+            ctx.stroke();
+        }
+        
+        // Game objects
+        class Player {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
+                this.targetX = x; // Current tile coords
+                this.targetY = y;
+                this.animFrame = 0;
+                this.moving = false;
+                this.moveTimer = 0;
+                this.MOVE_DELAY = 8; // Frames to wait before next move if key is held
+            }
+            
+            update() {
+                this.moving = false; // Assume not moving until a key press is processed
+
+                if (this.moveTimer > 0) {
+                    this.moveTimer--;
+                } else {
+                    let intendedMoveX = this.x;
+                    let intendedMoveY = this.y;
+                    let tryingToMove = false;
+
+                    if (keys['ArrowUp'] || keys['KeyW']) {
+                        intendedMoveY = Math.max(0, this.y - 1);
+                        tryingToMove = true;
+                    } else if (keys['ArrowDown'] || keys['KeyS']) {
+                        intendedMoveY = Math.min(WORLD_SIZE - 1, this.y + 1);
+                        tryingToMove = true;
+                    } else if (keys['ArrowLeft'] || keys['KeyA']) {
+                        intendedMoveX = Math.max(0, this.x - 1);
+                        tryingToMove = true;
+                    } else if (keys['ArrowRight'] || keys['KeyD']) {
+                        intendedMoveX = Math.min(WORLD_SIZE - 1, this.x + 1);
+                        tryingToMove = true;
+                    }
+                    
+                    if (tryingToMove) {
+                        this.moving = true; // Indicate an attempt to move for animation
+                        // Check for collision at the intended new position
+                        if (!this.checkCollision(intendedMoveX, intendedMoveY)) {
+                            this.x = intendedMoveX;
+                            this.y = intendedMoveY;
+                        }
+                        // Set cooldown regardless of collision, to make movement feel deliberate
+                        this.moveTimer = this.MOVE_DELAY;
+                    }
+                }
+                
+                // Update targetX/Y to current position if not actively trying to move
+                // This prevents player snapping if key released mid-cooldown
+                this.targetX = this.x;
+                this.targetY = this.y;
+
+                if (this.moving) { // Animate if trying to move
+                    this.animFrame++;
+                }
+                
+                const iso = worldToIso(this.x, this.y);
+                camera.x = iso.x;
+                camera.y = iso.y;
+            }
+            
+            checkCollision(x, y) {
+                for (let obstacle of world.obstacles) {
+                    if (obstacle.x === x && obstacle.y === y) {
+                        return true;
+                    }
+                }
+                return false;
+            }
+        }
+        
+        class Dog {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
+                this.animFrame = 0;
+                this.maxLeashDistance = 4; // Increased slightly
+                this.happiness = 100;
+                this.interestCooldown = 0;
+                this.showHeart = 0;
+                this.moving = false;
+                this.moveTimer = 0; // Dog also has a move timer for smoother following
+                this.MOVE_DELAY = 10; // Dog moves a bit slower/more deliberately than player
+            }
+            
+            update(playerX, playerY) {
+                this.moving = false; // Reset moving state
+                if (this.moveTimer > 0) {
+                    this.moveTimer--;
+                } else {
+                    const dxToPlayer = playerX - this.x;
+                    const dyToPlayer = playerY - this.y;
+                    const distToPlayer = Math.sqrt(dxToPlayer * dxToPlayer + dyToPlayer * dyToPlayer);
+
+                    let targetX = this.x;
+                    let targetY = this.y;
+                    let pulledByLeash = false;
+
+                    if (distToPlayer > this.maxLeashDistance) {
+                        // Move towards player along the leash line more directly
+                        const pullRatio = (distToPlayer - (this.maxLeashDistance -1)) / distToPlayer;
+                        targetX = this.x + dxToPlayer * pullRatio;
+                        targetY = this.y + dyToPlayer * pullRatio;
+                        pulledByLeash = true;
+                    } else {
+                        // Check for nearby interests only if not being pulled hard
+                         if (this.interestCooldown === 0) {
+                            for (let hydrant of world.hydrants) {
+                                const distToHydrant = Math.abs(this.x - hydrant.x) + Math.abs(this.y - hydrant.y);
+                                if (distToHydrant <= 2) { // Dog gets interested if 2 tiles away
+                                    targetX = hydrant.x;
+                                    targetY = hydrant.y;
+                                    this.interestCooldown = 120; // Cooldown for interest check
+                                    break;
+                                }
+                            }
+                        }
+                         // If no interest, or on cooldown, tend to stay near player but not rigidly
+                        if (targetX === this.x && targetY === this.y && distToPlayer > 1.5) { // if not interested and a bit far
+                           targetX = this.x + Math.sign(dxToPlayer);
+                           targetY = this.y + Math.sign(dyToPlayer);
+                        }
+                    }
+                     
+                    // Actual move towards targetX, targetY
+                    const moveDx = targetX - this.x;
+                    const moveDy = targetY - this.y;
+
+                    let finalMoveX = this.x;
+                    let finalMoveY = this.y;
+
+                    if (Math.abs(moveDx) > 0.1 || Math.abs(moveDy) > 0.1) { // Threshold to move
+                        this.moving = true;
+                        if (Math.abs(moveDx) > Math.abs(moveDy)) {
+                            finalMoveX += Math.sign(moveDx);
+                        } else if (Math.abs(moveDy) > 0.1) { // Check specifically for dy to allow diagonal-ish movement
+                            finalMoveY += Math.sign(moveDy);
+                        }
+                        // If couldn't move in primary direction, try secondary (simple pathfinding)
+                        if (this.checkCollision(finalMoveX, this.y) && finalMoveX !== this.x) {
+                            finalMoveX = this.x; // Reset X if collision
+                            if (Math.abs(moveDy) > 0.1 && !this.checkCollision(this.x, this.y + Math.sign(moveDy))) {
+                                finalMoveY = this.y + Math.sign(moveDy); // Try Y
+                            } else {
+                                finalMoveY = this.y; // Reset Y
+                            }
+                        } else if (this.checkCollision(this.x, finalMoveY) && finalMoveY !== this.y) {
+                            finalMoveY = this.y; // Reset Y if collision
+                             if (Math.abs(moveDx) > 0.1 && !this.checkCollision(this.x + Math.sign(moveDx), this.y)) {
+                                finalMoveX = this.x + Math.sign(moveDx); // Try X
+                            } else {
+                                finalMoveX = this.x; // Reset X
+                            }
+                        }
+
+
+                        if (!this.checkCollision(finalMoveX, finalMoveY)) {
+                            this.x = Math.round(finalMoveX);
+                            this.y = Math.round(finalMoveY);
+                        } else if (!this.checkCollision(this.x + Math.sign(moveDx), this.y) && Math.sign(moveDx) !==0) { // Try X only
+                            this.x += Math.sign(moveDx);
+                        } else if (!this.checkCollision(this.x, this.y + Math.sign(moveDy)) && Math.sign(moveDy) !==0) { // Try Y only
+                            this.y += Math.sign(moveDy);
+                        }
+                        this.moveTimer = this.MOVE_DELAY;
+                         if (pulledByLeash) this.moveTimer = Math.floor(this.MOVE_DELAY / 2); // Move faster if pulled by leash
+                    }
+                }
+
+                if (this.moving) {
+                    this.animFrame++;
+                }
+                this.interestCooldown = Math.max(0, this.interestCooldown - 1);
+                this.showHeart = Math.max(0, this.showHeart - 1);
+                
+                if (animationFrame % 300 === 0 && this.happiness > 0) { // Global animation frame for slow decay
+                    this.happiness--;
+                }
+            }
+            
+            checkCollision(x, y) {
+                // Check world boundaries
+                if (x < 0 || x >= WORLD_SIZE || y < 0 || y >= WORLD_SIZE) return true;
+                for (let obstacle of world.obstacles) {
+                    if (obstacle.x === Math.round(x) && obstacle.y === Math.round(y)) {
+                        return true;
+                    }
+                }
+                return false;
+            }
+            
+            interact() {
+                for (let hydrant of world.hydrants) {
+                    const distance = Math.abs(this.x - hydrant.x) + Math.abs(this.y - hydrant.y);
+                    if (distance <= 1.5) { // Player also needs to be near dog/hydrant
+                         const playerDistanceToHydrant = Math.abs(player.x - hydrant.x) + Math.abs(player.y - hydrant.y);
+                         if(playerDistanceToHydrant <= 2) {
+                            this.happiness = Math.min(100, this.happiness + 15);
+                            this.showHeart = 90; // Show heart for 1.5 seconds (60fps)
+                            game.score += 5;
+                            this.interestCooldown = 200; // Dog won't be interested again for a bit
+                            return true;
+                        }
+                    }
+                }
+                return false;
+            }
+        }
+        
+        class World {
+            constructor() {
+                this.tiles = [];
+                this.hydrants = [];
+                this.obstacles = []; // Trees mainly
+                this.poops = [];
+                this.generateWorld();
+            }
+            
+            generateWorld() {
+                for (let x = 0; x < WORLD_SIZE; x++) {
+                    this.tiles[x] = [];
+                    for (let y = 0; y < WORLD_SIZE; y++) {
+                        this.tiles[x][y] = Math.random() > 0.4 ? 'grass' : 'pavement';
+                    }
+                }
+                
+                for (let i = 0; i < 7; i++) { // More hydrants
+                    this.hydrants.push({
+                        x: Math.floor(Math.random() * WORLD_SIZE),
+                        y: Math.floor(Math.random() * WORLD_SIZE)
+                    });
+                }
+                
+                for (let i = 0; i < 12; i++) { // More trees
+                    const treeX = Math.floor(Math.random() * WORLD_SIZE);
+                    const treeY = Math.floor(Math.random() * WORLD_SIZE);
+                    // Avoid spawning on hydrants
+                    if (!this.hydrants.some(h => h.x === treeX && h.y === treeY)) {
+                         this.obstacles.push({ x: treeX, y: treeY, type: 'tree' });
+                    }
+                }
+            }
+            
+            addPoop(x, y) {
+                // Don't add poop on an obstacle
+                if (!world.obstacles.some(obs => obs.x === x && obs.y === y)) {
+                     this.poops.push({ x, y, age: 0 });
+                }
+            }
+            
+            removePoop(poopInstance) {
+                this.poops = this.poops.filter(p => p !== poopInstance);
+            }
+        }
+        
+        // Game state object
+        const game = {
+            score: 0,
+            poopsCollected: 0
+        };
+        
+        const world = new World();
+        const player = new Player(Math.floor(WORLD_SIZE / 2), Math.floor(WORLD_SIZE / 2));
+        const dog = new Dog(player.x - 1, player.y);
+        
+        document.addEventListener('keydown', (e) => {
+            keys[e.code] = true;
+            // Only set keysPressedThisFrame if it's not already set for this frame (prevents re-triggering)
+            if (!keysPressedThisFrame[e.code]) {
+                 keysPressedThisFrame[e.code] = true;
+            }
+        });
+        
+        document.addEventListener('keyup', (e) => {
+            keys[e.code] = false;
+        });
+        
+        function handleInput() {
+            if (gameState === GAME_STATES.START) {
+                if (keysPressedThisFrame['Space']) {
+                    gameState = GAME_STATES.PLAYING;
+                    document.getElementById('startScreen').style.display = 'none';
+                }
+            } else if (gameState === GAME_STATES.PLAYING) {
+                if (keysPressedThisFrame['Space'] || keysPressedThisFrame['KeyE']) {
+                    if (dog.interact()) {
+                        // Interaction successful (e.g. with hydrant)
+                    } else {
+                        // If no hydrant interaction, check for poop collection
+                        for (let poop of world.poops) {
+                            const distance = Math.abs(player.x - poop.x) + Math.abs(player.y - poop.y);
+                            if (distance <= 1) { // Player must be on or adjacent to poop
+                                world.removePoop(poop);
+                                game.score += 10;
+                                game.poopsCollected++;
+                                dog.happiness = Math.min(100, dog.happiness + 8);
+                                break; 
+                            }
+                        }
+                    }
+                }
+                
+                if (keysPressedThisFrame['KeyR']) {
+                    restartGame();
+                }
+            } else if (gameState === GAME_STATES.GAME_OVER) {
+                if (keysPressedThisFrame['KeyR'] || keysPressedThisFrame['Space']) {
+                    restartGame();
+                    gameState = GAME_STATES.START; // Go back to start screen
+                    document.getElementById('startScreen').style.display = 'flex';
+                }
+            }
+        }
+        
+        function update() {
+            if (gameState === GAME_STATES.PLAYING) {
+                player.update();
+                dog.update(player.x, player.y);
+                
+                gameTime++;
+                animationFrame++; // Global animation frame for things like tail wag
+                
+                // Spawn poop occasionally
+                if (gameTime - lastPoopTime > (450 + Math.random() * 400)) { // Adjusted poop interval
+                    world.addPoop(Math.round(dog.x), Math.round(dog.y));
+                    lastPoopTime = gameTime;
+                    dog.happiness = Math.max(0, dog.happiness - 2); // Small happiness dip for pooping
+                }
+                
+                if (dog.happiness <= 0) {
+                    gameState = GAME_STATES.GAME_OVER;
+                }
+            }
+        }
+        
+        function render() {
+            ctx.fillStyle = '#7AB2DD'; // Match body background or use a sky color
+            ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+            
+            if (gameState === GAME_STATES.PLAYING || gameState === GAME_STATES.GAME_OVER) {
+                let drawables = [];
+
+                // Add tiles
+                for (let r = 0; r < WORLD_SIZE; r++) {
+                    for (let c = 0; c < WORLD_SIZE; c++) {
+                        drawables.push({
+                            worldX: c, worldY: r, type: 'tile', tileType: world.tiles[c][r],
+                            depth: c + r, 
+                            draw: () => drawTile(c, r, world.tiles[c][r])
+                        });
+                    }
+                }
+
+                // Add static world objects (hydrants, trees)
+                world.hydrants.forEach(h => drawables.push({
+                    worldX: h.x, worldY: h.y, type: 'hydrant',
+                    depth: h.x + h.y + 0.1, // Slightly above tile
+                    draw: () => drawHydrant(h.x, h.y)
+                }));
+                world.obstacles.forEach(o => drawables.push({
+                    worldX: o.x, worldY: o.y, type: 'tree',
+                    depth: o.x + o.y + 0.1,
+                    draw: () => drawTree(o.x, o.y)
+                }));
+                world.poops.forEach(p => drawables.push({
+                    worldX: p.x, worldY: p.y, type: 'poop',
+                    depth: p.x + p.y + 0.2, // Poop on top of objects on same tile
+                    draw: () => drawPoop(p.x, p.y)
+                }));
+
+                // Add dog and player
+                drawables.push({
+                    worldX: dog.x, worldY: dog.y, type: 'dog',
+                    depth: dog.x + dog.y + 0.3, // Dog above most things
+                    draw: () => dog.draw() // Use dog's own draw method which calls drawDog
+                });
+                 if (dog.showHeart > 0) { // Draw heart specifically if needed
+                    drawables.push({
+                        worldX: dog.x, worldY: dog.y, type: 'heart',
+                        depth: dog.x + dog.y + 0.5, // Heart on top of dog
+                        draw: () => drawHeart(dog.x, dog.y)
+                    });
+                }
+
+                drawables.push({
+                    worldX: player.x, worldY: player.y, type: 'player',
+                    depth: player.x + player.y + 0.4, // Player above dog if on same tile and similar depth
+                    draw: () => player.draw() // Use player's own draw method
+                });
+                
+                // Sort all drawables by depth
+                drawables.sort((a, b) => a.depth - b.depth);
+                
+                // Draw everything
+                drawables.forEach(item => item.draw());
+
+                // Draw leash on top of everything else
+                drawLeash(player.x, player.y, dog.x, dog.y);
+
+
+            }
+            
+            if (gameState === GAME_STATES.GAME_OVER) {
+                ctx.fillStyle = 'rgba(0,0,0,0.7)';
+                ctx.fillRect(0,0,CANVAS_WIDTH, CANVAS_HEIGHT);
+                ctx.fillStyle = 'white';
+                ctx.font = 'bold 36px Courier New';
+                ctx.textAlign = 'center';
+                ctx.fillText('Game Over!', CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 - 60);
+                ctx.font = '24px Courier New';
+                ctx.fillText(`Final Score: ${game.score}`, CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 - 10);
+                ctx.fillText(`Poops Collected: ${game.poopsCollected}`, CANVAS_WIDTH/2, CANVAS_HEIGHT / 2 + 30);
+                ctx.font = '20px Courier New';
+                ctx.fillText('Press R or SPACE to Restart', CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 + 80);
+            }
+        }
+        
+        function restartGame() {
+            game.score = 0;
+            game.poopsCollected = 0;
+            gameTime = 0;
+            lastPoopTime = 0;
+            animationFrame = 0;
+            
+            player.x = Math.floor(WORLD_SIZE / 2);
+            player.y = Math.floor(WORLD_SIZE / 2);
+            player.targetX = player.x;
+            player.targetY = player.y;
+            player.moveTimer = 0;
+
+            dog.x = player.x - 1;
+            dog.y = player.y;
+            dog.happiness = 100;
+            dog.interestCooldown = 0;
+            dog.showHeart = 0;
+            dog.moveTimer = 0;
+            
+            world.poops = [];
+            // Camera will be updated by player.update() in the next frame
+            if (gameState === GAME_STATES.GAME_OVER) { // Only change to playing if coming from game over
+                 gameState = GAME_STATES.PLAYING;
+            }
+        }
+        
+        function updateHUD() {
+            document.getElementById('happiness').textContent = dog.happiness;
+            document.getElementById('score').textContent = game.score;
+            document.getElementById('poops').textContent = game.poopsCollected;
+        }
+        
+        function gameLoop() {
+            handleInput();
+            update();
+            render();
+            updateHUD();
+            
+            // Reset keysPressedThisFrame for the next frame
+            for (let key in keysPressedThisFrame) {
+                delete keysPressedThisFrame[key];
+            }
+            
+            requestAnimationFrame(gameLoop);
+        }
+        
+        // Initialize player.draw and dog.draw methods if they are not part of the class
+        // (They are part of the class in your structure, but good to ensure)
+        Player.prototype.draw = function() { drawPlayer(this.x, this.y, this.animFrame); };
+        Dog.prototype.draw = function() { drawDog(this.x, this.y, this.animFrame); };
+
+
+        gameLoop();
+    </script>
+</body>
+</html>
