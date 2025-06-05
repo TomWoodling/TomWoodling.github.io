@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Super Mario Arena</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background-color: #111;
+            font-family: 'Press Start 2P', sans-serif;
+            color: white;
+            overflow: hidden;
+        }
+        @font-face {
+            font-family: 'Press Start 2P';
+            src: url('https://fonts.gstatic.com/s/pressstart2p/v14/e3t4euO8T-267oIAQAu6jDQyK3nVivM.woff2') format('woff2');
+        }
+        .game-container {
+            position: relative;
+            border: 4px solid #555;
+            box-shadow: 0 0 20px rgba(0,0,0,0.5), inset 0 0 15px rgba(0,0,0,0.4);
+        }
+        canvas {
+            display: block;
+            background-color: #000000;
+            cursor: pointer;
+        }
+        .ui-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            background-color: rgba(0, 0, 0, 0.7);
+            text-align: center;
+            pointer-events: none;
+        }
+        .ui-screen {
+            pointer-events: all;
+        }
+        h1 {
+            font-size: 3rem;
+            color: #fbd000;
+            text-shadow: 4px 4px 0px #e5320e;
+            margin-bottom: 2rem;
+        }
+        .char-select {
+            display: flex;
+            gap: 2rem;
+            margin-bottom: 2rem;
+        }
+        .char-button {
+            padding: 1rem 2rem;
+            font-size: 1.5rem;
+            font-family: 'Press Start 2P', sans-serif;
+            background-color: #3e84e2;
+            color: white;
+            border: 4px solid white;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .char-button:hover {
+            background-color: #559ef3;
+            transform: translateY(-4px);
+        }
+        #hud {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            right: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 1.5rem;
+            text-shadow: 2px 2px 0px #000;
+            pointer-events: none;
+        }
+        #hud-left, #hud-right {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+        }
+        #healthIndicator {
+            width: 32px;
+            height: 32px;
+            background-size: contain;
+            background-repeat: no-repeat;
+            background-position: center;
+        }
+    </style>
+</head>
+<body>
+
+<div class="game-container">
+    <canvas id="gameCanvas" width="800" height="700"></canvas>
+    
+    <div id="hud" class="ui-overlay" style="display: none;">
+        <div id="hud-left">
+            <span id="score">SCORE: 0</span>
+            <div id="healthIndicator"></div>
+        </div>
+        <div id="hud-right">
+            <span id="level">LEVEL: 1</span>
+            <span id="lives">LIVES: 3</span>
+        </div>
+    </div>
+    
+    <div id="startScreen" class="ui-overlay ui-screen">
+        <h1>MARIO ARENA</h1>
+        <h2>CHOOSE YOUR CHARACTER</h2>
+        <div class="char-select">
+            <button class="char-button" data-char="mario">Mario</button>
+            <button class="char-button" data-char="luigi">Luigi</button>
+            <button class="char-button" data-char="peach">Peach</button>
+        </div>
+        <p>Click to move. Use the pipes to escape!</p>
+    </div>
+    
+    <div id="levelCompleteScreen" class="ui-overlay" style="display: none;">
+        <h1 id="levelCompleteText">LEVEL 1 COMPLETE!</h1>
+    </div>
+
+    <div id="gameOverScreen" class="ui-overlay ui-screen" style="display: none;">
+        <h1>GAME OVER</h1>
+        <button id="restartButton" class="char-button">PLAY AGAIN</button>
+    </div>
+</div>
+
+<script>
+// --- Self-Contained Audio using Base64 ---
+const audioAssets = {
+    jump: new Audio("data:audio/wav;base64,UklGRl9vT19XQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YUcAAAC+AQC/AK8AsQCpAJgAfgBwAFgASgA7ACgAGQANAAIA9ADyAO0A7wDxAPQA9gD5AP0AAwEOAR4BOgFAAVcBagF9AYYBigGOAZYBmwGhAagBsgG+AcIBzwHVAdwB5AHtAfoCBgImAisCNgI+AksCXgJpAnICfwKRAp4CoAKtArsCzgLcAvsDAA=="),
+    pipe: new Audio("data:audio/wav;base64,UklGRloBAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YRICAAAAx/f/3u7/1t//uNj/qtn/lLf/gbX/YLD/RLD/NrD/JbD/GbD/EbL/CbP/CbT/EbT/HbX/LbX/RLb/Wrf/fuD/r+X/1vb/7vj//wA="),
+    coin: new Audio("data:audio/wav;base64,UklGRlIAAABXQVZFZm10IBAAAAABAAIARKwAABCxAgAEABAAZGF0YToAAACi9v269f765P2w/cD9DPys/QD+6PzZ/er8Zv7Q/KD9yP2w/bT93P6q/rn+zP4D/0oAigE0A2wEaAYgB6EIKQkPCc8JkAnrChsK4grLCr0Lswu/C8wMKAyYDMENhA46DoUP5Q9FD68QTRAVEHkQmRDREXMRuxHNEd0R+hIvEv8S/hMTE4MTpxPvFDYVehWIFsEW3BcxF9cYNBkZGUgZkBnSGfAahBqgGv4bLBvyHLoeyh9+IAghEiJyJDYkpiZcJ7woICmGKfIqxiuYLJMtAy5TLuAv7DAIMNYyZDPEM+w0qDTINjQ2xDbwN3Q4qDj4Omw7ADs8O/w8mD/UQixDvEQwRPhFlEXgRlxHIEcoSExMUE5QT2hR7FIsUxRUXFc0V8xYdFnYWqRbHFuMXARf3GD0ZQRlMGc0aRhpNGrsbQRvUHcUeFx+AIAMhBSIdInwjQSQ8JXwmNScYKAEpDyoBKwsrcCvQLhgvYS+wMHowzDHeMnwy/jOrND81czcIN5I34jg4OYc6DTsmO788GDz+Pcs+CD9sP+Q/80AcQBpAHUAlQClAKkArQCxALkAxQDJAMsA0wDVANcA2wDgAOIA6ADsAPAFAAAA"),
+    death: new Audio("data:audio/wav;base64,UklGRjwBAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YRIBAACs+f/v9f/I8//A7v/O6P/G5P/N4f/M3f/L2v/N2f/R2P/V1v/c2P/Z2f/R2f/R3P/V4P/P4//L5v/T6v/a7v/s8f/w9f/3+v/5/f////8EAAgADgAcACgANgBEAEwAWgBkAGwAcgB6AIAAggCMAKIAqgC2AMIAywDRANgA4ADqAPIA+AECAQoBEgEcASQBKgEyAToBRAFMAVoBYgFuAXQBfgGIAYoBjgGRAZsBoAGqAbIBugHIAcwB0gHcAfIB/AIHAhMCGwIlAisCMwI/AkcCUgJcAmMCagJyAnwCiwKTApsCpQK/AssC3wLzAv8DCwMVAx8DIwMvAzgDPgNJA1YDXANmA3ADcwN/A4wDmwOgA7MDxwPoA/sECAQeBCQEOgREBHwElATUBP0FRgV4Ba0F0AXxBhEGHwYnBjMGOgZQBlkGagZxBn8GhQaUBpwGoAa6BtAG3QbxBv8HAwcLBxgHJgcrBzsHSwddB3wHhQeNB6cHqwedB78HsAe7B8IHyAfTB9kH4wfrB/EH9wf7CAIIDggcCCYIMgg+CEsIVghmCHYIfgiICIYIkwimCLUIyAjRCNoI5gj2CQUJBwkLCRAJEgkbCSUJLgkzCTsJRQlT"),
+    levelComplete: new Audio("data:audio/wav;base64,UklGRkoDAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YYIDAAC5JS9DJUtSOVElSko6Ti9VOlU1Wj1iPWs9cD54P4BAhECKQZFBnEGoQahBuEGsQb5B0EHaQeZB9kIEQwhECkcLTAxSDUwQUhVUF2cYcBxSHlkgWyFZI1onYilWK2guYy1EL0cyiDOKO4s+k0GUT55RtFK+UsRS1FLYUuxTAlYRVxdbGlwgZCFtImUldiV6K4AwjDRHM4s5lTwKP5RAnUqaU7RSuFLCUshS3FO8U/5T/FQCVQhXCFwDYR1kImcgbSR2K3otcjDDNJk3jTsSPpA8lk6hUaJSxFLCUrZTvFP/U/5WAFQIVgldBmYicyd3KXsrcC94MnI0nTl+O5c/gUCSUpJSmVKgUsVSx1LYU7xT/lP9VgBTAFUGYgdwKXsrcC94MnI0nTl+O5c/gUCSUpJSmVKgUsVSx1LYU7xT/lP/VgBTAFQGZwV2KXsrcC94MnI0nTl+O5c/gUCSUpJSmVKgUsVSx1LYU75T/FP/VgBUAFQGZwV2KnsrdS94MnM0nTl+O5g/gUKSUZJTmlOgUsRTyFLYU71T/lP9VwBTAlUGZgV1KnsrdS55M3M0nTl+O5g/gUKSUZJTmlOgUsRTyFLYU71T/lP9VwBTAlUHZQJzKXsrdS55M3M0nTl+O5k/gkGSUZJTmlOgUsRTyFLYU71T/lP9VwBTAlUHZQJzKXsscC55M3Q0nTl+O5k/gkGSUZJTmlOgUsRTyFLYU75T/FP9VwBTAlUHZQJzKXsscC95M3Q0nTl+O5k/gkGSUZJTmlOgUsRTyFLYU75T/FP+VwBUAlUHZQJzKXsscC95M3Q0nTl+O5k/gkGSUZJTmlOgUsRTyFLYU71T/lP+VgBUAlUHZQJzKXoscC95M3Q0njl+O5k/gkGSUZJTmlOgUsRTyFLYU71T/lP+VgBUAlUHZQJzKXoscS95M3Q0njl+O5k/gkGSUZJTmlOgUsRTyFLYU71T/lP+VwBTAlUHZQJzKXoscS95M3Q0njl+O5k/gkGSUZJTmlOgUsRTyFLYU71T/FP+VwBTAlUHZQJzKXoscS95M3Q0njl+O5k/gkGSUZJTmlOgUsRTyFLYU71T/lP+VwBUAlUHZQJzKXoscS95M3Q0njl+O5k/gkGSUZJTmlOgUsRTyFLYU75T/lP+VwBTAlUHZQJzKXoscS95M3Q0njl+O5k/gkGSUZJTmlOgUsRTyFLYU75T/lP/VwBUAlUHZQJzKXoscS95M3Q0njl+O5k/gkGSUZJTmlOgUsRTyFLYU75T/lP/VwBUAlUHZQJzKXoscS95M3Q0njl+O5k/gkGSUZJTmlOgUsRTyFL"),
+    powerup: new Audio("data:audio/wav;base64,UklGRlAAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAADc/v/9/f/19vX08/Py7+/t6+vn5eXj4eLg3tzb2dnY1tXT09LR0NDPzs7MysrJyMjHw8PBv7+9vLu6uri3tLSxsK+vr62srKupp6elo6GhoaCfn56enp2cnJubm5qampiYl5aVlJSKiop+fn12dXVxcW9vb2xsbGpqamdnZ2RkZGBgX19fXl5dXV1bW1pZWVdXV1RTU1JQUFBPz8/LzMvKycrJyMjHw8PBv7+9vLu6uri3tLSxsK+vr62srKupp6elo6GhoaCfn56enp2cnJubm5qampiYl5aVlJSKiop+fn12dXVxcW9vb2xsbGpqamdnZ2RkZGBgX19fXl5dXV1bW1pZWVdXV1RTU1JQUFBPz8/LzMvKycrJyMjHw8PBv7+9vLu6uri3tLSxsK+vr62srKupp6elo6GhoaCfn56enp2cnJubm5qampiYl5aVlJSKiop+fn12dXVxcW9vb2xsbGpqamdnZ2RkZGBgX19fXl5dXV1bW1pZWVdXV1RTU1JQUFBPz8/LzMvKycrJyMjHw8PBv7+9vLu6uri3tLSxsK+vr62srKupp6elo6GhoaCfn56enp2cnJubm5qampiYl5aVlJSKiop+fn12dXVxcW9vb2xsbGpqamdnZ2RkZGBgX19fXl5dXV1bW1pZWVdXV1RTU1JQUFBPT09PT09QUFBRUVFSUlJTU1NUVFRVVVVWVlZXV1dYWFhZWVlaWlpbW1tcXFxdXV1eXl5fX19gYGBhYWFiYmJjY2NkZGRlZWVmZmbn5+fo6Ojp6enq6urr6+vs7Ozt7e3u7u7v7+/w8PDx8fHy8vLz8/P09PT19fX29vb39/f4+Pj5+fn6+vr7+/v8/Pz9/f3+/v7///8="),
+    starPower: new Audio("data:audio/wav;base64,UklGRqYCAABXQVZFZm10IBAAAAABAAIARKwAABCxAgAEABAAZGF0YYQCAACsZixoKkYxTTlKPU07WkJeTVViSVd4UVlqU1d0VmJuVW9tW3BrYm17ZH+BekWCSYRBhUKHQIpFjEaRRpJIkkmXSp5TsVK6VcxW3Fc3WQ1dE2IdZCFnKG8qey1/MaU1sjq4Pbo/gUaFTYpRis2QRZlPoVGlU6xTrVOxVLdWyFfeWwFZD1wYXA1iG2gpcCxvL3EyhDWaO5M+h0CGSYxNlFGYUqlUq1qsXbRct1zGW+Nb9FwNXQteEWELZxtpL3AthTSSPoRFilSgVbJb+2EWdCRyMnk2iT+aUp9nrmWzcr9whneYfpJ2nIG2er5/x3yagJp0moSle6V8qX6vga6dsJ+1oLehw6iXp6Csoq2ys7i+wcLCw8TFxsjKzc7P0dPV19jb3t/g4uPk5+jp6uvs7e7v8PHy8/T19vf4+fr7/P3+/w==")
+};
+
+function playSound(name) {
+    if (audioAssets[name]) {
+        audioAssets[name].currentTime = 0;
+        audioAssets[name].play().catch(e => {});
+    }
+}
+
+// --- Game Setup ---
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+const hud = document.getElementById('hud');
+const scoreEl = document.getElementById('score');
+const livesEl = document.getElementById('lives');
+const levelEl = document.getElementById('level');
+const healthIndicator = document.getElementById('healthIndicator');
+const startScreen = document.getElementById('startScreen');
+const gameOverScreen = document.getElementById('gameOverScreen');
+const levelCompleteScreen = document.getElementById('levelCompleteScreen');
+const levelCompleteText = document.getElementById('levelCompleteText');
+
+const GAME_STATE = { MENU: 'MENU', PLAYING: 'PLAYING', LEVEL_TRANSITION: 'LEVEL_TRANSITION', GAME_OVER: 'GAME_OVER' };
+let gameState = GAME_STATE.MENU;
+
+// --- Game Variables ---
+let playerCharacter = 'mario';
+let score = 0;
+let lives = 3;
+let level = 1;
+
+// --- Arena Setup ---
+const ARENA_SIZE = 10; // Changed from PYRAMID_ROWS to a square arena
+const CUBE_WIDTH = 64;
+const CUBE_HEIGHT = 32;
+const CUBE_DEPTH = 32;
+const origin = { x: canvas.width / 2, y: 100 }; // Adjusted origin for larger arena
+
+// --- Entity Arrays & Player Object ---
+let player = {};
+let enemies = [];
+let collectibles = [];
+let pipes = [];
+let targetMarker = null;
+
+// --- Timing and Mechanics ---
+let lastTime = 0;
+let lastClickTime = 0;
+const CLICK_COOLDOWN = 100;
+const INVINCIBILITY_DURATION = 10000;
+const TELEPORT_COOLDOWN = 1000; // 1 second cooldown for pipes
+
+// --- Colors and Sprites ---
+const COLORS = {
+    MARIO: { hat: '#ff0000', overalls: '#0000ff', skin: '#fec89c', shoes: '#a0522d' },
+    LUIGI: { hat: '#008000', overalls: '#00008b', skin: '#fec89c', shoes: '#a0522d' },
+    PEACH: { hair: '#ffd700', dress: '#ffc0cb', skin: '#fde6de', jewel: '#0000ff' },
+    GOOMBA: { body: '#8b4513', feet: '#4a2c15' },
+    SPINY: { shell: '#ff0000', spikes: '#ffffff', body: '#ffd700' },
+    CUBE: { top: '#FFDC58', left: '#EAB63F', right: '#D1A137' }
+};
+
+const SPRITES = {
+    mario: { colors: { h: COLORS.MARIO.hat, o: COLORS.MARIO.overalls, s: COLORS.MARIO.skin, f: COLORS.MARIO.shoes }, map: { width: 8, height: 8, pixels: "  hhhh  " + " hhhhhs " + " sssoss " + " sossos " + "  oooo  " + " o o o o" + " f f f f" + "  f   f " } },
+    luigi: { colors: { h: COLORS.LUIGI.hat, o: COLORS.LUIGI.overalls, s: COLORS.LUIGI.skin, f: COLORS.LUIGI.shoes }, map: { width: 8, height: 9, pixels: "   hh   " + "  hhhh  " + "  sssss " + " sssoss " + " sossos " + "  oooo  " + " o o o o" + " f f f f" + "  f   f " } },
+    peach: { colors: { h: COLORS.PEACH.hair, d: COLORS.PEACH.dress, s: COLORS.PEACH.skin, j: COLORS.PEACH.jewel }, map: { width: 8, height: 8, pixels: " hhhhhh " + "hhhhhhhh" + "h ss s h" + "  sjs s " + "  dddd  " + " dddddd " + "dddddddd" + " d d d d" } },
+    goomba: { colors: { b: COLORS.GOOMBA.body, f: COLORS.GOOMBA.feet }, map: { width: 8, height: 6, pixels: " bbbbbb " + "bbbbbbbb" + "b bbbb b" + "b bbbb b" + " ffffff " + "ff    ff" } },
+    spiny: { colors: { h: COLORS.SPINY.shell, s: COLORS.SPINY.spikes, b: COLORS.SPINY.body }, map: { width: 8, height: 7, pixels: " s s s s" + "shshshsh" + "hhhhhhhh" + "hhbbbbhh" + " b bbbb " + "bb    bb" + " b    b " } },
+    pipe: { colors: { g: '#00b000', d: '#008000', h: '#55ff55' }, map: { width: 8, height: 7, pixels: "gggggggg" + "gddddddg" + "gddddddg" + "gddddddg" + "ghhhhhhg" + "gddddddg" + "gddddddg" } },
+    coin: { colors: { y: '#ffd700', b: '#daa520' }, map: { width: 8, height: 8, pixels: "  byyb  " + "byyyyyb " + "byyyyb  " + "byyyyb  " + "byyyyb  " + "byyyyyb " + " byyyyb " + "  byyb  " } },
+    mushroom: { colors: { r: '#ff0000', w: '#ffffff', e: '#000000' }, map: { width: 8, height: 8, pixels: " rrwwrr " + "rwwwwwwr" + "rweewwwr" + "ewewewww" + "wwwwwwww" + " wwwwww " + "  ww ww " + "  ww ww " } },
+    star: { colors: { y: '#ffff00', b: '#000000' }, map: { width: 8, height: 8, pixels: "   y    " + "  yyy   " + " yyyyy  " + "bybybyb " + "yybyybyy" + " y by y " + "  yyy   " + " y   y  " } }
+};
+
+const MUSHROOM_ICON = "data:image/svg+xml," + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 8 8" style="image-rendering: pixelated;"><rect fill="#f00" x="0" y="1" width="8" height="3"/><rect fill="#fff" x="1" y="1" width="2" height="1"/><rect fill="#fff" x="5" y="1" width="2" height="1"/><rect fill="#fff" x="1" y="2" width="6" height="6"/><rect fill="#000" x="2" y="4" width="1" height="1"/><rect fill="#000" x="5" y="4" width="1" height="1"/></svg>`);
+
+// --- Game Logic Functions ---
+
+function gridToScreen(row, col) {
+    const x = origin.x + (col - row) * (CUBE_WIDTH / 2);
+    const y = origin.y + (col + row) * (CUBE_HEIGHT / 2);
+    return { x, y };
+}
+
+function createPipes() {
+    pipes = [
+        { row: 1, col: 1, link: 1, type: 'pipe', size: 40 },
+        { row: ARENA_SIZE - 2, col: ARENA_SIZE - 2, link: 0, type: 'pipe', size: 40 }
+    ];
+    // Convert grid positions to screen positions once
+    pipes.forEach(pipe => {
+        const pos = gridToScreen(pipe.row, pipe.col);
+        pipe.x = pos.x;
+        pipe.y = pos.y + 16; // Adjust to sit nicely on the cube
+    });
+}
+
+function initGame(character) {
+    playerCharacter = character;
+    score = 0;
+    lives = 3;
+    level = 1;
+    initLevel();
+}
+
+function startNextLevel() {
+    level++;
+    score += 1000;
+    playSound('levelComplete');
+    gameState = GAME_STATE.LEVEL_TRANSITION;
+    levelCompleteText.textContent = `LEVEL ${level - 1} COMPLETE!`;
+    levelCompleteScreen.style.display = 'flex';
+
+    setTimeout(() => {
+        levelCompleteScreen.style.display = 'none';
+        initLevel();
+    }, 2500);
+}
+
+
+function initLevel() {
+    startScreen.style.display = 'none';
+    gameOverScreen.style.display = 'none';
+    hud.style.display = 'flex';
+    
+    player = {
+        x: origin.x, y: origin.y,
+        size: 48,
+        speed: 100 + (level * 5),
+        health: 1, maxHealth: 2,
+        isInvincible: false, invincibilityTimer: 0,
+        isHit: false, hitTimer: 0,
+        teleportCooldown: 0
+    };
+
+    targetMarker = null;
+    enemies = [];
+    collectibles = [];
+    createPipes();
+    
+    const coinCount = 10 + level * 2;
+    for (let i = 0; i < coinCount; i++) {
+        spawnCollectible('coin');
+    }
+    spawnCollectible('mushroom');
+
+    const enemyCount = 2 + level;
+    for (let i = 0; i < enemyCount; i++) {
+        const type = Math.random() < 0.4 ? 'spiny' : 'goomba';
+        const spawnPoints = [
+            {x: 50, y: 150},
+            {x: canvas.width - 50, y: 150},
+            {x: 50, y: canvas.height - 150},
+            {x: canvas.width - 50, y: canvas.height - 150}
+        ];
+        const spawnPoint = spawnPoints[Math.floor(Math.random() * spawnPoints.length)];
+
+        enemies.push({
+            x: spawnPoint.x, y: spawnPoint.y,
+            size: 40,
+            type: type,
+            speed: 50 + (level * 4) + (type === 'spiny' ? 10 : 0)
+        });
+    }
+
+    updateHUD();
+    
+    if (gameState !== GAME_STATE.PLAYING) {
+        lastTime = performance.now();
+        requestAnimationFrame(gameLoop);
+    }
+    gameState = GAME_STATE.PLAYING;
+}
+
+function spawnCollectible(type) {
+    const row = Math.floor(Math.random() * ARENA_SIZE);
+    const col = Math.floor(Math.random() * ARENA_SIZE);
+    const pos = gridToScreen(row, col);
+    collectibles.push({ x: pos.x, y: pos.y, size: 32, type: type });
+}
+
+function spawnStar() {
+    const pos = gridToScreen(Math.floor(ARENA_SIZE/2), Math.floor(ARENA_SIZE/2)); // Center of arena
+    collectibles.push({ x: pos.x, y: pos.y, size: 32, type: 'star' });
+    playSound('jump');
+}
+
+function updateHUD() {
+    scoreEl.textContent = `SCORE: ${score}`;
+    livesEl.textContent = `LIVES: ${lives}`;
+    levelEl.textContent = `LEVEL: ${level}`;
+    if (player.health > 1) {
+        healthIndicator.style.backgroundImage = `url("${MUSHROOM_ICON}")`;
+    } else {
+        healthIndicator.style.backgroundImage = 'none';
+    }
+}
+
+function playerDie() {
+    playSound('death');
+    lives--;
+    updateHUD();
+    if (lives <= 0) {
+        gameState = GAME_STATE.GAME_OVER;
+        gameOverScreen.style.display = 'flex';
+    } else {
+        initLevel();
+    }
+}
+
+// --- Update Functions ---
+function update(dt) {
+    // Player
+    const deltaSeconds = dt / 1000;
+    if (player.teleportCooldown > 0) player.teleportCooldown -= dt;
+
+    if (targetMarker) {
+        const dx = targetMarker.x - player.x;
+        const dy = targetMarker.y - player.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist > player.speed * deltaSeconds) {
+            player.x += (dx / dist) * player.speed * deltaSeconds;
+            player.y += (dy / dist) * player.speed * deltaSeconds;
+        } else {
+            player.x = targetMarker.x;
+            player.y = targetMarker.y;
+            targetMarker = null;
+        }
+    }
+    if (player.isInvincible) {
+        player.invincibilityTimer -= dt;
+        if (player.invincibilityTimer <= 0) player.isInvincible = false;
+    }
+    if (player.isHit) {
+        player.hitTimer -= dt;
+        if (player.hitTimer <= 0) player.isHit = false;
+    }
+
+    // Enemies
+    enemies.forEach(enemy => {
+        const dx = player.x - enemy.x;
+        const dy = player.y - enemy.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist > 1) {
+            enemy.x += (dx / dist) * enemy.speed * deltaSeconds;
+            enemy.y += (dy / dist) * enemy.speed * deltaSeconds;
+        }
+    });
+}
+
+function checkCollisions() {
+    // Player vs Collectibles
+    for (let i = collectibles.length - 1; i >= 0; i--) {
+        const item = collectibles[i];
+        if (Math.abs(player.x - item.x) < 20 && Math.abs(player.y - item.y) < 20) {
+            switch(item.type) {
+                case 'coin': score += 100; playSound('coin'); break;
+                case 'mushroom': if (player.health < player.maxHealth) player.health++; score += 500; playSound('powerup'); break;
+                case 'star': player.isInvincible = true; player.invincibilityTimer = INVINCIBILITY_DURATION; score += 1000; playSound('starPower'); break;
+            }
+            collectibles.splice(i, 1);
+            updateHUD();
+        }
+    }
+
+    // Player vs Enemies
+    for (let i = enemies.length - 1; i >= 0; i--) {
+        const enemy = enemies[i];
+        if (Math.abs(player.x - enemy.x) < 20 && Math.abs(player.y - enemy.y) < 20) {
+            if (player.isInvincible) {
+                enemies.splice(i, 1);
+                score += 200;
+                playSound('coin');
+                updateHUD();
+            } else if (!player.isHit) {
+                player.health--;
+                player.isHit = true;
+                player.hitTimer = 1500;
+                if (player.health <= 0) playerDie(); else playSound('death');
+                updateHUD();
+            }
+        }
+    }
+
+    // Player vs Pipes
+    if (player.teleportCooldown <= 0) {
+        for (let i = 0; i < pipes.length; i++) {
+            const pipe = pipes[i];
+            if (Math.abs(player.x - pipe.x) < 20 && Math.abs(player.y - pipe.y) < 20) {
+                const destPipe = pipes[pipe.link];
+                player.x = destPipe.x;
+                player.y = destPipe.y;
+                targetMarker = null; // Cancel any movement command
+                player.teleportCooldown = TELEPORT_COOLDOWN;
+                playSound('pipe');
+                break; // Exit loop after teleporting
+            }
+        }
+    }
+}
+
+function checkGameState() {
+    const coinsLeft = collectibles.some(item => item.type === 'coin');
+    const starExists = collectibles.some(item => item.type === 'star');
+    if (!coinsLeft && !starExists && gameState === GAME_STATE.PLAYING) {
+        spawnStar();
+    }
+
+    if (enemies.length === 0 && !coinsLeft && !starExists && gameState === GAME_STATE.PLAYING) {
+        startNextLevel();
+    }
+}
+
+// --- Drawing Functions ---
+function drawArena() {
+    for (let row = 0; row < ARENA_SIZE; row++) {
+        for (let col = 0; col < ARENA_SIZE; col++) {
+            const pos = gridToScreen(row, col);
+            drawIsometricCube(pos.x, pos.y, COLORS.CUBE);
+        }
+    }
+}
+
+function drawIsometricCube(x, y, colors) { /* Unchanged from previous version */ ctx.save(); ctx.translate(x, y); ctx.fillStyle = colors.top; ctx.beginPath(); ctx.moveTo(0, -CUBE_DEPTH / 2); ctx.lineTo(CUBE_WIDTH / 2, CUBE_HEIGHT / 2 - CUBE_DEPTH / 2); ctx.lineTo(0, CUBE_HEIGHT - CUBE_DEPTH / 2); ctx.lineTo(-CUBE_WIDTH / 2, CUBE_HEIGHT / 2 - CUBE_DEPTH / 2); ctx.closePath(); ctx.fill(); ctx.fillStyle = colors.left; ctx.beginPath(); ctx.moveTo(-CUBE_WIDTH / 2, CUBE_HEIGHT / 2 - CUBE_DEPTH / 2); ctx.lineTo(0, CUBE_HEIGHT - CUBE_DEPTH / 2); ctx.lineTo(0, CUBE_HEIGHT); ctx.lineTo(-CUBE_WIDTH / 2, CUBE_HEIGHT / 2); ctx.closePath(); ctx.fill(); ctx.fillStyle = colors.right; ctx.beginPath(); ctx.moveTo(CUBE_WIDTH / 2, CUBE_HEIGHT / 2 - CUBE_DEPTH / 2); ctx.lineTo(0, CUBE_HEIGHT - CUBE_DEPTH / 2); ctx.lineTo(0, CUBE_HEIGHT); ctx.lineTo(CUBE_WIDTH / 2, CUBE_HEIGHT / 2); ctx.closePath(); ctx.fill(); ctx.restore(); }
+
+function drawPixelArt(x, y, size, sprite) { /* Unchanged from previous version */ const pixelSize = size / sprite.map.width; for (let r = 0; r < sprite.map.height; r++) { for (let c = 0; c < sprite.map.width; c++) { const colorKey = sprite.map.pixels[r * sprite.map.width + c]; if (colorKey && colorKey !== ' ') { ctx.fillStyle = sprite.colors[colorKey]; ctx.fillRect( Math.floor(x - (size / 2) + c * pixelSize), Math.floor(y - size + r * pixelSize), Math.ceil(pixelSize), Math.ceil(pixelSize) ); } } } }
+
+function drawAll() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    drawArena();
+    
+    if (targetMarker) {
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+        ctx.beginPath();
+        ctx.arc(targetMarker.x, targetMarker.y - 10, 10, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = 'white';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(targetMarker.x, targetMarker.y);
+        ctx.lineTo(targetMarker.x, targetMarker.y - 20);
+        ctx.stroke();
+    }
+    
+    const allEntities = [...collectibles, ...enemies, ...pipes, player];
+    allEntities.sort((a, b) => a.y - b.y);
+
+    allEntities.forEach(entity => {
+        let spriteData = entity.type ? SPRITES[entity.type] : SPRITES[playerCharacter];
+        if (spriteData) {
+            ctx.save();
+            let isVisible = true;
+            if (entity === player) {
+                if (player.isHit) isVisible = Math.floor(player.hitTimer / 100) % 2 === 0;
+                if (player.isInvincible) ctx.globalAlpha = 0.5 + Math.sin(performance.now() / 50) * 0.5;
+            }
+            if(isVisible) drawPixelArt(entity.x, entity.y, entity.size, spriteData);
+            ctx.restore();
+        }
+    });
+}
+
+// --- Main Game Loop ---
+function gameLoop(timestamp) {
+    if(!lastTime) lastTime = timestamp;
+    const deltaTime = timestamp - lastTime;
+    lastTime = timestamp;
+
+    if (gameState === GAME_STATE.PLAYING) {
+        update(deltaTime);
+        checkCollisions();
+        checkGameState();
+    }
+    
+    drawAll();
+    
+    if (gameState !== GAME_STATE.GAME_OVER) {
+        requestAnimationFrame(gameLoop);
+    }
+}
+
+// --- Event Listeners ---
+function handleMouseClick(event) {
+    if (gameState !== GAME_STATE.PLAYING) return;
+    
+    const now = performance.now();
+    if (now - lastClickTime < CLICK_COOLDOWN) return;
+    lastClickTime = now;
+
+    const rect = canvas.getBoundingClientRect();
+    const mouseX = event.clientX - rect.left;
+    const mouseY = event.clientY - rect.top;
+    
+    targetMarker = { x: mouseX, y: mouseY };
+}
+
+document.querySelectorAll('.char-button').forEach(button => {
+    button.addEventListener('click', () => {
+        const character = button.getAttribute('data-char');
+        initGame(character);
+    });
+});
+
+document.getElementById('restartButton').addEventListener('click', () => {
+    gameState = GAME_STATE.MENU;
+    startScreen.style.display = 'flex';
+    gameOverScreen.style.display = 'none';
+    hud.style.display = 'none';
+});
+
+canvas.addEventListener('click', handleMouseClick);
+
+</script>
+</body>
+</html>
