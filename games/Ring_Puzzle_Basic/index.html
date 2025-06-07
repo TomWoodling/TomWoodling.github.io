@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Yosegi Sequential Puzzle</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0">
+  <style>
+    html, body {
+      height: 100%; margin: 0; padding: 0; background: #e7e0d8; font-family: sans-serif;
+    }
+    #game-container {
+      display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh;
+    }
+    canvas {
+      background: #f8f5f0;
+      box-shadow: 0 4px 24px #0002;
+      border-radius: 14px;
+      margin-bottom: 16px;
+      max-width: 98vw;
+      max-height: 80vh;
+      touch-action: none;
+      user-select: none;
+      cursor: pointer;
+      transition: box-shadow 0.3s;
+    }
+    #hud {
+      margin-bottom: 10px;
+      font-size: 1.1em;
+      text-align: center;
+      color: #6d4e2e;
+      letter-spacing: 1px;
+    }
+    #controls {
+      display: flex; gap: 10px; justify-content: center;
+      margin-bottom: 10px;
+    }
+    .btn {
+      background: #d7b98a; color: #4b2d0c;
+      border: none; border-radius: 8px;
+      padding: 8px 18px;
+      font-size: 1em;
+      cursor: pointer;
+      box-shadow: 0 2px 7px #0001;
+      transition: background 0.2s;
+    }
+    .btn:hover { background: #bfa16b; }
+    #msg {
+      font-size: 1.3em;
+      color: #4b2d0c;
+      margin-top: 14px;
+      min-height: 2em;
+      text-align: center;
+    }
+    @media (max-width: 600px) {
+      #game-container { height: auto; }
+      canvas { max-width: 100vw; max-height: 60vw; }
+    }
+  </style>
+</head>
+<body>
+  <div id="game-container">
+    <div id="hud"></div>
+    <div id="controls">
+      <button class="btn" id="undoBtn" title="Undo last move">Undo</button>
+      <button class="btn" id="restartBtn">Restart</button>
+      <button class="btn" id="nextBtn" style="display:none">Next Level</button>
+    </div>
+    <canvas id="gameCanvas" width="620" height="440"></canvas>
+    <div id="msg"></div>
+  </div>
+  <script>
+    // --- Utility ---
+    const lerp = (a, b, t) => a + (b - a) * t;
+    function clamp(x, a, b) { return Math.max(a, Math.min(x, b)); }
+    function deepClone(obj) { return JSON.parse(JSON.stringify(obj)); }
+
+    // --- Isometric projection helpers ---
+    function isoX(x, y, tileW, tileH, ox=0) {
+      return ox + (x - y) * tileW/2;
+    }
+    function isoY(x, y, tileW, tileH, oy=0) {
+      return oy + (x + y) * tileH/2;
+    }
+
+    // --- Game Data ---
+    // The logic now correctly implements the classic Chinese Rings puzzle (Baguenaudier).
+    // The levels define how many rings the puzzle has. The logic is generalized.
+    const LEVELS = [
+      // 3 rings (simple)
+      { rings: 3 },
+      // 5 rings (classic)
+      { rings: 5 },
+      // 7 rings (complex)
+      { rings: 7 }
+    ];
+
+    // --- Game State ---
+    let levelIndex = 0;
+    let state = null; // {rings:[]...}
+    let anims = [];
+    let history = [];
+
+    // --- UI Elements ---
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const hud = document.getElementById('hud');
+    const msg = document.getElementById('msg');
+    const undoBtn = document.getElementById('undoBtn');
+    const restartBtn = document.getElementById('restartBtn');
+    const nextBtn = document.getElementById('nextBtn');
+
+    // --- Reset/Init ---
+    function startLevel(idx) {
+      levelIndex = idx;
+      const n = LEVELS[idx].rings;
+      state = {
+        rings: Array(n).fill().map(_=>false), // false: locked (on bar), true: unlocked (off bar)
+        bar: false,
+        moves: 0,
+        anim: Array(n).fill(0) // 0: rest, 1: unlocking anim, -1: locking anim
+      };
+      history = [];
+      anims = [];
+      msg.textContent = "";
+      nextBtn.style.display = "none";
+      updateHUD();
+      draw();
+    }
+    function restart() { startLevel(levelIndex); }
+
+    // --- HUD ---
+    function updateHUD() {
+      hud.innerHTML = `Level: ${levelIndex+1} / ${LEVELS.length} &nbsp; | &nbsp; Moves: ${state.moves}`;
+    }
+
+    // --- Drawing ---
+    function draw() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // Parameters
+      const n = state.rings.length;
+      const tileW = 60, tileH = 28;
+      const centerX = canvas.width/2;
+      const baseY = 180;
+      const ringRad = 25, ringThick = 7;
+      const gap = 32;
+
+      // Draw base bar
+      const barLen = (n-1) * gap + 40;
+      const barX = centerX - barLen/2;
+      const barY = baseY + 45;
+      ctx.save();
+      ctx.strokeStyle = "#90713c";
+      ctx.lineWidth = 14;
+      ctx.lineCap = "round";
+      ctx.shadowColor = "#bfa16b88";
+      ctx.shadowBlur = 7;
+      ctx.beginPath();
+      ctx.moveTo(barX, barY);
+      ctx.lineTo(barX+barLen, barY);
+      ctx.stroke();
+      ctx.restore();
+
+      // Draw bar end (locked/unlocked)
+      ctx.save();
+      ctx.lineWidth = 5;
+      ctx.strokeStyle = state.bar ? "#7bb86b" : "#b36a55";
+      ctx.beginPath();
+      ctx.moveTo(barX+barLen+17, barY);
+      ctx.lineTo(barX+barLen+43, barY);
+      ctx.stroke();
+
+      if(state.bar){
+        // Released highlight
+        ctx.strokeStyle = "#92e88a";
+        ctx.lineWidth = 7;
+        ctx.beginPath();
+        ctx.arc(barX+barLen+43, barY, 8, 0, 2*Math.PI);
+        ctx.stroke();
+      }
+      ctx.restore();
+
+      // Draw rings
+      for(let i=0; i<n; ++i){
+        // Anim
+        let t = Math.abs(state.anim[i]);
+        let unlockAnim = state.anim[i] > 0;
+        // Position
+        let rx = centerX - barLen/2 + i*gap + 20;
+        let ry = baseY;
+        // Ring
+        ctx.save();
+        ctx.translate(rx, ry);
+        let ringAngle = unlockAnim ? lerp(0, Math.PI/1.6, t) : lerp(Math.PI/1.6, 0, t);
+        ctx.rotate(ringAngle * (state.rings[i] ? 1 : 0));
+
+        // Ring shadow
+        ctx.save();
+        ctx.globalAlpha = 0.18;
+        ctx.beginPath();
+        ctx.arc(0, 9, ringRad+3, 0, 2*Math.PI);
+        ctx.fillStyle = "#876c3e";
+        ctx.fill();
+        ctx.restore();
+
+        // Ring
+        ctx.beginPath();
+        ctx.lineWidth = ringThick;
+        ctx.strokeStyle = state.rings[i] ? "#a7e1a5" : "#bfa16b";
+        ctx.shadowColor = state.rings[i] ? "#a7e1a5" : "#bfa16b";
+        ctx.shadowBlur = state.rings[i] ? 8 : 3;
+        ctx.arc(0, 0, ringRad, 0, 2*Math.PI);
+        ctx.stroke();
+
+        // Ring highlight
+        if(!state.rings[i]){
+          ctx.save();
+          ctx.strokeStyle = "#fff7";
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.arc(-8, -8, ringRad-3, 0, Math.PI/1.3);
+          ctx.stroke();
+          ctx.restore();
+        }
+        ctx.restore();
+
+        // Draw mechanism post
+        ctx.save();
+        ctx.strokeStyle = "#90713c";
+        ctx.lineWidth = 8;
+        ctx.beginPath();
+        ctx.moveTo(rx, ry+ringRad-5);
+        ctx.lineTo(rx, barY-5);
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      // Draw yosegi tile patterns under the rings (for style)
+      for(let i=0; i<n; ++i){
+        const px = centerX - barLen/2 + i*gap + 20;
+        const py = baseY + 60;
+        ctx.save();
+        ctx.translate(px, py);
+        for(let d=0; d<4; ++d){
+          ctx.rotate(Math.PI/2);
+          ctx.fillStyle = d%2==0 ? "#f3e5bb" : "#bfa16b";
+          ctx.fillRect(-10, -14, 20, 28);
+        }
+        ctx.globalAlpha = 0.21;
+        ctx.beginPath();
+        ctx.arc(0,0, 18, 0, 2*Math.PI);
+        ctx.fillStyle = "#bfa16b";
+        ctx.fill();
+        ctx.restore();
+      }
+    }
+
+    // --- Mechanism Logic ---
+
+    // Can the ring at index i be toggled?
+    // This now implements the logic for the classic Chinese Rings puzzle.
+    function canToggle(idx) {
+        if (state.bar) return false; // Puzzle is solved.
+        if (state.anim.some(t => t !== 0)) return false; // Animation in progress.
+
+        const n = state.rings.length;
+        const rings = state.rings; // false: on bar (locked), true: off bar (unlocked)
+
+        // Rule 1: The rightmost ring (index n-1) can always be toggled.
+        if (idx === n - 1) {
+            return true;
+        }
+
+        // Rule 2: Any other ring (index `i`) can be toggled only if...
+        // a) The ring to its immediate right (i+1) is OFF the bar (unlocked/true),
+        // b) AND all rings to the right of *that* one (from i+2 to end) are ON the bar (locked/false).
+        if (idx < n - 1) {
+            // Check condition (a)
+            if (rings[idx + 1] !== true) {
+                return false;
+            }
+
+            // Check condition (b)
+            for (let j = idx + 2; j < n; j++) {
+                if (rings[j] !== false) {
+                    return false; // A ring that should be on the bar is off.
+                }
+            }
+            
+            // If both conditions are met, the move is valid.
+            return true;
+        }
+
+        return false; // Should not be reached
+    }
+
+
+    // Can the bar be released?
+    function canReleaseBar(){
+      // Only if all rings are unlocked (true), and no anim running
+      return state.rings.every(r=>r) && !state.anim.some(t=>t!==0) && !state.bar;
+    }
+
+    // --- Animations ---
+    function animateRing(idx, unlock){
+      state.anim[idx] = unlock ? 0.01 : -0.01;
+      let step = ()=>{
+        if(state.anim[idx] === 0) return;
+        let t = Math.abs(state.anim[idx]);
+        t += 0.08;
+        if(t >= 1){
+          state.anim[idx] = 0;
+          state.rings[idx] = unlock;
+          draw();
+          if(canReleaseBar()) { animateBarRelease(); }
+          return;
+        }
+        state.anim[idx] = unlock ? t : -t;
+        draw();
+        requestAnimationFrame(step);
+      };
+      step();
+    }
+    function animateBarRelease(){
+      state.bar = true;
+      msg.innerHTML = `<b>Puzzle Solved!</b>`;
+      nextBtn.style.display = levelIndex+1<LEVELS.length ? "inline-block" : "none";
+      draw();
+    }
+
+    // --- Input Handling ---
+    canvas.addEventListener("click", function(e){
+      if(state.bar) return;
+      const rect = canvas.getBoundingClientRect();
+      const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+      // Find ring hit
+      const n = state.rings.length;
+      const barLen = (n-1)*32 + 40;
+      const centerX = canvas.width/2, baseY = 180;
+      for(let i=0;i<n;++i){
+        let rx = centerX-barLen/2 + i*32 + 20, ry = baseY;
+        let dx = mx-rx, dy = my-ry;
+        if(dx*dx + dy*dy < 25*25+15){
+          // Try toggle
+          if(canToggle(i)){
+            history.push(deepClone(state));
+            state.moves++;
+            animateRing(i, !state.rings[i]);
+            updateHUD();
+          } else {
+            msg.textContent = "That move isn't possible.";
+            setTimeout(()=>{ if(msg.textContent.startsWith("That move")) msg.textContent=""; }, 900);
+          }
+          return;
+        }
+      }
+    });
+    // Touch input
+    canvas.addEventListener("touchstart", function(e){
+      e.preventDefault();
+      const touch = e.changedTouches[0];
+      const rect = canvas.getBoundingClientRect();
+      const mx = touch.clientX - rect.left, my = touch.clientY - rect.top;
+      canvas.dispatchEvent(new MouseEvent("click", {clientX:mx+rect.left, clientY:my+rect.top}));
+    });
+
+    // --- Buttons ---
+    undoBtn.onclick = function(){
+      if(history.length > 0){
+        state = history.pop();
+        msg.textContent = "";
+        draw();
+        updateHUD();
+      }
+    };
+    restartBtn.onclick = function(){
+      restart();
+    };
+    nextBtn.onclick = function(){
+      if(levelIndex+1<LEVELS.length) startLevel(levelIndex+1);
+    };
+
+    // --- Keyboard Controls ---
+    document.addEventListener("keydown", function(e){
+      if(e.key=="r" || e.key=="R"){ restart(); }
+      if(e.key=="u" || e.key=="U"){ undoBtn.onclick(); }
+      if(e.key==" " || e.key=="Enter"){
+        // Try to release bar if possible
+        if(canReleaseBar()) animateBarRelease();
+      }
+      // 1-9 toggles ring
+      const keyNum = parseInt(e.key);
+      if(!isNaN(keyNum) && keyNum >= 1 && keyNum <= state.rings.length){
+        let idx = keyNum - 1;
+        if(canToggle(idx)){
+          history.push(deepClone(state));
+          state.moves++; animateRing(idx, !state.rings[idx]);
+          updateHUD();
+        }
+      }
+    });
+
+    // --- Start ---
+    startLevel(0);
+
+    // --- Instructions ---
+    msg.innerHTML = `
+      <b>Chinese Rings Puzzle</b><br>
+      The goal is to remove all rings from the bar.<br>
+      <i>Only one ring can be moved at each step.<br>
+      Find the correct sequence!</i>
+    `;
+  </script>
+</body>
+</html>
