@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Recursive Regret (Final)</title>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #000;
+            font-family: 'Courier New', Courier, monospace;
+        }
+        canvas {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas"></canvas>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // --- Game Configuration ---
+        const COLORS = {
+            BLACK: '#000000', WHITE: '#FFFFFF', CYAN: '#55FFFF',
+            YELLOW: '#FFFF55', GREEN: '#55FF55', GREY: '#888888'
+        };
+        const PATH_COLORS = ['#FF5555', '#FFD700', '#55FF55', '#55FFFF', '#5555FF', '#FF55FF'];
+        const FONT_SIZE = 3;
+        const MAX_TRAIL_LENGTH = 500; // Performance: Cap the player's tail length
+
+        const LEVEL_CONFIG = [
+            { nodes: 3, prompts: { 0: "The map begins at the Cove of Certainty.", 2: "A cryptic clue! 'Go back to where you started, but differently'.", 5: "Treasure! A slightly damp doubloon. Onward!" } },
+            { nodes: 5, prompts: { 0: "This map mentions the 'Bay of Befuddlement'.", 2: "You find a pirate's beard. It's just moldy seaweed.", 5: "A message in a bottle! It's an invoice for grog.", 10: "The final clue points to the 'Lagoon of Maybe Logic'.", 21: "Treasure! A ship's biscuit, hard as a rock." } },
+            { nodes: 7, prompts: { 0: "You enter the 'Labyrinth of Recursive Regret'.", 2: "Existential parrots squawk 'Why?' at you and fly away.", 5: "You find a treasure chest! Inside: a smaller, locked chest.", 10: "The map now appears to be written in paisley.", 21: "A ghost pirate asks for directions to the nearest coffee shop.", 42: "The 'X' on the map was a smudge. The real 'X' is over there.", 85: "The ultimate treasure! The TRUE friendship we made... and another doubloon." } }
+        ];
+
+        let gameState = 'START_SCREEN';
+        let currentLevel = 0;
+        
+        let player, nodes, completedPaths, playerTrail, puzzle, message, layout;
+        let pathColorIndex = 0;
+        let startReturnCount = 0;
+
+        // --- Layout and Responsiveness ---
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            const isPortrait = canvas.height > canvas.width;
+            
+            layout = {
+                game: {
+                    x: 0,
+                    y: isPortrait ? (canvas.height - canvas.width) / 2 : 0,
+                    size: isPortrait ? canvas.width : canvas.height
+                },
+                text: {
+                    x: isPortrait ? 10 : canvas.height + 10,
+                    y: isPortrait ? 10 : 10,
+                    w: isPortrait ? canvas.width - 20 : canvas.width - canvas.height - 20,
+                    h: isPortrait ? (canvas.height - canvas.width) / 2 - 20 : canvas.height - 20
+                }
+            };
+            
+            if (gameState === 'GAMEPLAY') setupLevel(currentLevel, true);
+        }
+
+        // --- Robust Text Rendering ---
+        const FONT={'A':[126,17,17,17,126],'B':[127,73,73,73,54],'C':[62,65,65,65,34],'D':[127,65,65,34,28],'E':[127,73,73,73,65],'F':[127,9,9,1,1],'G':[62,65,65,81,50],'H':[127,8,8,8,127],'I':[0,65,127,65,0],'J':[32,64,64,64,63],'L':[127,64,64,64,64],'K':[127,8,20,34,65],'M':[127,2,12,2,127],'N':[127,4,8,16,127],'O':[62,65,65,65,62],'P':[127,9,9,9,6],'Q':[62,65,81,33,94],'R':[127,9,25,41,70],'S':[38,73,73,73,50],'T':[1,1,127,1,1],'U':[63,64,64,64,63],'W':[63,64,56,64,63],'V':[31,32,64,32,31],'X':[99,20,8,20,99],'Y':[3,4,120,4,3],'Z':[97,81,73,69,67],'0':[62,81,73,69,62],'1':[0,66,127,64,0],'2':[66,97,81,73,70],'3':[33,65,69,75,49],'4':[24,20,18,127,16],'5':[39,69,69,69,57],'6':[60,74,73,73,48],'7':[1,113,9,5,3],'8':[54,73,73,73,54],'9':[6,73,73,41,30],' ':[0,0,0,0,0],'.':[0,96,96,0,0],"'":[0,3,3,0,0],',':[0,96,64,0,0],'!':[0,0,95,0,0],'?':[2,1,81,9,6]};
+        function drawWrappedText(text, x, y, size, color, maxWidth) {
+            const words = text.toUpperCase().split(' ');
+            let currentLine = '';
+            let currentY = y;
+            const charWidth = size * 6;
+
+            ctx.fillStyle = color;
+
+            for (const word of words) {
+                const testLine = currentLine + word + ' ';
+                if (testLine.length * charWidth > maxWidth && currentLine.length > 0) {
+                    drawTextLine(currentLine, x, currentY, size);
+                    currentY += size * 10;
+                    currentLine = word + ' ';
+                } else {
+                    currentLine = testLine;
+                }
+            }
+            drawTextLine(currentLine, x, currentY, size);
+            return currentY + size * 10; // Return Y position for next text block
+        }
+        function drawTextLine(text,x,y,s){let X=x;for(let i=0;i<text.length;i++){let d=FONT[text[i]];if(d){for(let C=0;C<5;C++){for(let r=0;r<8;r++){if((d[C]>>r)&1){ctx.fillRect(X+C*s,y+r*s,s,s)}}}X+=s*6}}}
+
+        // --- Puzzle & Game Logic ---
+        const getNextChineseRingsMove = k => { let m=0; while(!((k>>m)&1))m++; return m+1; };
+
+        function setupLevel(levelIndex, isResize = false) {
+            const config = LEVEL_CONFIG[levelIndex];
+            const numNodes = config.nodes;
+            
+            nodes = [];
+            const centerX = layout.game.x + layout.game.size / 2;
+            const centerY = layout.game.y + layout.game.size / 2;
+            const radius = layout.game.size * 0.4;
+            
+            const startLineY1 = centerY - radius * 0.6;
+            const startLineY2 = centerY + radius * 0.6;
+            const startLineX = layout.game.x + layout.game.size * 0.1;
+            nodes.push({ id: 1, isLine: true, x: startLineX, y1: startLineY1, y2: startLineY2 });
+
+            for (let i = 1; i < numNodes; i++) {
+                const angle = (i / (numNodes-1)) * Math.PI - Math.PI / 2;
+                nodes.push({ id: i+1, x: centerX + radius * Math.cos(angle) * 0.9, y: centerY + radius * Math.sin(angle) * 0.9 });
+            }
+            
+            if (!isResize) {
+                pathColorIndex = 0; startReturnCount = 0;
+                completedPaths = []; playerTrail = [];
+                const totalSteps = Math.ceil((Math.pow(2, numNodes + 1) - 1) / 3);
+                puzzle = { currentStep: 0, totalSteps, prompts: config.prompts, isComplete: false };
+                message = { text: '', timer: 0 };
+                
+                player = {
+                    x: nodes[0].x, y: centerY, size: layout.game.size * 0.01, speed: layout.game.size * 0.008,
+                    state: 'WAITING', currentNode: nodes[0]
+                };
+                
+                if (puzzle.prompts[0]) { message.text = puzzle.prompts[0]; message.timer = 300; }
+            } else {
+                player.size = layout.game.size * 0.01;
+                player.speed = layout.game.size * 0.008;
+            }
+        }
+        
+        function handlePlayerClick() {
+            if (gameState !== 'GAMEPLAY' || player.state !== 'WAITING' || puzzle.isComplete) return;
+
+            puzzle.currentStep++;
+            
+            if (puzzle.prompts[puzzle.currentStep]) {
+                message.text = puzzle.prompts[puzzle.currentStep];
+                message.timer = 300;
+                pathColorIndex = (pathColorIndex + 1) % PATH_COLORS.length;
+            }
+            
+            const nextNodeId = getNextChineseRingsMove(puzzle.currentStep);
+            player.targetNode = nodes.find(n => n.id === nextNodeId);
+
+            if (player.targetNode.isLine) {
+                startReturnCount++;
+                const lineSpan = player.targetNode.y2 - player.targetNode.y1;
+                player.targetPos = { 
+                    x: player.targetNode.x, 
+                    y: player.targetNode.y1 + (lineSpan / (LEVEL_CONFIG[currentLevel].nodes + 2)) * (startReturnCount % (LEVEL_CONFIG[currentLevel].nodes + 2) + 1)
+                };
+            } else {
+                player.targetPos = { x: player.targetNode.x, y: player.targetNode.y };
+            }
+            player.state = 'MOVING';
+        }
+
+        // --- Update & Draw ---
+        function update() {
+            if (gameState !== 'GAMEPLAY') return;
+            if (message.timer > 0) message.timer--;
+
+            if (player.state === 'MOVING') {
+                const target = player.targetPos;
+                const dx = target.x - player.x;
+                const dy = target.y - player.y;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+
+                // Add to player trail with randomness
+                playerTrail.push({
+                    x: player.x + (Math.random() - 0.5) * 4,
+                    y: player.y + (Math.random() - 0.5) * 4,
+                    color: PATH_COLORS[pathColorIndex]
+                });
+                if (playerTrail.length > MAX_TRAIL_LENGTH) playerTrail.shift();
+
+                if (dist < player.speed) {
+                    completedPaths.push({ x1: player.x, y1: player.y, x2: target.x, y2: target.y, color: PATH_COLORS[pathColorIndex] });
+                    player.x = target.x; player.y = target.y;
+                    player.state = 'WAITING'; player.currentNode = player.targetNode;
+
+                    if (puzzle.currentStep >= puzzle.totalSteps) {
+                        puzzle.isComplete = true;
+                        setTimeout(() => {
+                            currentLevel = (currentLevel + 1) % LEVEL_CONFIG.length;
+                             if (currentLevel === 0 && puzzle.isComplete) { gameState = 'END_SCREEN'; }
+                             else { setupLevel(currentLevel); }
+                        }, 2000);
+                    }
+                } else {
+                    player.x += (dx / dist) * player.speed;
+                    player.y += (dy / dist) * player.speed;
+                }
+            }
+        }
+
+        function draw() {
+            ctx.fillStyle = COLORS.BLACK;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            if (gameState === 'START_SCREEN' || gameState === 'END_SCREEN') {
+                const title = gameState === 'START_SCREEN' ? "RECURSIVE REGRET" : "THE END";
+                const sub1 = gameState === 'START_SCREEN' ? "A TALE OF POOR PLANNING" : "A TRUE NAVIGATOR OF NONSENSE.";
+                const sub2 = gameState === 'START_SCREEN' ? "TAP TO BEGIN YOUR JOURNEY" : "TAP TO RESTART";
+                const titleSize = Math.min(canvas.width, canvas.height) * 0.05;
+                drawWrappedText(title, 10, canvas.height * 0.3, titleSize, COLORS.CYAN, canvas.width - 20);
+                drawWrappedText(sub1, 10, canvas.height * 0.5, FONT_SIZE + 1, COLORS.WHITE, canvas.width - 20);
+                drawWrappedText(sub2, 10, canvas.height * 0.7, FONT_SIZE + 2, COLORS.YELLOW, canvas.width - 20);
+                return;
+            }
+            
+            // --- Draw Gameplay in its clipped area ---
+            ctx.save();
+            ctx.beginPath();
+            ctx.rect(layout.game.x, layout.game.y, layout.game.size, layout.game.size);
+            ctx.clip();
+
+            // Draw completed paths
+            ctx.lineWidth = 1; ctx.globalAlpha = 0.5;
+            completedPaths.forEach(p => { ctx.strokeStyle = p.color; ctx.beginPath(); ctx.moveTo(p.x1, p.y1); ctx.lineTo(p.x2, p.y2); ctx.stroke(); });
+
+            // Draw dynamic player trail
+            ctx.lineWidth = 1.5; ctx.globalAlpha = 1;
+            for(let i = 1; i < playerTrail.length; i++){
+                const p1 = playerTrail[i-1]; const p2 = playerTrail[i];
+                if(p1.color === p2.color){ // Prevents color bleeding at transitions
+                    ctx.strokeStyle = p1.color; ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.stroke();
+                }
+            }
+            ctx.globalAlpha = 1.0;
+            
+            // Draw nodes
+            const nextMoveNodeId = puzzle.isComplete ? -1 : getNextChineseRingsMove(puzzle.currentStep + 1);
+            nodes.forEach(node => {
+                const isNext = node.id === nextMoveNodeId && player.state === 'WAITING';
+                ctx.strokeStyle = isNext ? COLORS.YELLOW : COLORS.WHITE;
+                ctx.lineWidth = isNext ? 3 : 1.5;
+                if(node.isLine){ ctx.beginPath(); ctx.moveTo(node.x, node.y1); ctx.lineTo(node.x, node.y2); ctx.stroke(); } 
+                else { ctx.beginPath(); ctx.arc(node.x, node.y, layout.game.size * 0.01, 0, Math.PI * 2); ctx.stroke(); }
+            });
+            
+            // Draw player
+            ctx.fillStyle = COLORS.CYAN;
+            ctx.beginPath(); ctx.arc(player.x, player.y, player.size, 0, Math.PI * 2); ctx.fill();
+            ctx.restore();
+
+            // --- Draw UI in text area ---
+            const headerText = `MAP ${currentLevel + 1} | STEP ${puzzle.currentStep}/${puzzle.totalSteps}`;
+            const y_pos = drawWrappedText(headerText, layout.text.x, layout.text.y, FONT_SIZE, COLORS.WHITE, layout.text.w);
+
+            let promptText = ""; let promptColor = COLORS.WHITE;
+            if (message.timer > 0) { promptText = message.text; } 
+            else if (player.state === 'WAITING' && !puzzle.isComplete) { promptText = "TAP TO PROCEED..."; promptColor = COLORS.YELLOW; }
+            if (promptText) drawWrappedText(promptText, layout.text.x, y_pos, FONT_SIZE, promptColor, layout.text.w);
+        }
+
+        // --- Main Loop & Event Handlers ---
+        function gameLoop() { update(); draw(); requestAnimationFrame(gameLoop); }
+        const clickHandler = () => {
+            if (gameState !== 'GAMEPLAY') { gameState = 'GAMEPLAY'; currentLevel = 0; setupLevel(currentLevel); } 
+            else { handlePlayerClick(); }
+        };
+        
+        window.addEventListener('resize', resizeCanvas);
+        canvas.addEventListener('click', clickHandler);
+        canvas.addEventListener('touchstart', e => { e.preventDefault(); clickHandler(); }, { passive: false });
+
+        resizeCanvas();
+        gameLoop();
+    </script>
+</body>
+</html>
