@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Column Logic</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background-color: #111;
+            font-family: 'Courier New', Courier, monospace;
+            color: white;
+        }
+        canvas {
+            background-color: #000;
+            border: 2px solid #FFF;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas"></canvas>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // --- Game Configuration ---
+        const GAME_WIDTH = 800;
+        const GAME_HEIGHT = 600;
+        canvas.width = GAME_WIDTH;
+        canvas.height = GAME_HEIGHT;
+
+        const LEVEL_CONFIG = [3, 5, 7]; // Columns per level
+        
+        // ZX Spectrum-like color palette
+        const COLORS = {
+            BLACK: '#000000',
+            WHITE: '#FFFFFF',
+            CYAN: '#00FFFF',
+            MAGENTA: '#FF00FF',
+            YELLOW: '#FFFF00',
+            GREEN: '#00FF00',
+            RED: '#FF0000'
+        };
+
+        let gameState = 'START_SCREEN'; // START_SCREEN, LEVEL_PLAY, WIN_SCREEN
+        let currentLevel = 0;
+        
+        let player = {};
+        let platforms = [];
+        let columns = [];
+        let puzzle = {};
+
+        // --- Pixel Font Renderer ---
+        // Basic 5x7 pixel font data for drawing text
+        const FONT = {
+            'A': [0x7e, 0x09, 0x09, 0x09, 0x7e], 'B': [0x7f, 0x49, 0x49, 0x49, 0x36], 'C': [0x3e, 0x41, 0x41, 0x41, 0x22],
+            'D': [0x7f, 0x41, 0x41, 0x22, 0x1c], 'E': [0x7f, 0x49, 0x49, 0x49, 0x41], 'F': [0x7f, 0x09, 0x09, 0x01, 0x01],
+            'G': [0x3e, 0x41, 0x41, 0x51, 0x32], 'H': [0x7f, 0x08, 0x08, 0x08, 0x7f], 'I': [0x00, 0x41, 0x7f, 0x41, 0x00],
+            'L': [0x7f, 0x40, 0x40, 0x40, 0x40], 'K': [0x7f, 0x08, 0x14, 0x22, 0x41], 'M': [0x7f, 0x02, 0x0c, 0x02, 0x7f],
+            'N': [0x7f, 0x04, 0x08, 0x10, 0x7f], 'O': [0x3e, 0x41, 0x41, 0x41, 0x3e], 'P': [0x7f, 0x09, 0x09, 0x09, 0x06],
+            'Q': [0x3e, 0x41, 0x51, 0x21, 0x5e], 'R': [0x7f, 0x09, 0x19, 0x29, 0x46], 'S': [0x26, 0x49, 0x49, 0x49, 0x32],
+            'T': [0x01, 0x01, 0x7f, 0x01, 0x01], 'U': [0x3f, 0x40, 0x40, 0x40, 0x3f], 'W': [0x3f, 0x40, 0x38, 0x40, 0x3f],
+            'V': [0x1f, 0x20, 0x40, 0x20, 0x1f], 'X': [0x63, 0x14, 0x08, 0x14, 0x63], 'Y': [0x03, 0x04, 0x78, 0x04, 0x03],
+            'Z': [0x61, 0x51, 0x49, 0x45, 0x43], '0': [0x3e, 0x51, 0x49, 0x45, 0x3e], '1': [0x00, 0x42, 0x7f, 0x40, 0x00],
+            '2': [0x42, 0x61, 0x51, 0x49, 0x46], '3': [0x21, 0x41, 0x45, 0x4b, 0x31], '4': [0x18, 0x14, 0x12, 0x7f, 0x10],
+            '5': [0x27, 0x45, 0x45, 0x45, 0x39], '6': [0x3c, 0x4a, 0x49, 0x49, 0x30], '7': [0x01, 0x71, 0x09, 0x05, 0x03],
+            '8': [0x36, 0x49, 0x49, 0x49, 0x36], '9': [0x06, 0x49, 0x49, 0x29, 0x1e], ' ': [0x00, 0x00, 0x00, 0x00, 0x00],
+            '!': [0x00, 0x00, 0x5f, 0x00, 0x00], '/': [0x03, 0x0c, 0x30, 0xc0, 0x00]
+        };
+
+        function drawText(text, x, y, size, color) {
+            text = text.toUpperCase();
+            ctx.fillStyle = color;
+            for (let i = 0; i < text.length; i++) {
+                let charData = FONT[text[i]];
+                if (charData) {
+                    for (let c = 0; c < 5; c++) {
+                        for (let r = 0; r < 8; r++) {
+                            if ((charData[c] >> r) & 1) {
+                                ctx.fillRect(x + i * (size * 6) + c * size, y + r * size, size, size);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // --- Puzzle Logic ---
+        /**
+         * Generates the sequence of moves to solve the Chinese Rings puzzle for N rings.
+         * This uses the elegant algorithm where the ring to move at step k is the
+         * position of the least-significant bit of k.
+         * @param {number} numRings The number of rings (columns) in the puzzle.
+         * @returns {number[]} An array of 1-based indices for the move sequence.
+         */
+        function generateChineseRingsSequence(numRings) {
+            const moves = [];
+            // The number of moves to put ON N rings is ceil((2^(N+1)-1)/3)
+            const totalMoves = Math.ceil((Math.pow(2, numRings + 1) - 1) / 3);
+
+            for (let k = 1; k <= totalMoves; k++) {
+                // Find position of the least significant bit of k (1-based)
+                // e.g., k=1 (..001)->1, k=2 (..010)->2, k=3 (..011)->1, k=4 (..100)->3
+                let move = 0;
+                while (!((k >> move) & 1)) {
+                    move++;
+                }
+                moves.push(move + 1);
+            }
+            return moves;
+        }
+
+        // --- Game State & Level Setup ---
+        function setupLevel(levelIndex) {
+            const numColumns = LEVEL_CONFIG[levelIndex];
+            
+            // Player
+            player = {
+                x: 0,
+                y: GAME_HEIGHT - 150 - 40,
+                width: 20,
+                height: 40,
+                speed: 2,
+                state: 'WALKING_IN', // WALKING_IN, WAITING, WALKING_OUT
+                walkFrame: 0,
+                walkFrameTimer: 0
+            };
+
+            // Platforms
+            platforms = [
+                { x: 0, y: GAME_HEIGHT - 150, width: 150, height: 20 },
+                { x: GAME_WIDTH - 150, y: GAME_HEIGHT - 150, width: 150, height: 20 }
+            ];
+
+            // Columns
+            columns = [];
+            const columnWidth = 40;
+            const gap = 20;
+            const totalColumnsWidth = numColumns * columnWidth + (numColumns - 1) * gap;
+            let startX = (GAME_WIDTH - totalColumnsWidth) / 2;
+            
+            for (let i = 0; i < numColumns; i++) {
+                columns.push({
+                    x: startX + i * (columnWidth + gap),
+                    y: GAME_HEIGHT - 150,
+                    width: columnWidth,
+                    height: 130,
+                    isDown: false // All columns start in the 'up' position
+                });
+            }
+
+            // Puzzle state
+            puzzle = {
+                sequence: generateChineseRingsSequence(numColumns),
+                currentStep: 0,
+                isSolved: false,
+            };
+        }
+
+        // --- Update & Draw ---
+        function update() {
+            if (gameState !== 'LEVEL_PLAY') return;
+
+            // Player animation
+            player.walkFrameTimer++;
+            if (player.walkFrameTimer > 10) {
+                player.walkFrame = 1 - player.walkFrame;
+                player.walkFrameTimer = 0;
+            }
+            
+            // Player movement logic
+            if (player.state === 'WALKING_IN') {
+                player.x += player.speed;
+                if (player.x > platforms[0].width - player.width - 20) {
+                    player.x = platforms[0].width - player.width - 20;
+                    player.state = 'WAITING';
+                }
+            } else if (player.state === 'WALKING_OUT') {
+                player.x += player.speed;
+                if (player.x > GAME_WIDTH) {
+                    // Level complete, move to next
+                    currentLevel++;
+                    if (currentLevel >= LEVEL_CONFIG.length) {
+                        gameState = 'WIN_SCREEN';
+                    } else {
+                        setupLevel(currentLevel);
+                    }
+                }
+            }
+            
+            // Check for puzzle solved
+            if (!puzzle.isSolved && player.state === 'WAITING') {
+                if (puzzle.currentStep >= puzzle.sequence.length) {
+                    puzzle.isSolved = true;
+                    // Verify all columns are down
+                    const allDown = columns.every(c => c.isDown);
+                    if (allDown) {
+                        player.state = 'WALKING_OUT';
+                    } else {
+                        // This case indicates an error in the sequence logic.
+                        console.error("Sequence finished but not all columns are down!");
+                    }
+                }
+            }
+        }
+
+        function draw() {
+            // Clear screen
+            ctx.fillStyle = COLORS.BLACK;
+            ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+
+            if (gameState === 'START_SCREEN') {
+                drawText("COLUMN LOGIC", (GAME_WIDTH - 12 * 5 * 8) / 2, 200, 8, COLORS.CYAN);
+                drawText("INSPIRED BY CHINESE RINGS", (GAME_WIDTH - 25 * 5 * 4) / 2, 300, 4, COLORS.WHITE);
+                drawText("CLICK TO START", (GAME_WIDTH - 14 * 5 * 5) / 2, 450, 5, COLORS.YELLOW);
+                return;
+            }
+
+            if (gameState === 'WIN_SCREEN') {
+                drawText("CONGRATULATIONS!", (GAME_WIDTH - 15 * 5 * 6) / 2, 250, 6, COLORS.GREEN);
+                drawText("CLICK TO RESTART", (GAME_WIDTH - 16 * 5 * 5) / 2, 400, 5, COLORS.YELLOW);
+                return;
+            }
+
+            // --- Draw Level ---
+            // Platforms
+            ctx.fillStyle = COLORS.WHITE;
+            platforms.forEach(p => ctx.fillRect(p.x, p.y, p.width, p.height));
+
+            // Columns
+            const nextMoveIndex = puzzle.sequence[puzzle.currentStep] - 1;
+            columns.forEach((col, index) => {
+                const isNextMove = index === nextMoveIndex && !puzzle.isSolved;
+                ctx.fillStyle = isNextMove ? COLORS.YELLOW : (col.isDown ? COLORS.GREEN : COLORS.MAGENTA);
+                const yPos = col.isDown ? col.y : col.y - col.height;
+                ctx.fillRect(col.x, yPos, col.width, col.height);
+            });
+            
+            // Player
+            ctx.fillStyle = COLORS.CYAN;
+            // Simple 2-frame walk animation
+            const legOffset = (player.state !== 'WAITING' && player.walkFrame === 1) ? 5 : 0;
+            ctx.fillRect(player.x, player.y, player.width, player.height-10); // Body
+            ctx.fillRect(player.x + 5, player.y - 10, player.width - 10, 10); // Head
+            ctx.fillRect(player.x + legOffset, player.y + player.height - 10, 5, 10); // Leg 1
+            ctx.fillRect(player.x + player.width - 5 - legOffset, player.y + player.height - 10, 5, 10); // Leg 2
+            
+            // UI Text
+            drawText(`ROOM ${currentLevel + 1}`, 20, 20, 4, COLORS.WHITE);
+            if (!puzzle.isSolved) {
+                const moveText = `MOVE ${puzzle.currentStep + 1} / ${puzzle.sequence.length}`;
+                drawText(moveText, GAME_WIDTH - (moveText.length * 5 * 4) - 20, 20, 4, COLORS.WHITE);
+            }
+        }
+
+        function gameLoop() {
+            update();
+            draw();
+            requestAnimationFrame(gameLoop);
+        }
+
+        // --- Event Listener ---
+        canvas.addEventListener('click', (e) => {
+            if (gameState === 'START_SCREEN') {
+                currentLevel = 0;
+                setupLevel(currentLevel);
+                gameState = 'LEVEL_PLAY';
+                return;
+            }
+
+            if (gameState === 'WIN_SCREEN') {
+                gameState = 'START_SCREEN';
+                return;
+            }
+            
+            if (gameState === 'LEVEL_PLAY' && player.state === 'WAITING' && !puzzle.isSolved) {
+                const rect = canvas.getBoundingClientRect();
+                const mouseX = e.clientX - rect.left;
+                const mouseY = e.clientY - rect.top;
+
+                const nextMoveIndex = puzzle.sequence[puzzle.currentStep] - 1;
+                const correctColumn = columns[nextMoveIndex];
+                
+                // Check if click is on the correct column
+                const yPos = correctColumn.isDown ? correctColumn.y : correctColumn.y - correctColumn.height;
+                if (mouseX >= correctColumn.x && mouseX <= correctColumn.x + correctColumn.width &&
+                    mouseY >= yPos && mouseY <= yPos + correctColumn.height) 
+                {
+                    // Correct click!
+                    correctColumn.isDown = !correctColumn.isDown;
+                    puzzle.currentStep++;
+                }
+            }
+        });
+
+        // --- Start Game ---
+        gameLoop();
+    </script>
+</body>
+</html>
