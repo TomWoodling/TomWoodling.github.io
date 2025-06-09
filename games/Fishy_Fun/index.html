@@ -1,0 +1,615 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Enhanced Fish Swimming Game</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background: linear-gradient(to bottom, #87CEEB 0%, #4682B4 50%, #191970 100%);
+            font-family: Arial, sans-serif;
+            touch-action: none;
+        }
+        #gameContainer {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+        }
+        #instructions {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            color: white;
+            font-size: 18px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.7);
+            z-index: 100;
+            pointer-events: none;
+        }
+        #score {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            color: white;
+            font-size: 24px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.7);
+            z-index: 100;
+        }
+        canvas {
+            display: block;
+            cursor: none;
+        }
+    </style>
+</head>
+<body>
+    <div id="gameContainer">
+        <div id="instructions">
+            🐠 Drag to swim around<br>
+            🐟 Collect the golden fish!<br>
+            ⭐ Score: <span id="scoreValue">0</span>
+        </div>
+        <canvas id="gameCanvas"></canvas>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        // Game variables
+        let scene, camera, renderer, playerFish, shoalFish = [], goldenFish = [];
+        let mouseX = 0, mouseY = 0, targetX = 0, targetY = 0;
+        let isMouseDown = false, score = 0;
+        let seaweed = [], bubbles = [], shells = [], starfish = [];
+        let gameWidth, gameHeight;
+        let fishSpawnTimer = 0;
+        let goldenFishSpawnTimer = 0;
+
+        // Initialize the game
+        function init() {
+            const canvas = document.getElementById('gameCanvas');
+            gameWidth = window.innerWidth;
+            gameHeight = window.innerHeight;
+
+            // Create scene
+            scene = new THREE.Scene();
+            scene.fog = new THREE.Fog(0x4682B4, 30, 150);
+
+            // Create camera
+            camera = new THREE.PerspectiveCamera(75, gameWidth / gameHeight, 0.1, 1000);
+            camera.position.z = 50;
+
+            // Create renderer
+            renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true });
+            renderer.setSize(gameWidth, gameHeight);
+            renderer.setClearColor(0x4682B4);
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+            // Add lighting
+            const ambientLight = new THREE.AmbientLight(0x404040, 0.7);
+            scene.add(ambientLight);
+
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            directionalLight.position.set(10, 10, 5);
+            directionalLight.castShadow = true;
+            directionalLight.shadow.mapSize.width = 2048;
+            directionalLight.shadow.mapSize.height = 2048;
+            scene.add(directionalLight);
+
+            // Create underwater environment
+            createPlayerFish();
+            createShoalFish();
+            createGoldenFish();
+            createSeaweed();
+            createShells();
+            createStarfish();
+            createBubbles();
+
+            // Add event listeners
+            addEventListeners();
+
+            // Start game loop
+            animate();
+        }
+
+        // Create the player fish
+        function createPlayerFish() {
+            const fishGeometry = new THREE.ConeGeometry(1, 3, 8);
+            const fishMaterial = new THREE.MeshPhongMaterial({ 
+                color: 0xff6b35,
+                shininess: 100
+            });
+            
+            playerFish = new THREE.Mesh(fishGeometry, fishMaterial);
+            playerFish.position.set(0, 0, 0);
+            playerFish.castShadow = true;
+            
+            // Add tail
+            const tailGeometry = new THREE.ConeGeometry(0.5, 1.5, 6);
+            const tailMaterial = new THREE.MeshPhongMaterial({ color: 0xd63031 });
+            const tail = new THREE.Mesh(tailGeometry, tailMaterial);
+            tail.position.set(0, 0, -2);
+            tail.rotation.x = Math.PI;
+            playerFish.add(tail);
+
+            // Add fins
+            const finGeometry = new THREE.ConeGeometry(0.3, 1, 4);
+            const finMaterial = new THREE.MeshPhongMaterial({ color: 0xe17055 });
+            
+            const topFin = new THREE.Mesh(finGeometry, finMaterial);
+            topFin.position.set(0, 0.8, -0.5);
+            topFin.rotation.z = Math.PI / 2;
+            playerFish.add(topFin);
+
+            // Add eyes
+            const eyeGeometry = new THREE.SphereGeometry(0.2, 8, 8);
+            const eyeMaterial = new THREE.MeshPhongMaterial({ color: 0xffffff });
+            const pupilMaterial = new THREE.MeshPhongMaterial({ color: 0x2d3436 });
+            
+            const leftEye = new THREE.Mesh(eyeGeometry, eyeMaterial);
+            leftEye.position.set(0.3, 0.3, 0.8);
+            playerFish.add(leftEye);
+            
+            const leftPupil = new THREE.Mesh(new THREE.SphereGeometry(0.1, 6, 6), pupilMaterial);
+            leftPupil.position.set(0.35, 0.35, 0.9);
+            playerFish.add(leftPupil);
+            
+            const rightEye = new THREE.Mesh(eyeGeometry, eyeMaterial);
+            rightEye.position.set(-0.3, 0.3, 0.8);
+            playerFish.add(rightEye);
+            
+            const rightPupil = new THREE.Mesh(new THREE.SphereGeometry(0.1, 6, 6), pupilMaterial);
+            rightPupil.position.set(-0.35, 0.35, 0.9);
+            playerFish.add(rightPupil);
+
+            scene.add(playerFish);
+        }
+
+        // Create shoal of fish
+        function createShoalFish() {
+            const colors = [0x00b894, 0x0984e3, 0x6c5ce7, 0xa29bfe, 0xfd79a8, 0x00cec9, 0xe17055];
+            
+            for (let i = 0; i < 25; i++) {
+                createShoalFishInstance(colors);
+            }
+        }
+
+        function createShoalFishInstance(colors) {
+            const fishGeometry = new THREE.ConeGeometry(0.7, 2, 6);
+            const fishMaterial = new THREE.MeshPhongMaterial({ 
+                color: colors[Math.floor(Math.random() * colors.length)],
+                shininess: 80
+            });
+            
+            const fish = new THREE.Mesh(fishGeometry, fishMaterial);
+            
+            // Spawn fish from edges of the screen
+            const side = Math.floor(Math.random() * 4);
+            switch(side) {
+                case 0: // Left
+                    fish.position.set(-50, (Math.random() - 0.5) * 30, (Math.random() - 0.5) * 20);
+                    fish.velocity = new THREE.Vector3(0.3 + Math.random() * 0.4, (Math.random() - 0.5) * 0.2, (Math.random() - 0.5) * 0.1);
+                    break;
+                case 1: // Right
+                    fish.position.set(50, (Math.random() - 0.5) * 30, (Math.random() - 0.5) * 20);
+                    fish.velocity = new THREE.Vector3(-0.3 - Math.random() * 0.4, (Math.random() - 0.5) * 0.2, (Math.random() - 0.5) * 0.1);
+                    break;
+                case 2: // Top
+                    fish.position.set((Math.random() - 0.5) * 60, 35, (Math.random() - 0.5) * 20);
+                    fish.velocity = new THREE.Vector3((Math.random() - 0.5) * 0.3, -0.2 - Math.random() * 0.3, (Math.random() - 0.5) * 0.1);
+                    break;
+                case 3: // Bottom
+                    fish.position.set((Math.random() - 0.5) * 60, -35, (Math.random() - 0.5) * 20);
+                    fish.velocity = new THREE.Vector3((Math.random() - 0.5) * 0.3, 0.2 + Math.random() * 0.3, (Math.random() - 0.5) * 0.1);
+                    break;
+            }
+            
+            fish.castShadow = true;
+            fish.receiveShadow = true;
+            fish.lifeTime = 0;
+            shoalFish.push(fish);
+            scene.add(fish);
+        }
+
+        // Create golden collectible fish
+        function createGoldenFish() {
+            for (let i = 0; i < 3; i++) {
+                createGoldenFishInstance();
+            }
+        }
+
+        function createGoldenFishInstance() {
+            const fishGeometry = new THREE.ConeGeometry(0.8, 2.5, 8);
+            const fishMaterial = new THREE.MeshPhongMaterial({ 
+                color: 0xffd700,
+                shininess: 100,
+                emissive: 0x332200
+            });
+            
+            const fish = new THREE.Mesh(fishGeometry, fishMaterial);
+            
+            // Spawn golden fish within player reach (closer to center)
+            fish.position.set(
+                (Math.random() - 0.5) * 40, // Reduced from 80
+                (Math.random() - 0.5) * 25, // Reduced from 50
+                (Math.random() - 0.5) * 15  // Reduced from 40
+            );
+            
+            fish.velocity = new THREE.Vector3(
+                (Math.random() - 0.5) * 0.2,
+                (Math.random() - 0.5) * 0.2,
+                (Math.random() - 0.5) * 0.05
+            );
+            
+            // Add sparkle effect
+            const sparkleGeometry = new THREE.SphereGeometry(0.1, 6, 6);
+            const sparkleMaterial = new THREE.MeshPhongMaterial({ 
+                color: 0xffff00,
+                emissive: 0x444400,
+                transparent: true,
+                opacity: 0.8
+            });
+            
+            for (let j = 0; j < 3; j++) {
+                const sparkle = new THREE.Mesh(sparkleGeometry, sparkleMaterial);
+                sparkle.position.set(
+                    (Math.random() - 0.5) * 2,
+                    (Math.random() - 0.5) * 2,
+                    (Math.random() - 0.5) * 2
+                );
+                fish.add(sparkle);
+            }
+            
+            fish.castShadow = true;
+            fish.receiveShadow = true;
+            fish.spawnTime = Date.now();
+            goldenFish.push(fish);
+            scene.add(fish);
+        }
+
+        // Create enhanced seaweed
+        function createSeaweed() {
+            for (let i = 0; i < 25; i++) {
+                const seaweedHeight = 6 + Math.random() * 8;
+                const seaweedGeometry = new THREE.CylinderGeometry(0.1, 0.4, seaweedHeight, 8);
+                const seaweedMaterial = new THREE.MeshPhongMaterial({ 
+                    color: Math.random() > 0.5 ? 0x2d3436 : 0x00b894
+                });
+                
+                const seaweedStalk = new THREE.Mesh(seaweedGeometry, seaweedMaterial);
+                seaweedStalk.position.set(
+                    (Math.random() - 0.5) * 120,
+                    -25 + seaweedHeight/2,
+                    (Math.random() - 0.5) * 80
+                );
+                
+                // Add some variation in rotation
+                seaweedStalk.rotation.z = (Math.random() - 0.5) * 0.3;
+                
+                seaweedStalk.receiveShadow = true;
+                seaweedStalk.castShadow = true;
+                seaweed.push(seaweedStalk);
+                scene.add(seaweedStalk);
+            }
+        }
+
+        // Create shells
+        function createShells() {
+            for (let i = 0; i < 15; i++) {
+                const shellGeometry = new THREE.SphereGeometry(0.5 + Math.random() * 0.5, 8, 6, 0, Math.PI);
+                const shellMaterial = new THREE.MeshPhongMaterial({ 
+                    color: Math.random() > 0.5 ? 0xffeaa7 : 0xfdcb6e,
+                    shininess: 60
+                });
+                
+                const shell = new THREE.Mesh(shellGeometry, shellMaterial);
+                shell.position.set(
+                    (Math.random() - 0.5) * 100,
+                    -23,
+                    (Math.random() - 0.5) * 60
+                );
+                
+                shell.rotation.x = -Math.PI / 2;
+                shell.rotation.z = Math.random() * Math.PI * 2;
+                
+                shell.receiveShadow = true;
+                shell.castShadow = true;
+                shells.push(shell);
+                scene.add(shell);
+            }
+        }
+
+        // Create starfish
+        function createStarfish() {
+            for (let i = 0; i < 10; i++) {
+                const starfishGroup = new THREE.Group();
+                
+                // Create 5 arms
+                for (let j = 0; j < 5; j++) {
+                    const armGeometry = new THREE.ConeGeometry(0.2, 1.5, 6);
+                    const armMaterial = new THREE.MeshPhongMaterial({ 
+                        color: Math.random() > 0.5 ? 0xe17055 : 0xd63031
+                    });
+                    
+                    const arm = new THREE.Mesh(armGeometry, armMaterial);
+                    arm.position.set(0, 0, 0.7);
+                    arm.rotation.x = Math.PI / 2;
+                    
+                    const armGroup = new THREE.Group();
+                    armGroup.add(arm);
+                    armGroup.rotation.y = (j * Math.PI * 2) / 5;
+                    starfishGroup.add(armGroup);
+                }
+                
+                // Center body
+                const bodyGeometry = new THREE.SphereGeometry(0.3, 8, 8);
+                const bodyMaterial = new THREE.MeshPhongMaterial({ 
+                    color: Math.random() > 0.5 ? 0xe17055 : 0xd63031
+                });
+                const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
+                body.scale.y = 0.5;
+                starfishGroup.add(body);
+                
+                starfishGroup.position.set(
+                    (Math.random() - 0.5) * 80,
+                    -22,
+                    (Math.random() - 0.5) * 50
+                );
+                
+                starfishGroup.rotation.y = Math.random() * Math.PI * 2;
+                starfishGroup.receiveShadow = true;
+                starfishGroup.castShadow = true;
+                
+                starfish.push(starfishGroup);
+                scene.add(starfishGroup);
+            }
+        }
+
+        // Create bubbles
+        function createBubbles() {
+            for (let i = 0; i < 30; i++) {
+                const bubbleGeometry = new THREE.SphereGeometry(Math.random() * 0.8 + 0.2, 8, 8);
+                const bubbleMaterial = new THREE.MeshPhongMaterial({ 
+                    color: 0xffffff,
+                    transparent: true,
+                    opacity: 0.4,
+                    shininess: 100
+                });
+                
+                const bubble = new THREE.Mesh(bubbleGeometry, bubbleMaterial);
+                bubble.position.set(
+                    (Math.random() - 0.5) * 80,
+                    (Math.random() - 0.5) * 50,
+                    (Math.random() - 0.5) * 40
+                );
+                
+                bubble.velocity = new THREE.Vector3(
+                    (Math.random() - 0.5) * 0.1,
+                    Math.random() * 0.3 + 0.1,
+                    (Math.random() - 0.5) * 0.05
+                );
+                bubbles.push(bubble);
+                scene.add(bubble);
+            }
+        }
+
+        // Add event listeners
+        function addEventListeners() {
+            document.addEventListener('mousedown', onMouseDown);
+            document.addEventListener('mouseup', onMouseUp);
+            document.addEventListener('mousemove', onMouseMove);
+            document.addEventListener('touchstart', onTouchStart);
+            document.addEventListener('touchend', onTouchEnd);
+            document.addEventListener('touchmove', onTouchMove);
+            window.addEventListener('resize', onWindowResize);
+        }
+
+        function onMouseDown(event) {
+            isMouseDown = true;
+            updateTargetPosition(event.clientX, event.clientY);
+        }
+
+        function onMouseUp() {
+            isMouseDown = false;
+        }
+
+        function onMouseMove(event) {
+            if (isMouseDown) {
+                updateTargetPosition(event.clientX, event.clientY);
+            }
+        }
+
+        function onTouchStart(event) {
+            event.preventDefault();
+            isMouseDown = true;
+            const touch = event.touches[0];
+            updateTargetPosition(touch.clientX, touch.clientY);
+        }
+
+        function onTouchEnd(event) {
+            event.preventDefault();
+            isMouseDown = false;
+        }
+
+        function onTouchMove(event) {
+            event.preventDefault();
+            if (isMouseDown) {
+                const touch = event.touches[0];
+                updateTargetPosition(touch.clientX, touch.clientY);
+            }
+        }
+
+        function updateTargetPosition(clientX, clientY) {
+            targetX = ((clientX / gameWidth) * 2 - 1) * 30;
+            targetY = -((clientY / gameHeight) * 2 - 1) * 20;
+        }
+
+        function onWindowResize() {
+            gameWidth = window.innerWidth;
+            gameHeight = window.innerHeight;
+            camera.aspect = gameWidth / gameHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(gameWidth, gameHeight);
+        }
+
+        // Update player fish movement
+        function updatePlayerFish() {
+            if (isMouseDown) {
+                const dx = targetX - playerFish.position.x;
+                const dy = targetY - playerFish.position.y;
+                
+                playerFish.position.x += dx * 0.08;
+                playerFish.position.y += dy * 0.08;
+                
+                if (Math.abs(dx) > 0.1 || Math.abs(dy) > 0.1) {
+                    const angle = Math.atan2(dx, dy);
+                    playerFish.rotation.z = -angle;
+                }
+            }
+            
+            playerFish.position.y += Math.sin(Date.now() * 0.002) * 0.02;
+            playerFish.rotation.x = Math.sin(Date.now() * 0.003) * 0.1;
+        }
+
+        // Update shoal fish
+        function updateShoalFish() {
+            const currentTime = Date.now();
+            
+            shoalFish.forEach((fish, index) => {
+                fish.lifeTime += 1;
+                
+                // Remove fish that have been alive too long or gone off screen
+                if (fish.lifeTime > 1500 || 
+                    fish.position.x > 60 || fish.position.x < -60 ||
+                    fish.position.y > 40 || fish.position.y < -40) {
+                    scene.remove(fish);
+                    shoalFish.splice(index, 1);
+                    return;
+                }
+                
+                // Basic movement
+                fish.position.add(fish.velocity);
+                
+                // Rotate to face movement direction
+                if (fish.velocity.length() > 0.1) {
+                    fish.lookAt(fish.position.clone().add(fish.velocity));
+                }
+                
+                // Swimming animation
+                fish.rotation.x += Math.sin(currentTime * 0.005 + index) * 0.02;
+                fish.position.z += Math.sin(currentTime * 0.003 + index) * 0.01;
+            });
+            
+            // Spawn new fish periodically
+            fishSpawnTimer++;
+            if (fishSpawnTimer > 60 && shoalFish.length < 40) { // Spawn every second at 60fps
+                const colors = [0x00b894, 0x0984e3, 0x6c5ce7, 0xa29bfe, 0xfd79a8, 0x00cec9, 0xe17055];
+                createShoalFishInstance(colors);
+                fishSpawnTimer = 0;
+            }
+        }
+
+        // Update golden fish
+        function updateGoldenFish() {
+            const playerPos = playerFish.position;
+            const currentTime = Date.now();
+            
+            goldenFish.forEach((fish, index) => {
+                // Check if fish has been alive for 20 seconds (20000ms)
+                if (currentTime - fish.spawnTime > 20000) {
+                    scene.remove(fish);
+                    goldenFish.splice(index, 1);
+                    
+                    // Immediately spawn a new one to replace it
+                    createGoldenFishInstance();
+                    return;
+                }
+                
+                // Gentle movement
+                fish.position.add(fish.velocity);
+                
+                // Keep golden fish in reachable bounds
+                if (fish.position.x > 35) fish.velocity.x = -Math.abs(fish.velocity.x);
+                if (fish.position.x < -35) fish.velocity.x = Math.abs(fish.velocity.x);
+                if (fish.position.y > 20) fish.velocity.y = -Math.abs(fish.velocity.y);
+                if (fish.position.y < -20) fish.velocity.y = Math.abs(fish.velocity.y);
+                
+                // Golden sparkle animation
+                fish.rotation.y += 0.02;
+                fish.rotation.z = Math.sin(currentTime * 0.003 + index) * 0.2;
+                
+                // Animate sparkles
+                fish.children.forEach((sparkle, sparkleIndex) => {
+                    sparkle.rotation.x += 0.05;
+                    sparkle.rotation.y += 0.03;
+                    sparkle.material.opacity = 0.5 + Math.sin(currentTime * 0.01 + sparkleIndex) * 0.3;
+                });
+                
+                // Check collision with player
+                const distance = fish.position.distanceTo(playerPos);
+                if (distance < 3.5) {
+                    scene.remove(fish);
+                    goldenFish.splice(index, 1);
+                    
+                    score += 10;
+                    document.getElementById('scoreValue').textContent = score;
+                    
+                    // Spawn new golden fish after 3 seconds
+                    setTimeout(() => {
+                        if (goldenFish.length < 3) {
+                            createGoldenFishInstance();
+                        }
+                    }, 3000);
+                }
+            });
+            
+            // Ensure we always have golden fish available
+            goldenFishSpawnTimer++;
+            if (goldenFishSpawnTimer > 300 && goldenFish.length < 3) { // Every 5 seconds
+                createGoldenFishInstance();
+                goldenFishSpawnTimer = 0;
+            }
+        }
+
+        // Update bubbles
+        function updateBubbles() {
+            bubbles.forEach((bubble, index) => {
+                bubble.position.add(bubble.velocity);
+                
+                if (bubble.position.y > 35) {
+                    bubble.position.y = -30;
+                    bubble.position.x = (Math.random() - 0.5) * 80;
+                    bubble.position.z = (Math.random() - 0.5) * 40;
+                }
+                
+                bubble.position.x += Math.sin(Date.now() * 0.001 + index) * 0.02;
+                bubble.rotation.x += 0.01;
+                bubble.rotation.y += 0.005;
+            });
+        }
+
+        // Update seaweed animation
+        function updateSeaweed() {
+            seaweed.forEach((weed, index) => {
+                weed.rotation.z = Math.sin(Date.now() * 0.001 + index) * 0.15;
+            });
+        }
+
+        // Main animation loop
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            updatePlayerFish();
+            updateShoalFish();
+            updateGoldenFish();
+            updateBubbles();
+            updateSeaweed();
+            
+            renderer.render(scene, camera);
+        }
+
+        // Start the game
+        init();
+    </script>
+</body>
+</html>
