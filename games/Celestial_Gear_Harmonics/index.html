@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Celestial Gear Harmonics</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: radial-gradient(circle at center, #0a0a2e, #16213e, #1a1a3a);
+            font-family: 'Courier New', monospace;
+            color: #d4af37;
+            overflow: hidden;
+            height: 100vh;
+        }
+
+        #gameCanvas {
+            display: block;
+            margin: 0 auto;
+            border: 2px solid #8b7355;
+            box-shadow: 0 0 30px rgba(212, 175, 55, 0.3);
+            background: radial-gradient(circle at center, #1a1a3a, #0f0f1e);
+        }
+
+        #ui {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            right: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            pointer-events: none;
+            z-index: 10;
+        }
+
+        .ui-panel {
+            background: rgba(16, 16, 30, 0.8);
+            border: 1px solid #8b7355;
+            border-radius: 8px;
+            padding: 10px;
+            min-width: 150px;
+        }
+
+        .harmony-bar {
+            width: 100px;
+            height: 8px;
+            background: #2a2a4a;
+            border-radius: 4px;
+            overflow: hidden;
+            margin: 5px 0;
+        }
+
+        .harmony-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #ff6b6b, #ffd93d, #6bcf7f, #4ecdc4, #45b7d1);
+            transition: width 0.3s ease;
+            border-radius: 4px;
+        }
+
+        #instructions {
+            position: absolute;
+            bottom: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            text-align: center;
+            font-size: 12px;
+            color: #8b7355;
+            pointer-events: none;
+        }
+
+        .gear-label {
+            font-size: 10px;
+            color: #d4af37;
+            text-align: center;
+            margin-top: 3px;
+        }
+    </style>
+</head>
+<body>
+    <div id="ui">
+        <div class="ui-panel">
+            <div>Celestial Resonance</div>
+            <div class="harmony-bar">
+                <div class="harmony-fill" id="harmonyFill"></div>
+            </div>
+            <div class="gear-label">Synchronization: <span id="syncLevel">0%</span></div>
+        </div>
+        <div class="ui-panel">
+            <div>Orbital Cycles: <span id="cycles">0</span></div>
+            <div>Gear Harmonics: <span id="harmonics">1.000</span></div>
+            <div class="gear-label">Phase Alignment: <span id="phase">0°</span></div>
+        </div>
+    </div>
+
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+
+    <div id="instructions">
+        Click gears to adjust their rotation speed • Achieve harmonic resonance by synchronizing orbital patterns
+        <br>Ancient wisdom: When all cycles align, the cosmos reveals its secrets
+    </div>
+
+    <script>
+        class AntikytheraGame {
+            constructor() {
+                this.canvas = document.getElementById('gameCanvas');
+                this.ctx = this.canvas.getContext('2d');
+                this.width = this.canvas.width;
+                this.height = this.canvas.height;
+                
+                // Core Antikythera-inspired mechanics
+                this.masterTime = 0;
+                this.harmonicResonance = 0;
+                this.celestialCycles = 0;
+                this.targetHarmonic = this.generateTargetHarmonic();
+                
+                // Gear system - representing different celestial bodies/computations
+                this.gears = [
+                    { 
+                        x: 200, y: 150, radius: 40, baseSpeed: 1.0, currentSpeed: 1.0, 
+                        teeth: 12, phase: 0, color: '#ff6b6b', name: 'Mars', 
+                        harmonicRatio: 1.0, targetRatio: 1.881 // Mars orbital period ratio
+                    },
+                    { 
+                        x: 400, y: 200, radius: 55, baseSpeed: 0.6, currentSpeed: 0.6, 
+                        teeth: 18, phase: 0, color: '#ffd93d', name: 'Jupiter', 
+                        harmonicRatio: 0.6, targetRatio: 0.084 // Jupiter's ratio
+                    },
+                    { 
+                        x: 600, y: 180, radius: 45, baseSpeed: 1.5, currentSpeed: 1.5, 
+                        teeth: 15, phase: 0, color: '#6bcf7f', name: 'Venus', 
+                        harmonicRatio: 1.5, targetRatio: 1.625 // Venus ratio
+                    },
+                    { 
+                        x: 300, y: 350, radius: 35, baseSpeed: 2.2, currentSpeed: 2.2, 
+                        teeth: 10, phase: 0, color: '#4ecdc4', name: 'Mercury', 
+                        harmonicRatio: 2.2, targetRatio: 4.15 // Mercury ratio
+                    },
+                    { 
+                        x: 500, y: 380, radius: 60, baseSpeed: 0.3, currentSpeed: 0.3, 
+                        teeth: 24, phase: 0, color: '#45b7d1', name: 'Saturn', 
+                        harmonicRatio: 0.3, targetRatio: 0.034 // Saturn ratio
+                    }
+                ];
+                
+                // Mystical connections between gears (based on real orbital resonances)
+                this.resonanceLines = [];
+                this.particleSystem = [];
+                
+                this.setupEventListeners();
+                this.gameLoop();
+            }
+            
+            generateTargetHarmonic() {
+                // Generate a target based on actual planetary harmonic ratios
+                return 1.618; // Golden ratio - the ultimate harmony
+            }
+            
+            setupEventListeners() {
+                this.canvas.addEventListener('click', (e) => {
+                    const rect = this.canvas.getBoundingClientRect();
+                    const x = (e.clientX - rect.left) * (this.width / rect.width);
+                    const y = (e.clientY - rect.top) * (this.height / rect.height);
+                    
+                    this.gears.forEach(gear => {
+                        const dist = Math.sqrt((x - gear.x) ** 2 + (y - gear.y) ** 2);
+                        if (dist < gear.radius) {
+                            this.adjustGear(gear);
+                        }
+                    });
+                });
+            }
+            
+            adjustGear(gear) {
+                // Cycle through different speed ratios approaching the target
+                const speedOptions = [0.2, 0.5, 0.8, 1.0, 1.2, 1.5, 2.0, 2.5];
+                const currentIndex = speedOptions.findIndex(s => Math.abs(s - gear.currentSpeed) < 0.1);
+                const nextIndex = (currentIndex + 1) % speedOptions.length;
+                gear.currentSpeed = speedOptions[nextIndex];
+                
+                // Calculate how close this gets us to the target harmonic ratio
+                gear.harmonicRatio = gear.currentSpeed;
+                
+                // Create particle effect
+                this.createParticleEffect(gear.x, gear.y, gear.color);
+            }
+            
+            createParticleEffect(x, y, color) {
+                for (let i = 0; i < 8; i++) {
+                    this.particleSystem.push({
+                        x: x + (Math.random() - 0.5) * 20,
+                        y: y + (Math.random() - 0.5) * 20,
+                        vx: (Math.random() - 0.5) * 4,
+                        vy: (Math.random() - 0.5) * 4,
+                        life: 1.0,
+                        color: color,
+                        size: Math.random() * 3 + 1
+                    });
+                }
+            }
+            
+            calculateHarmonicResonance() {
+                // Calculate how close current gear ratios are to ideal harmonic relationships
+                let totalAlignment = 0;
+                let comparisons = 0;
+                
+                for (let i = 0; i < this.gears.length; i++) {
+                    const gear = this.gears[i];
+                    const targetDiff = Math.abs(gear.harmonicRatio - gear.targetRatio);
+                    const maxDiff = 3.0; // Maximum possible difference
+                    const alignment = Math.max(0, 1 - (targetDiff / maxDiff));
+                    totalAlignment += alignment;
+                    comparisons++;
+                }
+                
+                this.harmonicResonance = totalAlignment / comparisons;
+                
+                // Bonus for overall system harmony (when ratios create musical intervals)
+                const overallHarmony = this.calculateOverallHarmony();
+                this.harmonicResonance = (this.harmonicResonance * 0.7) + (overallHarmony * 0.3);
+                
+                if (this.harmonicResonance > 0.85) {
+                    this.celestialCycles++;
+                    this.generateCosmicEvent();
+                }
+            }
+            
+            calculateOverallHarmony() {
+                // Check for harmonic intervals between gear ratios (like musical harmony)
+                const ratios = this.gears.map(g => g.harmonicRatio).sort((a, b) => a - b);
+                let harmonyScore = 0;
+                
+                for (let i = 0; i < ratios.length - 1; i++) {
+                    const ratio = ratios[i + 1] / ratios[i];
+                    // Check for common harmonic ratios (2:1, 3:2, 4:3, 5:4, etc.)
+                    const harmonicRatios = [2.0, 1.5, 1.333, 1.25, 1.2, 1.125];
+                    const closestHarmonic = harmonicRatios.reduce((prev, curr) => 
+                        Math.abs(curr - ratio) < Math.abs(prev - ratio) ? curr : prev
+                    );
+                    const proximity = 1 - Math.min(1, Math.abs(ratio - closestHarmonic));
+                    harmonyScore += proximity;
+                }
+                
+                return harmonyScore / (ratios.length - 1);
+            }
+            
+            generateCosmicEvent() {
+                // Create special visual effects when harmony is achieved
+                const centerX = this.width / 2;
+                const centerY = this.height / 2;
+                
+                for (let i = 0; i < 20; i++) {
+                    const angle = (i / 20) * Math.PI * 2;
+                    const distance = 100 + Math.random() * 50;
+                    this.particleSystem.push({
+                        x: centerX + Math.cos(angle) * distance,
+                        y: centerY + Math.sin(angle) * distance,
+                        vx: Math.cos(angle) * -2,
+                        vy: Math.sin(angle) * -2,
+                        life: 2.0,
+                        color: '#d4af37',
+                        size: 4,
+                        cosmic: true
+                    });
+                }
+            }
+            
+            updateResonanceLines() {
+                this.resonanceLines = [];
+                
+                // Draw connections between gears that are in harmonic resonance
+                for (let i = 0; i < this.gears.length; i++) {
+                    for (let j = i + 1; j < this.gears.length; j++) {
+                        const gear1 = this.gears[i];
+                        const gear2 = this.gears[j];
+                        const ratio = gear1.harmonicRatio / gear2.harmonicRatio;
+                        
+                        // Check if ratio is close to a harmonic interval
+                        const harmonicRatios = [2, 1.5, 1.333, 1.25, 0.75, 0.5];
+                        const isHarmonic = harmonicRatios.some(hr => Math.abs(ratio - hr) < 0.1 || Math.abs(1/ratio - hr) < 0.1);
+                        
+                        if (isHarmonic) {
+                            const strength = 1 - Math.min(0.5, Math.abs(ratio - Math.round(ratio * 2) / 2));
+                            this.resonanceLines.push({
+                                x1: gear1.x, y1: gear1.y,
+                                x2: gear2.x, y2: gear2.y,
+                                strength: strength,
+                                phase: this.masterTime * 2
+                            });
+                        }
+                    }
+                }
+            }
+            
+            update() {
+                this.masterTime += 0.016;
+                
+                // Update gear rotations based on their speeds
+                this.gears.forEach(gear => {
+                    gear.phase += gear.currentSpeed * 0.02;
+                    gear.harmonicRatio = gear.currentSpeed;
+                });
+                
+                // Update particle system
+                this.particleSystem = this.particleSystem.filter(particle => {
+                    particle.x += particle.vx;
+                    particle.y += particle.vy;
+                    particle.life -= 0.02;
+                    particle.vx *= 0.98;
+                    particle.vy *= 0.98;
+                    return particle.life > 0;
+                });
+                
+                this.calculateHarmonicResonance();
+                this.updateResonanceLines();
+                this.updateUI();
+            }
+            
+            updateUI() {
+                const harmonyFill = document.getElementById('harmonyFill');
+                const syncLevel = document.getElementById('syncLevel');
+                const cycles = document.getElementById('cycles');
+                const harmonics = document.getElementById('harmonics');
+                const phase = document.getElementById('phase');
+                
+                harmonyFill.style.width = (this.harmonicResonance * 100) + '%';
+                syncLevel.textContent = Math.round(this.harmonicResonance * 100) + '%';
+                cycles.textContent = this.celestialCycles;
+                harmonics.textContent = this.calculateOverallHarmony().toFixed(3);
+                phase.textContent = Math.round((this.masterTime * 57.3) % 360) + '°';
+            }
+            
+            drawGear(gear) {
+                const ctx = this.ctx;
+                
+                ctx.save();
+                ctx.translate(gear.x, gear.y);
+                ctx.rotate(gear.phase);
+                
+                // Draw gear body
+                ctx.fillStyle = gear.color;
+                ctx.strokeStyle = '#8b7355';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.arc(0, 0, gear.radius * 0.8, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.stroke();
+                
+                // Draw gear teeth
+                ctx.fillStyle = gear.color;
+                ctx.strokeStyle = '#8b7355';
+                for (let i = 0; i < gear.teeth; i++) {
+                    const angle = (i / gear.teeth) * Math.PI * 2;
+                    const x1 = Math.cos(angle) * gear.radius * 0.8;
+                    const y1 = Math.sin(angle) * gear.radius * 0.8;
+                    const x2 = Math.cos(angle) * gear.radius;
+                    const y2 = Math.sin(angle) * gear.radius;
+                    
+                    ctx.beginPath();
+                    ctx.moveTo(x1, y1);
+                    ctx.lineTo(x2, y2);
+                    ctx.lineWidth = 3;
+                    ctx.stroke();
+                }
+                
+                // Draw central hub
+                ctx.fillStyle = '#8b7355';
+                ctx.beginPath();
+                ctx.arc(0, 0, 8, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // Draw speed indicator lines
+                ctx.strokeStyle = '#d4af37';
+                ctx.lineWidth = 1;
+                for (let i = 0; i < 4; i++) {
+                    const angle = (i / 4) * Math.PI * 2;
+                    const intensity = gear.currentSpeed / 3;
+                    ctx.beginPath();
+                    ctx.moveTo(Math.cos(angle) * 12, Math.sin(angle) * 12);
+                    ctx.lineTo(Math.cos(angle) * (12 + intensity * 15), Math.sin(angle) * (12 + intensity * 15));
+                    ctx.stroke();
+                }
+                
+                ctx.restore();
+                
+                // Draw gear name and current speed
+                ctx.fillStyle = '#d4af37';
+                ctx.font = '10px Courier New';
+                ctx.textAlign = 'center';
+                ctx.fillText(gear.name, gear.x, gear.y + gear.radius + 15);
+                ctx.fillText(`${gear.currentSpeed.toFixed(1)}x`, gear.x, gear.y + gear.radius + 28);
+            }
+            
+            drawResonanceLines() {
+                const ctx = this.ctx;
+                
+                this.resonanceLines.forEach(line => {
+                    const alpha = line.strength * (0.3 + 0.3 * Math.sin(line.phase));
+                    ctx.strokeStyle = `rgba(212, 175, 55, ${alpha})`;
+                    ctx.lineWidth = 2;
+                    ctx.setLineDash([5, 5]);
+                    
+                    ctx.beginPath();
+                    ctx.moveTo(line.x1, line.y1);
+                    ctx.lineTo(line.x2, line.y2);
+                    ctx.stroke();
+                    
+                    ctx.setLineDash([]);
+                });
+            }
+            
+            drawParticles() {
+                const ctx = this.ctx;
+                
+                this.particleSystem.forEach(particle => {
+                    const alpha = particle.life * (particle.cosmic ? 0.8 : 0.6);
+                    ctx.fillStyle = particle.color + Math.round(alpha * 255).toString(16).padStart(2, '0');
+                    
+                    ctx.beginPath();
+                    if (particle.cosmic) {
+                        // Draw star shape for cosmic particles
+                        const spikes = 5;
+                        const outerRadius = particle.size;
+                        const innerRadius = particle.size * 0.4;
+                        
+                        ctx.save();
+                        ctx.translate(particle.x, particle.y);
+                        ctx.beginPath();
+                        for (let i = 0; i < spikes * 2; i++) {
+                            const angle = (i * Math.PI) / spikes;
+                            const radius = i % 2 === 0 ? outerRadius : innerRadius;
+                            const x = Math.cos(angle) * radius;
+                            const y = Math.sin(angle) * radius;
+                            if (i === 0) ctx.moveTo(x, y);
+                            else ctx.lineTo(x, y);
+                        }
+                        ctx.closePath();
+                        ctx.fill();
+                        ctx.restore();
+                    } else {
+                        ctx.arc(particle.x, particle.y, particle.size, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
+                });
+            }
+            
+            drawBackground() {
+                const ctx = this.ctx;
+                
+                // Draw subtle grid representing the mechanism's base
+                ctx.strokeStyle = 'rgba(139, 115, 85, 0.1)';
+                ctx.lineWidth = 1;
+                
+                for (let x = 0; x < this.width; x += 40) {
+                    ctx.beginPath();
+                    ctx.moveTo(x, 0);
+                    ctx.lineTo(x, this.height);
+                    ctx.stroke();
+                }
+                
+                for (let y = 0; y < this.height; y += 40) {
+                    ctx.beginPath();
+                    ctx.moveTo(0, y);
+                    ctx.lineTo(this.width, y);
+                    ctx.stroke();
+                }
+                
+                // Draw celestial backdrop effects
+                if (this.harmonicResonance > 0.5) {
+                    const intensity = (this.harmonicResonance - 0.5) * 2;
+                    ctx.fillStyle = `rgba(212, 175, 55, ${intensity * 0.05})`;
+                    ctx.fillRect(0, 0, this.width, this.height);
+                }
+            }
+            
+            render() {
+                this.ctx.clearRect(0, 0, this.width, this.height);
+                
+                this.drawBackground();
+                this.drawResonanceLines();
+                
+                this.gears.forEach(gear => this.drawGear(gear));
+                
+                this.drawParticles();
+                
+                // Draw central mandala when high harmony is achieved
+                if (this.harmonicResonance > 0.7) {
+                    this.drawCelestialMandala();
+                }
+            }
+            
+            drawCelestialMandala() {
+                const ctx = this.ctx;
+                const centerX = this.width / 2;
+                const centerY = this.height / 2;
+                const intensity = (this.harmonicResonance - 0.7) / 0.3;
+                
+                ctx.save();
+                ctx.translate(centerX, centerY);
+                ctx.rotate(this.masterTime * 0.5);
+                
+                ctx.strokeStyle = `rgba(212, 175, 55, ${intensity * 0.3})`;
+                ctx.lineWidth = 1;
+                
+                // Draw concentric geometric patterns
+                for (let ring = 1; ring <= 3; ring++) {
+                    const radius = ring * 80;
+                    const segments = 8 * ring;
+                    
+                    for (let i = 0; i < segments; i++) {
+                        const angle = (i / segments) * Math.PI * 2;
+                        const x1 = Math.cos(angle) * radius;
+                        const y1 = Math.sin(angle) * radius;
+                        const x2 = Math.cos(angle + Math.PI) * radius * 0.3;
+                        const y2 = Math.sin(angle + Math.PI) * radius * 0.3;
+                        
+                        ctx.beginPath();
+                        ctx.moveTo(x1, y1);
+                        ctx.lineTo(x2, y2);
+                        ctx.stroke();
+                    }
+                }
+                
+                ctx.restore();
+            }
+            
+            gameLoop() {
+                this.update();
+                this.render();
+                requestAnimationFrame(() => this.gameLoop());
+            }
+        }
+        
+        // Initialize the game when the page loads
+        window.addEventListener('load', () => {
+            new AntikytheraGame();
+        });
+    </script>
+</body>
+</html>
