@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Starship Voyager</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap');
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Orbitron', monospace;
+            background: #000;
+            overflow: hidden;
+            color: #00ffff;
+            user-select: none;
+            -webkit-user-select: none;
+            -moz-user-select: none;
+        }
+        
+        #gameContainer {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+            cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none" stroke="%2300ffff" stroke-width="2"><circle cx="16" cy="16" r="12"/><path d="M16 0 V10 M16 22 V32 M0 16 H10 M22 16 H32"/></svg>') 16 16, auto;
+        }
+        
+        #ui {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            z-index: 100;
+            pointer-events: none;
+        }
+        
+        .ui-panel {
+            background: rgba(0, 255, 255, 0.1);
+            border: 2px solid rgba(0, 255, 255, 0.3);
+            border-radius: 10px;
+            padding: 15px;
+            margin-bottom: 15px;
+            backdrop-filter: blur(5px);
+            box-shadow: 0 0 20px rgba(0, 255, 255, 0.2);
+            min-width: 250px;
+        }
+        
+        .score {
+            font-size: 24px;
+            font-weight: 700;
+            color: #00ffff;
+            text-shadow: 0 0 10px #00ffff;
+            margin-bottom: 10px;
+        }
+        
+        .energy-bar {
+            width: 100%;
+            height: 20px;
+            background: rgba(0, 0, 0, 0.5);
+            border: 2px solid #00ffff;
+            border-radius: 10px;
+            overflow: hidden;
+            position: relative;
+        }
+        
+        .energy-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #ff4444, #ffff00, #00ff00);
+            border-radius: 8px;
+            transition: width 0.3s ease, background-color 0.5s ease;
+            box-shadow: 0 0 10px #00ffff;
+        }
+
+        #scan-info {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            z-index: 100;
+            pointer-events: none;
+            color: #ffff00;
+            text-shadow: 0 0 8px #ffff00;
+            opacity: 0;
+            transition: opacity 0.5s ease;
+        }
+        
+        .game-overlay {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            z-index: 200;
+            background: rgba(0, 0, 0, 0.9);
+            padding: 30px;
+            border-radius: 15px;
+            border: 2px solid #00ffff;
+            box-shadow: 0 0 30px rgba(0, 255, 255, 0.3);
+            animation: fadeIn 2s ease-in-out;
+        }
+        
+        .game-overlay h1 {
+            font-size: 32px;
+            margin-bottom: 20px;
+            color: #00ffff;
+            text-shadow: 0 0 15px #00ffff;
+        }
+        
+        .game-overlay p {
+            font-size: 16px;
+            margin-bottom: 15px;
+            color: #aaa;
+            max-width: 500px;
+        }
+        
+        .game-overlay button {
+            font-family: 'Orbitron', monospace;
+            font-size: 18px;
+            color: #000;
+            background: #00ffff;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            box-shadow: 0 0 15px #00ffff;
+            transition: all 0.3s ease;
+            margin-top: 15px;
+        }
+        
+        .game-overlay button:hover {
+            background: #fff;
+            box-shadow: 0 0 25px #fff;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translate(-50%, -50%) scale(0.8); }
+            to { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+        }
+    </style>
+</head>
+<body>
+    <div id="gameContainer">
+        <div id="ui">
+            <div class="ui-panel">
+                <div class="score">DISCOVERY: <span id="scoreValue">0</span></div>
+                <div>HULL INTEGRITY</div>
+                <div class="energy-bar">
+                    <div class="energy-fill" id="energyFill" style="width: 100%"></div>
+                </div>
+            </div>
+        </div>
+        
+        <div id="scan-info"></div>
+        
+        <div class="game-overlay" id="instructions">
+            <h1>STARSHIP VOYAGER</h1>
+            <p>You are the commander of the Starship Voyager. Your five-year mission: to explore strange new worlds, to seek out new life and new civilizations, to boldly go where no one has gone before.</p>
+            <p><b>PRESS [SPACE]</b> to send out a scanner pulse. It will log the nearest discovery.</p>
+            <p><b>CLICK & DRAG</b> in empty space to pilot your ship.</p>
+            <p>Collect green crystals to repair the hull. Avoid asteroids.</p>
+            <button id="beginButton">BEGIN VOYAGE</button>
+        </div>
+
+        <div class="game-overlay" id="gameOverScreen" style="display: none;">
+            <h1>MISSION ENDED</h1>
+            <p>Your final discovery log: <span id="finalScore">0</span> points.</p>
+            <button id="restartButton">BEGIN NEW VOYAGE</button>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        // --- Game State & Core Components ---
+        let scene, camera, renderer, clock;
+        let gameStarted = false;
+        let gameOver = false;
+        let discoveryPoints = 0;
+        let hullIntegrity = 100;
+        let isDragging = false;
+        
+        // --- Game Objects ---
+        let playerShip, stars = [], nebulae = [];
+        let crystals = [], asteroids = [], anomalies = [], alienOutposts = [];
+        let scannables = [];
+
+        // --- Input & Physics ---
+        let mouse = new THREE.Vector2();
+        let targetPosition = new THREE.Vector3(0, 0, 0);
+        const shipSpeed = 0.03;
+        const maxVelocity = 0.2;
+        const dampening = 0.96;
+        let playerPosition = new THREE.Vector3(0, 0, 0);
+        let playerVelocity = new THREE.Vector3(0, 0, 0);
+
+        // --- Scan & Interaction ---
+        let scanRings = [];
+        let lastScanTime = 0;
+        const SCAN_COOLDOWN = 3000; // 3 seconds
+        const MAX_SCAN_RANGE = 40; // Max distance to successfully log an object
+        
+        // --- UI Elements ---
+        const instructionsScreen = document.getElementById('instructions');
+        const gameOverScreen = document.getElementById('gameOverScreen');
+        const beginButton = document.getElementById('beginButton');
+        const restartButton = document.getElementById('restartButton');
+        const scoreUI = document.getElementById('scoreValue');
+        const hullUI = document.getElementById('energyFill');
+        const scanInfoUI = document.getElementById('scan-info');
+        
+        function init() {
+            scene = new THREE.Scene();
+            scene.fog = new THREE.FogExp2(0x000011, 0.015);
+            
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(0, 8, 15);
+            
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setClearColor(0x00000A, 1);
+            renderer.shadowMap.enabled = true;
+            document.getElementById('gameContainer').appendChild(renderer.domElement);
+            
+            clock = new THREE.Clock();
+            
+            createLighting();
+            createStarField();
+            createNebulae();
+            
+            setupEventListeners();
+            
+            animate();
+        }
+        
+        // --- Object Creation ---
+        function createLighting() { /* No changes */ scene.add(new THREE.AmbientLight(0x605050, 0.8)); const sun = new THREE.DirectionalLight(0xffffff, 1); sun.position.set(20, 30, 10); sun.castShadow = true; scene.add(sun); }
+        function createStarField() { /* No changes */ const vertices = []; for (let i = 0; i < 10000; i++) { vertices.push(THREE.MathUtils.randFloatSpread(1500), THREE.MathUtils.randFloatSpread(1500), THREE.MathUtils.randFloatSpread(1500)); } const geometry = new THREE.BufferGeometry(); geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3)); const material = new THREE.PointsMaterial({ color: 0xAAAAAA, size: 0.7, transparent: true, opacity: 0.8 }); stars.push(new THREE.Points(geometry, material)); scene.add(stars[0]); }
+        function createNebulae() { /* No changes */ for (let i = 0; i < 3; i++) { const vertices = []; for (let j = 0; j < 500; j++) { vertices.push(THREE.MathUtils.randFloatSpread(100), THREE.MathUtils.randFloatSpread(100), THREE.MathUtils.randFloatSpread(100)); } const geometry = new THREE.BufferGeometry(); geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3)); const color = i === 0 ? 0xaa00ff : (i === 1 ? 0x00aaff : 0xffaa00); const material = new THREE.PointsMaterial({ color, size: 2, transparent: true, opacity: 0.1, depthWrite: false }); const nebula = new THREE.Points(geometry, material); nebula.position.set(THREE.MathUtils.randFloatSpread(400), THREE.MathUtils.randFloatSpread(100), THREE.MathUtils.randFloatSpread(400)); nebulae.push(nebula); scene.add(nebula); } }
+        function createPlayerShip() { /* No changes */ playerShip = new THREE.Group(); const saucerGeo = new THREE.CylinderGeometry(0.8, 0.8, 0.15, 32); const saucerMat = new THREE.MeshPhongMaterial({ color: 0xcccccc, shininess: 80 }); const saucer = new THREE.Mesh(saucerGeo, saucerMat); saucer.castShadow = true; playerShip.add(saucer); const bridgeGeo = new THREE.SphereGeometry(0.2, 16, 8); const bridgeMat = new THREE.MeshPhongMaterial({ color: 0x00ffff, emissive: 0x002244 }); const bridge = new THREE.Mesh(bridgeGeo, bridgeMat); bridge.position.y = 0.15; playerShip.add(bridge); playerShip.rotation.x = Math.PI / 8; scene.add(playerShip); }
+        function createCrystal() { /* No changes */ const geometry = new THREE.DodecahedronGeometry(0.5, 0); const material = new THREE.MeshPhongMaterial({ color: 0x00ff00, emissive: 0x003300, shininess: 100, transparent: true, opacity: 0.8}); const crystal = new THREE.Mesh(geometry, material); setRandomPosition(crystal, 80); crystal.userData = { type: 'crystal', rotation: new THREE.Vector3(Math.random()*0.02, Math.random()*0.02, 0) }; return crystal; }
+        function createAsteroid() { /* No changes */ const size = Math.random() * 2 + 1; const geometry = new THREE.IcosahedronGeometry(size, 0); const material = new THREE.MeshPhongMaterial({ color: 0x886655, flatShading: true }); const asteroid = new THREE.Mesh(geometry, material); setRandomPosition(asteroid, 150); const randomVelocity = new THREE.Vector3(THREE.MathUtils.randFloatSpread(2), THREE.MathUtils.randFloatSpread(2), THREE.MathUtils.randFloatSpread(2)).normalize().multiplyScalar(0.01); asteroid.userData = { velocity: randomVelocity, rotation: new THREE.Vector3(Math.random()*0.01, Math.random()*0.01, Math.random()*0.01) }; return asteroid; }
+        function createAnomaly() { /* No changes */ const geometry = new THREE.TorusKnotGeometry(1, 0.2, 100, 16); const material = new THREE.MeshPhongMaterial({ color: 0xff00ff, emissive: 0x330033, shininess: 100 }); const anomaly = new THREE.Mesh(geometry, material); setRandomPosition(anomaly, 100); anomaly.userData = { type: 'anomaly', scanned: false, points: 500, scanText: "Unidentified Spatial Anomaly Logged.", rotation: new THREE.Vector3(0, 0.005, 0) }; return anomaly; }
+        function createAlienOutpost() { /* No changes */ const outpost = new THREE.Group(); const stationGeo = new THREE.SphereGeometry(2, 16, 16); const stationMat = new THREE.MeshPhongMaterial({ color: 0x0088ff, emissive: 0x001144, shininess: 50 }); const station = new THREE.Mesh(stationGeo, stationMat); outpost.add(station); const ringGeo = new THREE.TorusGeometry(3, 0.2, 8, 48); const ringMat = new THREE.MeshPhongMaterial({ color: 0xdddddd, metalness: 0.5 }); const ring = new THREE.Mesh(ringGeo, ringMat); ring.rotation.x = Math.PI / 2; outpost.add(ring); setRandomPosition(outpost, 200); outpost.userData = { type: 'outpost', scanned: false, points: 2000, scanText: "First contact protocol initiated. Data packet received.", rotation: new THREE.Vector3(0, 0.002, 0) }; return outpost; }
+        function setRandomPosition(obj, range) { /* No changes */ obj.position.set(THREE.MathUtils.randFloatSpread(range), THREE.MathUtils.randFloatSpread(range / 4), THREE.MathUtils.randFloatSpread(range)); }
+
+        // --- Game Logic ---
+        function startGame() {
+            gameStarted = true;
+            createPlayerShip();
+            for (let i = 0; i < 40; i++) { const c = createCrystal(); crystals.push(c); scene.add(c); }
+            for (let i = 0; i < 20; i++) { const a = createAsteroid(); asteroids.push(a); scene.add(a); }
+            for (let i = 0; i < 5; i++) { const anom = createAnomaly(); anomalies.push(anom); scene.add(anom); scannables.push(anom); }
+            for (let i = 0; i < 2; i++) { const post = createAlienOutpost(); alienOutposts.push(post); scene.add(post); scannables.push(post); }
+        }
+
+        function restartGame() {
+            [...crystals, ...asteroids, ...anomalies, ...alienOutposts, ...scanRings].forEach(obj => scene.remove(obj));
+            scene.remove(playerShip);
+            
+            crystals = []; asteroids = []; anomalies = []; alienOutposts = []; scannables = []; scanRings = [];
+            discoveryPoints = 0; hullIntegrity = 100; gameOver = false;
+            playerPosition.set(0, 0, 0); playerVelocity.set(0, 0, 0); targetPosition.set(0, 0, 0);
+
+            gameOverScreen.style.display = 'none';
+            startGame();
+        }
+
+        function handleInteractions() {
+            if (!playerShip) return;
+
+            // FIX: Increased collection radius for crystals to make it more forgiving.
+            const collectedCrystals = [];
+            crystals.forEach((crystal, index) => {
+                if (crystal.position.distanceTo(playerPosition) < 2.5) { // Check against playerPosition
+                    collectedCrystals.push(index);
+                    hullIntegrity = Math.min(100, hullIntegrity + 10);
+                    showScanInfo("+10% Hull Integrity", "#00ff00");
+                }
+            });
+            for (let i = collectedCrystals.length - 1; i >= 0; i--) {
+                const idx = collectedCrystals[i];
+                scene.remove(crystals[idx]);
+                crystals.splice(idx, 1);
+                const newCrystal = createCrystal();
+                crystals.push(newCrystal);
+                scene.add(newCrystal);
+            }
+
+            // Player vs Asteroids (Damage)
+            asteroids.forEach(asteroid => {
+                if (asteroid.position.distanceTo(playerPosition) < asteroid.geometry.parameters.radius + 0.8) {
+                    const knockback = playerPosition.clone().sub(asteroid.position).normalize().multiplyScalar(0.2);
+                    playerVelocity.add(knockback);
+                    damageHull(15);
+                    setRandomPosition(asteroid, 200); // Respawn far away
+                }
+            });
+        }
+        
+        function triggerScan() {
+            if (Date.now() - lastScanTime < SCAN_COOLDOWN) {
+                showScanInfo("Scanner recharging...", "#ffaa00");
+                return;
+            }
+            lastScanTime = Date.now();
+
+            // --- Create visual scanner pulse ---
+            const ringGeo = new THREE.RingGeometry(0.5, 0.7, 64);
+            const ringMat = new THREE.MeshBasicMaterial({ color: 0x00ffff, transparent: true, opacity: 0.8, side: THREE.DoubleSide });
+            const ring = new THREE.Mesh(ringGeo, ringMat);
+            ring.position.copy(playerPosition);
+            ring.rotation.x = Math.PI / 2; // Make it horizontal
+            scanRings.push(ring);
+            scene.add(ring);
+            
+            // --- Find nearest scannable object ---
+            let closest = { obj: null, dist: Infinity };
+            scannables.forEach(target => {
+                if(target.userData.scanned) return; // Ignore already scanned objects
+                const distance = playerPosition.distanceTo(target.position);
+                if (distance < closest.dist) {
+                    closest.dist = distance;
+                    closest.obj = target;
+                }
+            });
+            
+            if (closest.obj) {
+                scanObject(closest.obj, closest.dist);
+            } else {
+                showScanInfo("No new phenomena detected.", "#aaaaaa");
+            }
+        }
+
+        function scanObject(object, distance) {
+            if (object.userData.scanned) {
+                 showScanInfo("Object already logged.", "#ffff00");
+                 return;
+            }
+            if (distance > MAX_SCAN_RANGE) {
+                 showScanInfo(`Target out of range (${Math.round(distance)}m > ${MAX_SCAN_RANGE}m)`, "#ffaa00");
+                 return;
+            }
+            
+            object.userData.scanned = true;
+            discoveryPoints += object.userData.points;
+            showScanInfo(object.userData.scanText, "#00ffff");
+            
+            object.material.emissive.setHex(0x00ff00); // Flash green
+            setTimeout(() => object.material.emissive.setHex(object.userData.type === 'anomaly' ? 0x330033 : 0x001144), 500);
+        }
+        
+        function damageHull(amount) { /* No changes */ hullIntegrity = Math.max(0, hullIntegrity - amount); showScanInfo(`-${amount}% Hull Integrity!`, "#ff4444"); }
+        function updateUI() { /* No changes */ hullIntegrity = Math.max(0, hullIntegrity - 0.01); hullUI.style.width = hullIntegrity + '%'; if (hullIntegrity < 30) hullUI.style.backgroundColor = '#ff4444'; else if (hullIntegrity < 60) hullUI.style.backgroundColor = '#ffff00'; else hullUI.style.backgroundColor = '#00ff00'; scoreUI.textContent = discoveryPoints; if (hullIntegrity <= 0 && !gameOver) { gameOver = true; playerShip.visible = false; document.getElementById('finalScore').textContent = discoveryPoints; gameOverScreen.style.display = 'block'; } }
+        function showScanInfo(text, color) { /* No changes */ scanInfoUI.textContent = text; scanInfoUI.style.color = color; scanInfoUI.style.textShadow = `0 0 8px ${color}`; scanInfoUI.style.opacity = 1; setTimeout(() => scanInfoUI.style.opacity = 0, 3000); }
+
+        // --- Event Listeners & Input Handling ---
+        function setupEventListeners() {
+            beginButton.addEventListener('click', () => { instructionsScreen.style.display = 'none'; startGame(); });
+            restartButton.addEventListener('click', restartGame);
+            
+            const gameCanvas = renderer.domElement;
+            gameCanvas.addEventListener('mousedown', onMouseDown);
+            gameCanvas.addEventListener('mousemove', onMouseMove);
+            gameCanvas.addEventListener('mouseup', onMouseUp);
+            gameCanvas.addEventListener('touchstart', (e) => onMouseDown(e.touches[0]), { passive: false });
+            gameCanvas.addEventListener('touchmove', (e) => { e.preventDefault(); onMouseMove(e.touches[0]); }, { passive: false });
+            gameCanvas.addEventListener('touchend', onMouseUp);
+
+            window.addEventListener('keydown', (e) => {
+                if (e.code === 'Space' && gameStarted && !gameOver) {
+                    e.preventDefault(); // Prevent space from scrolling the page
+                    triggerScan();
+                }
+            });
+            window.addEventListener('resize', onWindowResize);
+        }
+
+        function onMouseDown(e) { isDragging = true; updateMousePosition(e.clientX, e.clientY); }
+        function onMouseMove(e) { if(isDragging) { updateMousePosition(e.clientX, e.clientY); } }
+        function onMouseUp(e) { isDragging = false; }
+        function updateMousePosition(clientX, clientY) { /* No changes */ mouse.x = (clientX / window.innerWidth) * 2 - 1; mouse.y = -(clientY / window.innerHeight) * 2 + 1; const vector = new THREE.Vector3(mouse.x, mouse.y, 0.5).unproject(camera); const direction = vector.sub(camera.position).normalize(); const distance = -camera.position.z / direction.z; targetPosition.copy(camera.position).add(direction.multiplyScalar(distance)); }
+        function onWindowResize() { /* No changes */ camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight); }
+
+        function updateScanRings() {
+            for (let i = scanRings.length - 1; i >= 0; i--) {
+                const ring = scanRings[i];
+                ring.scale.x *= 1.05; // Expand
+                ring.scale.y *= 1.05;
+                ring.material.opacity -= 0.01; // Fade out
+
+                if (ring.material.opacity <= 0) {
+                    scene.remove(ring);
+                    scanRings.splice(i, 1);
+                }
+            }
+        }
+
+        // --- Main Animation Loop ---
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            if (gameStarted && !gameOver) {
+                // Update Player and Camera
+                if (!isDragging) { playerVelocity.multiplyScalar(dampening); } 
+                else { const direction = targetPosition.clone().sub(playerPosition).multiplyScalar(shipSpeed); playerVelocity.add(direction); }
+                if (playerVelocity.length() > maxVelocity) playerVelocity.normalize().multiplyScalar(maxVelocity);
+                playerPosition.add(playerVelocity);
+                playerShip.position.copy(playerPosition);
+                if (playerVelocity.length() > 0.01) { const lookTarget = playerPosition.clone().add(playerVelocity); playerShip.lookAt(lookTarget); playerShip.rotation.x += Math.PI / 8; }
+                camera.position.lerp(new THREE.Vector3(playerPosition.x, playerPosition.y + 8, playerPosition.z + 15), 0.04);
+                camera.lookAt(playerPosition);
+
+                // Update World & Interactions
+                handleInteractions();
+                updateScanRings();
+                updateUI();
+                
+                asteroids.forEach(a => { a.position.add(a.userData.velocity); a.rotation.x += a.userData.rotation.x; a.rotation.y += a.userData.rotation.y; });
+                crystals.forEach(c => { c.rotation.x += c.userData.rotation.x; c.rotation.y += c.userData.rotation.y; });
+                anomalies.forEach(a => { a.rotation.x += a.userData.rotation.x; a.rotation.y += a.userData.rotation.y; });
+                alienOutposts.forEach(o => { o.rotation.x += o.userData.rotation.x; o.rotation.y += o.userData.rotation.y; });
+            }
+            
+            // Animate background
+            stars.forEach(s => { s.rotation.y += 0.0001; });
+            nebulae.forEach(n => { n.rotation.y += 0.0002; });
+
+            renderer.render(scene, camera);
+        }
+        
+        init();
+    </script>
+</body>
+</html>
