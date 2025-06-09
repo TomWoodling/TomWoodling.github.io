@@ -1,0 +1,583 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dog Walking Adventure</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: Arial, sans-serif;
+            overflow: hidden;
+            touch-action: none;
+            user-select: none;
+        }
+        
+        #gameCanvas {
+            display: block;
+            width: 100vw;
+            height: 100vh;
+            cursor: pointer;
+        }
+        
+        #ui {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            z-index: 100;
+            color: white;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.8);
+        }
+        
+        #excitementMeter {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            z-index: 100;
+            width: 200px;
+        }
+        
+        .meter-bg {
+            width: 100%;
+            height: 20px;
+            background: rgba(0,0,0,0.5);
+            border-radius: 10px;
+            overflow: hidden;
+        }
+        
+        .meter-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #4CAF50, #FFC107, #FF5722);
+            border-radius: 10px;
+            transition: width 0.3s ease;
+            width: 0%;
+        }
+        
+        .meter-label {
+            color: white;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.8);
+            font-size: 14px;
+            margin-bottom: 5px;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas"></canvas>
+    
+    <div id="ui">
+        <div>Tap triggers and the dog!</div>
+        <div>Score: <span id="score">0</span></div>
+    </div>
+    
+    <div id="excitementMeter">
+        <div class="meter-label">Excitement</div>
+        <div class="meter-bg">
+            <div class="meter-fill" id="meterFill"></div>
+        </div>
+    </div>
+
+    <script>
+        class Game {
+            constructor() {
+                this.canvas = document.getElementById('gameCanvas');
+                this.ctx = this.canvas.getContext('2d');
+                this.particles = [];
+                this.triggers = [];
+                this.dog = { x: 100, y: 0, speed: 1, direction: 1 };
+                this.excitement = 0;
+                this.score = 0;
+                this.clouds = [];
+                this.yapEffect = { active: false, timer: 0 };
+                
+                this.resize();
+                this.initClouds();
+                this.spawnTrigger();
+                this.bindEvents();
+                this.gameLoop();
+            }
+            
+            resize() {
+                this.canvas.width = window.innerWidth;
+                this.canvas.height = window.innerHeight;
+                this.groundY = this.canvas.height * 0.7;
+                this.dog.y = this.groundY - 40;
+            }
+            
+            initClouds() {
+                for (let i = 0; i < 5; i++) {
+                    this.clouds.push({
+                        x: Math.random() * this.canvas.width,
+                        y: 50 + Math.random() * 100,
+                        size: 30 + Math.random() * 40,
+                        speed: 0.2 + Math.random() * 0.3
+                    });
+                }
+            }
+            
+            bindEvents() {
+                this.canvas.addEventListener('click', this.handleClick.bind(this));
+                this.canvas.addEventListener('touchend', this.handleClick.bind(this));
+                window.addEventListener('resize', this.resize.bind(this));
+            }
+            
+            handleClick(e) {
+                e.preventDefault();
+                const rect = this.canvas.getBoundingClientRect();
+                const x = (e.clientX || e.changedTouches[0].clientX) - rect.left;
+                const y = (e.clientY || e.changedTouches[0].clientY) - rect.top;
+                
+                // Check dog click
+                if (this.isPointInDog(x, y)) {
+                    this.triggerYap();
+                    return;
+                }
+                
+                // Check trigger clicks
+                for (let i = this.triggers.length - 1; i >= 0; i--) {
+                    const trigger = this.triggers[i];
+                    const dist = Math.sqrt((x - trigger.x) ** 2 + (y - trigger.y) ** 2);
+                    if (dist < trigger.size) {
+                        this.activateTrigger(trigger, i);
+                        break;
+                    }
+                }
+            }
+            
+            isPointInDog(x, y) {
+                const dist = Math.sqrt((x - this.dog.x) ** 2 + (y - this.dog.y) ** 2);
+                return dist < 40;
+            }
+            
+            triggerYap() {
+                this.yapEffect.active = true;
+                this.yapEffect.timer = 30;
+                this.addExcitement(5);
+            }
+            
+            activateTrigger(trigger, index) {
+                this.triggers.splice(index, 1);
+                this.score += 10;
+                this.addExcitement(15);
+                
+                switch (trigger.type) {
+                    case 'leaves':
+                        this.createLeafParticles(trigger.x, trigger.y);
+                        break;
+                    case 'puddle':
+                        this.createWaterSplash(trigger.x, trigger.y);
+                        break;
+                    case 'birds':
+                        this.createBirdScatter(trigger.x, trigger.y);
+                        break;
+                    case 'rabbits':
+                        this.createRabbitScatter(trigger.x, trigger.y);
+                        break;
+                }
+                
+                // Clear all remaining triggers and spawn new ones after a short delay
+                this.triggers = [];
+                setTimeout(() => this.spawnTrigger(), 1500 + Math.random() * 1000);
+            }
+            
+            addExcitement(amount) {
+                this.excitement = Math.min(100, this.excitement + amount);
+                document.getElementById('meterFill').style.width = this.excitement + '%';
+                
+                if (this.excitement >= 100) {
+                    this.triggerConfetti();
+                    this.excitement = 0;
+                    document.getElementById('meterFill').style.width = '0%';
+                }
+            }
+            
+            triggerConfetti() {
+                for (let i = 0; i < 30; i++) {
+                    this.particles.push({
+                        x: this.dog.x,
+                        y: this.dog.y,
+                        vx: (Math.random() - 0.5) * 10,
+                        vy: -Math.random() * 8 - 2,
+                        life: 60,
+                        maxLife: 60,
+                        color: `hsl(${Math.random() * 360}, 70%, 60%)`,
+                        size: 3 + Math.random() * 3,
+                        type: 'confetti'
+                    });
+                }
+            }
+            
+            createLeafParticles(x, y) {
+                for (let i = 0; i < 15; i++) {
+                    this.particles.push({
+                        x: x + (Math.random() - 0.5) * 40,
+                        y: y + (Math.random() - 0.5) * 20,
+                        vx: (Math.random() - 0.5) * 6,
+                        vy: -Math.random() * 4 - 1,
+                        life: 120,
+                        maxLife: 120,
+                        color: `hsl(${60 + Math.random() * 60}, 60%, 40%)`,
+                        size: 4 + Math.random() * 4,
+                        type: 'leaf',
+                        rotation: Math.random() * Math.PI * 2,
+                        rotationSpeed: (Math.random() - 0.5) * 0.2
+                    });
+                }
+            }
+            
+            createWaterSplash(x, y) {
+                for (let i = 0; i < 20; i++) {
+                    this.particles.push({
+                        x: x + (Math.random() - 0.5) * 20,
+                        y: y,
+                        vx: (Math.random() - 0.5) * 8,
+                        vy: -Math.random() * 6 - 2,
+                        life: 40,
+                        maxLife: 40,
+                        color: `rgba(100, 150, 255, 0.8)`,
+                        size: 2 + Math.random() * 3,
+                        type: 'water'
+                    });
+                }
+            }
+            
+            createBirdScatter(x, y) {
+                for (let i = 0; i < 8; i++) {
+                    const angle = (i / 8) * Math.PI * 2;
+                    this.particles.push({
+                        x: x + Math.cos(angle) * 20,
+                        y: y + Math.sin(angle) * 10,
+                        vx: Math.cos(angle) * 4 + (Math.random() - 0.5) * 2,
+                        vy: -Math.random() * 3 - 2,
+                        life: 80,
+                        maxLife: 80,
+                        color: `hsl(${200 + Math.random() * 40}, 50%, 30%)`,
+                        size: 6 + Math.random() * 3,
+                        type: 'bird',
+                        wingPhase: Math.random() * Math.PI * 2
+                    });
+                }
+            }
+            
+            createRabbitScatter(x, y) {
+                for (let i = 0; i < 6; i++) {
+                    const angle = (i / 6) * Math.PI * 2;
+                    this.particles.push({
+                        x: x,
+                        y: y,
+                        vx: Math.cos(angle) * 3 + (Math.random() - 0.5),
+                        vy: 0,
+                        life: 60,
+                        maxLife: 60,
+                        color: `hsl(${30 + Math.random() * 30}, 60%, 60%)`,
+                        size: 5 + Math.random() * 3,
+                        type: 'rabbit',
+                        hopPhase: Math.random() * Math.PI
+                    });
+                }
+            }
+            
+            spawnTrigger() {
+                // Clear any existing triggers and spawn a new set
+                this.triggers = [];
+                
+                const types = ['leaves', 'puddle', 'birds', 'rabbits'];
+                const shuffledTypes = [...types].sort(() => Math.random() - 0.5);
+                
+                // Spawn 2-3 triggers near the dog's current position
+                const numTriggers = 2 + Math.floor(Math.random() * 2);
+                
+                for (let i = 0; i < numTriggers; i++) {
+                    const type = shuffledTypes[i % shuffledTypes.length];
+                    
+                    // Spawn triggers ahead of the dog but visible on screen
+                    const minX = Math.max(50, this.dog.x + 100);
+                    const maxX = Math.min(this.canvas.width - 50, this.dog.x + 400);
+                    
+                    this.triggers.push({
+                        x: minX + Math.random() * (maxX - minX),
+                        y: this.groundY - (type === 'birds' ? 80 : 20),
+                        type: type,
+                        size: 30,
+                        pulse: 0,
+                        spawnTime: Date.now()
+                    });
+                }
+            }
+            
+            update() {
+                // Move dog
+                this.dog.x += this.dog.speed * this.dog.direction;
+                if (this.dog.x > this.canvas.width + 50) {
+                    this.dog.x = -50;
+                }
+                
+                // Update clouds
+                this.clouds.forEach(cloud => {
+                    cloud.x += cloud.speed;
+                    if (cloud.x > this.canvas.width + cloud.size) {
+                        cloud.x = -cloud.size;
+                    }
+                });
+                
+                // Update triggers
+                for (let i = this.triggers.length - 1; i >= 0; i--) {
+                    const trigger = this.triggers[i];
+                    trigger.pulse += 0.1;
+                    
+                    // Remove triggers that are too far behind the dog or too old
+                    const timeSinceSpawn = Date.now() - trigger.spawnTime;
+                    const distanceBehindDog = this.dog.x - trigger.x;
+                    
+                    if (distanceBehindDog > 200 || timeSinceSpawn > 15000) {
+                        this.triggers.splice(i, 1);
+                        // If we removed all triggers, spawn new ones
+                        if (this.triggers.length === 0) {
+                            setTimeout(() => this.spawnTrigger(), 500);
+                        }
+                    }
+                }
+                
+                // Ensure we always have triggers if none exist
+                if (this.triggers.length === 0) {
+                    this.spawnTrigger();
+                }
+                
+                // Update yap effect
+                if (this.yapEffect.active) {
+                    this.yapEffect.timer--;
+                    if (this.yapEffect.timer <= 0) {
+                        this.yapEffect.active = false;
+                    }
+                }
+                
+                // Update particles
+                for (let i = this.particles.length - 1; i >= 0; i--) {
+                    const p = this.particles[i];
+                    p.x += p.vx;
+                    p.y += p.vy;
+                    p.life--;
+                    
+                    // Apply physics based on type
+                    switch (p.type) {
+                        case 'leaf':
+                            p.vy += 0.05; // Gentle gravity
+                            p.vx *= 0.98; // Air resistance
+                            p.rotation += p.rotationSpeed;
+                            break;
+                        case 'water':
+                            p.vy += 0.3; // Strong gravity
+                            break;
+                        case 'bird':
+                            p.vy += 0.02; // Light gravity
+                            p.wingPhase += 0.3;
+                            break;
+                        case 'rabbit':
+                            p.vx *= 0.95; // Ground friction
+                            p.hopPhase += 0.2;
+                            break;
+                        case 'confetti':
+                            p.vy += 0.2;
+                            p.vx *= 0.98;
+                            break;
+                    }
+                    
+                    if (p.life <= 0) {
+                        this.particles.splice(i, 1);
+                    }
+                }
+                
+                // Decay excitement slowly
+                if (this.excitement > 0) {
+                    this.excitement -= 0.1;
+                    document.getElementById('meterFill').style.width = this.excitement + '%';
+                }
+                
+                document.getElementById('score').textContent = this.score;
+            }
+            
+            render() {
+                // Clear canvas
+                this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+                
+                // Draw sky gradient
+                const gradient = this.ctx.createLinearGradient(0, 0, 0, this.groundY);
+                gradient.addColorStop(0, '#87CEEB');
+                gradient.addColorStop(1, '#98FB98');
+                this.ctx.fillStyle = gradient;
+                this.ctx.fillRect(0, 0, this.canvas.width, this.groundY);
+                
+                // Draw sun
+                this.ctx.fillStyle = '#FFD700';
+                this.ctx.beginPath();
+                this.ctx.arc(this.canvas.width - 80, 80, 40, 0, Math.PI * 2);
+                this.ctx.fill();
+                
+                // Draw clouds
+                this.ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+                this.clouds.forEach(cloud => {
+                    this.ctx.beginPath();
+                    this.ctx.arc(cloud.x, cloud.y, cloud.size, 0, Math.PI * 2);
+                    this.ctx.arc(cloud.x + cloud.size * 0.5, cloud.y, cloud.size * 0.8, 0, Math.PI * 2);
+                    this.ctx.arc(cloud.x - cloud.size * 0.5, cloud.y, cloud.size * 0.8, 0, Math.PI * 2);
+                    this.ctx.fill();
+                });
+                
+                // Draw ground
+                this.ctx.fillStyle = '#228B22';
+                this.ctx.fillRect(0, this.groundY, this.canvas.width, this.canvas.height - this.groundY);
+                
+                // Draw dog
+                this.ctx.fillStyle = '#8B4513';
+                this.ctx.beginPath();
+                // Body
+                this.ctx.ellipse(this.dog.x, this.dog.y, 25, 15, 0, 0, Math.PI * 2);
+                this.ctx.fill();
+                
+                // Head
+                this.ctx.beginPath();
+                this.ctx.ellipse(this.dog.x + 20, this.dog.y - 5, 15, 12, 0, 0, Math.PI * 2);
+                this.ctx.fill();
+                
+                // Ears
+                this.ctx.fillStyle = '#654321';
+                this.ctx.beginPath();
+                this.ctx.ellipse(this.dog.x + 15, this.dog.y - 15, 8, 5, -0.5, 0, Math.PI * 2);
+                this.ctx.fill();
+                this.ctx.beginPath();
+                this.ctx.ellipse(this.dog.x + 25, this.dog.y - 15, 8, 5, 0.5, 0, Math.PI * 2);
+                this.ctx.fill();
+                
+                // Tail
+                this.ctx.fillStyle = '#8B4513';
+                this.ctx.beginPath();
+                this.ctx.ellipse(this.dog.x - 20, this.dog.y - 10, 10, 6, 0.3, 0, Math.PI * 2);
+                this.ctx.fill();
+                
+                // Yap effect
+                if (this.yapEffect.active) {
+                    const alpha = this.yapEffect.timer / 30;
+                    this.ctx.strokeStyle = `rgba(255, 255, 0, ${alpha})`;
+                    this.ctx.lineWidth = 3;
+                    for (let i = 0; i < 3; i++) {
+                        this.ctx.beginPath();
+                        this.ctx.moveTo(this.dog.x + 35, this.dog.y - 5 + i * 5);
+                        this.ctx.lineTo(this.dog.x + 50, this.dog.y - 10 + i * 5);
+                        this.ctx.stroke();
+                    }
+                }
+                
+                // Draw triggers
+                this.triggers.forEach(trigger => {
+                    const pulsSize = trigger.size + Math.sin(trigger.pulse) * 5;
+                    this.ctx.save();
+                    this.ctx.translate(trigger.x, trigger.y);
+                    
+                    switch (trigger.type) {
+                        case 'leaves':
+                            this.ctx.fillStyle = '#8B4513';
+                            this.ctx.fillRect(-pulsSize/2, -5, pulsSize, 10);
+                            this.ctx.fillStyle = '#228B22';
+                            for (let i = 0; i < 5; i++) {
+                                const angle = (i / 5) * Math.PI * 2;
+                                this.ctx.beginPath();
+                                this.ctx.ellipse(Math.cos(angle) * 15, Math.sin(angle) * 15, 8, 5, angle, 0, Math.PI * 2);
+                                this.ctx.fill();
+                            }
+                            break;
+                        case 'puddle':
+                            this.ctx.fillStyle = 'rgba(100, 150, 255, 0.6)';
+                            this.ctx.beginPath();
+                            this.ctx.ellipse(0, 0, pulsSize, pulsSize * 0.3, 0, 0, Math.PI * 2);
+                            this.ctx.fill();
+                            break;
+                        case 'birds':
+                            this.ctx.strokeStyle = '#333';
+                            this.ctx.lineWidth = 2;
+                            for (let i = 0; i < 3; i++) {
+                                const x = (i - 1) * 15;
+                                this.ctx.beginPath();
+                                this.ctx.moveTo(x - 8, -5);
+                                this.ctx.lineTo(x, -15);
+                                this.ctx.lineTo(x + 8, -5);
+                                this.ctx.stroke();
+                            }
+                            break;
+                        case 'rabbits':
+                            this.ctx.fillStyle = '#DEB887';
+                            for (let i = 0; i < 2; i++) {
+                                const x = (i - 0.5) * 20;
+                                this.ctx.beginPath();
+                                this.ctx.ellipse(x, 0, 8, 6, 0, 0, Math.PI * 2);
+                                this.ctx.fill();
+                                // Ears
+                                this.ctx.beginPath();
+                                this.ctx.ellipse(x - 3, -8, 3, 8, 0, 0, Math.PI * 2);
+                                this.ctx.ellipse(x + 3, -8, 3, 8, 0, 0, Math.PI * 2);
+                                this.ctx.fill();
+                            }
+                            break;
+                    }
+                    this.ctx.restore();
+                });
+                
+                // Draw particles
+                this.particles.forEach(p => {
+                    const alpha = p.life / p.maxLife;
+                    this.ctx.save();
+                    this.ctx.translate(p.x, p.y);
+                    
+                    switch (p.type) {
+                        case 'leaf':
+                            this.ctx.rotate(p.rotation);
+                            this.ctx.fillStyle = p.color;
+                            this.ctx.beginPath();
+                            this.ctx.ellipse(0, 0, p.size, p.size * 0.6, 0, 0, Math.PI * 2);
+                            this.ctx.fill();
+                            break;
+                        case 'water':
+                            this.ctx.fillStyle = p.color;
+                            this.ctx.beginPath();
+                            this.ctx.arc(0, 0, p.size, 0, Math.PI * 2);
+                            this.ctx.fill();
+                            break;
+                        case 'bird':
+                            this.ctx.strokeStyle = p.color;
+                            this.ctx.lineWidth = 2;
+                            const wingOffset = Math.sin(p.wingPhase) * 5;
+                            this.ctx.beginPath();
+                            this.ctx.moveTo(-p.size, wingOffset);
+                            this.ctx.lineTo(0, 0);
+                            this.ctx.lineTo(p.size, wingOffset);
+                            this.ctx.stroke();
+                            break;
+                        case 'rabbit':
+                            const hopOffset = Math.abs(Math.sin(p.hopPhase)) * 10;
+                            this.ctx.fillStyle = p.color;
+                            this.ctx.beginPath();
+                            this.ctx.ellipse(0, -hopOffset, p.size, p.size * 0.8, 0, 0, Math.PI * 2);
+                            this.ctx.fill();
+                            break;
+                        case 'confetti':
+                            this.ctx.fillStyle = p.color;
+                            this.ctx.fillRect(-p.size/2, -p.size/2, p.size, p.size);
+                            break;
+                    }
+                    this.ctx.restore();
+                });
+            }
+            
+            gameLoop() {
+                this.update();
+                this.render();
+                requestAnimationFrame(() => this.gameLoop());
+            }
+        }
+        
+        // Start game when page loads
+        window.addEventListener('load', () => {
+            new Game();
+        });
+    </script>
+</body>
+</html>
