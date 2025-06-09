@@ -1,0 +1,659 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Clanger's Cosmic Platform Adventure</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            font-family: 'Comic Sans MS', cursive, sans-serif;
+            overflow: hidden;
+            color: white;
+        }
+        
+        #gameContainer {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+        }
+        
+        #ui {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            z-index: 100;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 15px;
+            border-radius: 10px;
+            border: 2px solid #ffd700;
+        }
+        
+        #controls {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 100;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 10px 20px;
+            border-radius: 20px;
+            border: 2px solid #ff69b4;
+            text-align: center;
+        }
+        
+        .control-group {
+            margin: 10px 0;
+        }
+        
+        label {
+            display: inline-block;
+            width: 120px;
+            font-size: 12px;
+            color: #ffd700;
+        }
+        
+        input[type="range"] {
+            width: 100px;
+            margin: 0 10px;
+        }
+        
+        input[type="color"] {
+            width: 40px;
+            height: 25px;
+            border: none;
+            border-radius: 5px;
+        }
+        
+        button {
+            background: linear-gradient(45deg, #ff69b4, #ff1493);
+            border: none;
+            color: white;
+            padding: 8px 15px;
+            margin: 5px;
+            border-radius: 20px;
+            cursor: pointer;
+            font-family: inherit;
+            font-size: 12px;
+            transition: all 0.3s ease;
+        }
+        
+        button:hover {
+            transform: scale(1.1);
+            box-shadow: 0 0 20px #ff69b4;
+        }
+        
+        #score {
+            font-size: 18px;
+            color: #ffd700;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+        }
+        
+        #instructions {
+            font-size: 11px;
+            color: #87ceeb;
+            margin-top: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div id="gameContainer">
+        <div id="ui">
+            <div id="score">Magic Soup Stars: 0</div>
+            <div id="instructions">
+                Guide the Spaceman through the cosmic soup garden!<br>
+                Arrow keys to move, Space to jump, collect glowing stars!
+            </div>
+        </div>
+        
+        <div id="controls">
+            <div class="control-group">
+                <label>Particle Size:</label>
+                <input type="range" id="particleSize" min="0.1" max="5" step="0.1" value="1.5">
+                <span id="particleSizeValue">1.5</span>
+            </div>
+            <div class="control-group">
+                <label>Soup Swirl:</label>
+                <input type="range" id="rotationSpeed" min="-2" max="2" step="0.1" value="0.5">
+                <span id="rotationSpeedValue">0.5</span>
+            </div>
+            <div class="control-group">
+                <label>Magic Color:</label>
+                <input type="color" id="particleColor" value="#ff69b4">
+            </div>
+            <div class="control-group">
+                <label>Bloom Glow:</label>
+                <input type="range" id="bloomStrength" min="0" max="3" step="0.1" value="1.5">
+                <span id="bloomStrengthValue">1.5</span>
+            </div>
+            <div class="control-group">
+                <button onclick="morphToShape('sphere')">Soup Bubble</button>
+                <button onclick="morphToShape('bird')">Iron Chicken</button>
+                <button onclick="morphToShape('face')">Clanger Face</button>
+                <button onclick="morphToShape('tree')">Soup Tree</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        // Game state
+        let scene, camera, renderer, composer;
+        let particles, particleGeometry, particleMaterial;
+        let morphTargets = {};
+        let currentTarget = 'sphere';
+        let isTransitioning = false;
+        let rotationSpeed = 0.5;
+        
+        // Platform game elements
+        let player, playerMaterial, platforms = [], collectibles = [];
+        let playerVelocity = { x: 0, y: 0 };
+        let onGround = false;
+        let score = 0;
+        let keys = {};
+        
+        // Game constants
+        const GRAVITY = -0.0035; // Reduced gravity for a floatier, lunar feel
+        const JUMP_FORCE = 0.22;  // Increased jump force for higher jumps
+        const MOVE_SPEED = 0.08;
+        const PARTICLE_COUNT = 2000;
+        
+        // Initialize the game
+        init();
+        animate();
+        
+        function init() {
+            // Create scene
+            scene = new THREE.Scene();
+            scene.fog = new THREE.Fog(0x1e3c72, 10, 50);
+            
+            // Create camera
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(0, 5, 15);
+            
+            // Create renderer
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setClearColor(0x1e3c72);
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            document.getElementById('gameContainer').appendChild(renderer.domElement);
+            
+            // Create lighting
+            const ambientLight = new THREE.AmbientLight(0x404040, 0.6);
+            scene.add(ambientLight);
+            
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            directionalLight.position.set(10, 10, 5);
+            directionalLight.castShadow = true;
+            directionalLight.shadow.mapSize.width = 2048;
+            directionalLight.shadow.mapSize.height = 2048;
+            scene.add(directionalLight);
+            
+            // Create particle system
+            createParticleSystem();
+            
+            // Create morph targets
+            createMorphTargets();
+            
+            // Create player (Spaceman)
+            createPlayer();
+            
+            // Create platforms
+            createPlatforms();
+            
+            // Create collectibles
+            createCollectibles();
+            
+            // Setup post-processing
+            setupPostProcessing();
+            
+            // Setup controls and initial colors
+            setupControls();
+            updatePlayerColor(); // Set initial player color based on particle color
+            
+            // Setup event listeners
+            setupEventListeners();
+        }
+        
+        function createParticleSystem() {
+            particleGeometry = new THREE.BufferGeometry();
+            
+            const positions = new Float32Array(PARTICLE_COUNT * 3);
+            const colors = new Float32Array(PARTICLE_COUNT * 3);
+            const sizes = new Float32Array(PARTICLE_COUNT);
+            
+            for (let i = 0; i < PARTICLE_COUNT; i++) {
+                const i3 = i * 3;
+                const phi = Math.acos(-1 + (2 * i) / PARTICLE_COUNT);
+                const theta = Math.sqrt(PARTICLE_COUNT * Math.PI) * phi;
+                const radius = 3;
+                
+                positions[i3] = radius * Math.cos(theta) * Math.sin(phi);
+                positions[i3 + 1] = radius * Math.cos(phi);
+                positions[i3 + 2] = radius * Math.sin(theta) * Math.sin(phi);
+                
+                colors[i3] = 1.0;
+                colors[i3 + 1] = 0.4;
+                colors[i3 + 2] = 0.8;
+                
+                sizes[i] = Math.random() * 0.5 + 0.5;
+            }
+            
+            particleGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            particleGeometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+            particleGeometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
+            
+            particleMaterial = new THREE.ShaderMaterial({
+                uniforms: {
+                    time: { value: 0 },
+                    particleSize: { value: 1.5 },
+                    particleColor: { value: new THREE.Color(0xff69b4) }
+                },
+                vertexShader: `
+                    attribute float size;
+                    varying vec3 vColor;
+                    uniform float time;
+                    uniform float particleSize;
+                    
+                    void main() {
+                        vColor = color;
+                        vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+                        gl_PointSize = size * particleSize * (300.0 / -mvPosition.z);
+                        gl_Position = projectionMatrix * mvPosition;
+                    }
+                `,
+                fragmentShader: `
+                    varying vec3 vColor;
+                    uniform vec3 particleColor;
+                    
+                    void main() {
+                        float r = distance(gl_PointCoord, vec2(0.5, 0.5));
+                        if (r > 0.5) discard;
+                        
+                        float alpha = 1.0 - smoothstep(0.0, 0.5, r);
+                        gl_FragColor = vec4(particleColor * vColor, alpha);
+                    }
+                `,
+                transparent: true,
+                vertexColors: true
+            });
+            
+            particles = new THREE.Points(particleGeometry, particleMaterial);
+            particles.position.y = 8;
+            scene.add(particles);
+        }
+        
+        function createMorphTargets() {
+            // (No changes to this function)
+            morphTargets.sphere = [];
+            for (let i = 0; i < PARTICLE_COUNT; i++) {
+                const phi = Math.acos(-1 + (2 * i) / PARTICLE_COUNT);
+                const theta = Math.sqrt(PARTICLE_COUNT * Math.PI) * phi;
+                const radius = 3;
+                
+                morphTargets.sphere.push({
+                    x: radius * Math.cos(theta) * Math.sin(phi),
+                    y: radius * Math.cos(phi),
+                    z: radius * Math.sin(theta) * Math.sin(phi)
+                });
+            }
+            morphTargets.bird = [];
+            for (let i = 0; i < PARTICLE_COUNT; i++) {
+                const t = (i / PARTICLE_COUNT) * Math.PI * 2;
+                const bodyLength = 3;
+                let x, y, z;
+                if (i < PARTICLE_COUNT * 0.3) {
+                    x = (Math.random() - 0.5) * 0.8;
+                    y = Math.sin(t) * 0.5;
+                    z = (Math.random() - 0.5) * bodyLength;
+                } else if (i < PARTICLE_COUNT * 0.7) {
+                    const wingT = (i - PARTICLE_COUNT * 0.3) / (PARTICLE_COUNT * 0.4);
+                    x = (wingT < 0.5 ? -1 : 1) * (2 + Math.sin(wingT * Math.PI * 4) * 1.5);
+                    y = Math.cos(wingT * Math.PI * 2) * 0.8;
+                    z = Math.sin(wingT * Math.PI) * 1.5;
+                } else {
+                    const tailT = (i - PARTICLE_COUNT * 0.7) / (PARTICLE_COUNT * 0.3);
+                    x = (Math.random() - 0.5) * 0.5;
+                    y = Math.sin(tailT * Math.PI) * 0.3;
+                    z = -bodyLength/2 - tailT * 2;
+                }
+                morphTargets.bird.push({ x, y, z });
+            }
+            morphTargets.face = [];
+            for (let i = 0; i < PARTICLE_COUNT; i++) {
+                const angle = (i / PARTICLE_COUNT) * Math.PI * 2;
+                const radius = 2 + Math.sin(angle * 8) * 0.5;
+                let x, y, z;
+                if (i < PARTICLE_COUNT * 0.6) {
+                    x = Math.cos(angle) * radius;
+                    y = Math.sin(angle) * radius * 0.8;
+                    z = (Math.random() - 0.5) * 0.5;
+                } else if (i < PARTICLE_COUNT * 0.8) {
+                    const eyeT = (i - PARTICLE_COUNT * 0.6) / (PARTICLE_COUNT * 0.2);
+                    x = (eyeT < 0.5 ? -0.8 : 0.8);
+                    y = 0.5 + Math.random() * 0.3;
+                    z = 0.2 + Math.random() * 0.2;
+                } else {
+                    x = (Math.random() - 0.5) * 0.8;
+                    y = -0.5 + Math.random() * 0.8;
+                    z = 0.1 + Math.random() * 0.2;
+                }
+                morphTargets.face.push({ x, y, z });
+            }
+            morphTargets.tree = [];
+            for (let i = 0; i < PARTICLE_COUNT; i++) {
+                const t = i / PARTICLE_COUNT;
+                let x, y, z;
+                if (t < 0.3) {
+                    const trunkHeight = t / 0.3;
+                    x = (Math.random() - 0.5) * 0.5;
+                    y = -2 + trunkHeight * 4;
+                    z = (Math.random() - 0.5) * 0.5;
+                } else {
+                    const branchT = (t - 0.3) / 0.7;
+                    const angle = branchT * Math.PI * 4;
+                    const branchRadius = 1 + Math.sin(angle) * 1.5;
+                    x = Math.cos(angle) * branchRadius;
+                    y = 1 + Math.sin(branchT * Math.PI) * 2;
+                    z = Math.sin(angle) * branchRadius;
+                }
+                morphTargets.tree.push({ x, y, z });
+            }
+        }
+        
+        function createPlayer() {
+            player = new THREE.Group();
+            
+            // Main material for the player's suit, dynamically colored
+            playerMaterial = new THREE.MeshLambertMaterial({ 
+                color: 0x00ffff, // Initial color, will be updated
+                transparent: true,
+                opacity: 0.9
+            });
+
+            // Torso
+            const torsoGeometry = new THREE.BoxGeometry(0.6, 0.8, 0.4);
+            const torso = new THREE.Mesh(torsoGeometry, playerMaterial);
+            torso.position.y = 0.4;
+            torso.castShadow = true;
+            player.add(torso);
+            
+            // Helmet
+            const helmetGeometry = new THREE.SphereGeometry(0.35, 16, 16);
+            const helmetMaterial = new THREE.MeshLambertMaterial({ color: 0xeeeeee });
+            const helmet = new THREE.Mesh(helmetGeometry, helmetMaterial);
+            helmet.position.y = 1.05;
+            helmet.castShadow = true;
+            player.add(helmet);
+
+            // Visor
+            const visorGeometry = new THREE.BoxGeometry(0.4, 0.2, 0.1);
+            const visorMaterial = new THREE.MeshBasicMaterial({ color: 0x111111 });
+            const visor = new THREE.Mesh(visorGeometry, visorMaterial);
+            visor.position.set(0, 1.05, 0.3);
+            player.add(visor);
+
+            // Backpack
+            const packGeometry = new THREE.BoxGeometry(0.4, 0.6, 0.2);
+            const pack = new THREE.Mesh(packGeometry, playerMaterial);
+            pack.position.set(0, 0.5, -0.3);
+            pack.castShadow = true;
+            player.add(pack);
+
+            // Position the player group so its base is at y=0
+            player.position.set(0, 0.5, 0); // Start on the first platform
+            scene.add(player);
+        }
+        
+        function createPlatforms() {
+            // (No changes to this function)
+            const platformGeometry = new THREE.BoxGeometry(4, 0.2, 1);
+            const platformMaterial = new THREE.MeshLambertMaterial({ 
+                color: 0x8fbc8f,
+                transparent: true,
+                opacity: 0.8
+            });
+            const platformPositions = [
+                { x: 0, y: 0, z: 0 }, { x: -6, y: 2, z: 0 }, { x: 6, y: 3, z: 0 },
+                { x: -3, y: 5, z: 0 }, { x: 3, y: 7, z: 0 }, { x: 0, y: 9, z: 0 }
+            ];
+            platformPositions.forEach(pos => {
+                const platform = new THREE.Mesh(platformGeometry, platformMaterial);
+                platform.position.set(pos.x, pos.y, pos.z);
+                platform.receiveShadow = true;
+                platforms.push(platform);
+                scene.add(platform);
+            });
+        }
+        
+        function createCollectibles() {
+            // (No changes to this function)
+            const starGeometry = new THREE.OctahedronGeometry(0.2);
+            const starMaterial = new THREE.MeshBasicMaterial({ 
+                color: 0xffd700,
+                transparent: true,
+                opacity: 0.9
+            });
+            const starPositions = [
+                { x: -6, y: 3, z: 0 }, { x: 6, y: 4, z: 0 }, { x: -3, y: 6, z: 0 },
+                { x: 3, y: 8, z: 0 }, { x: 0, y: 10, z: 0 }
+            ];
+            starPositions.forEach(pos => {
+                const star = new THREE.Mesh(starGeometry, starMaterial);
+                star.position.set(pos.x, pos.y, pos.z);
+                star.userData = { collected: false, rotationSpeed: Math.random() * 0.1 + 0.05 };
+                collectibles.push(star);
+                scene.add(star);
+            });
+        }
+        
+        function setupPostProcessing() {
+            renderer.toneMappingExposure = 1.2;
+            renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        }
+        
+        function updatePlayerColor() {
+            const particleColor = particleMaterial.uniforms.particleColor.value;
+            let playerHSL = {};
+            particleColor.getHSL(playerHSL);
+            
+            // Shift the hue by 0.5 (180 degrees) for a complementary color
+            playerHSL.h = (playerHSL.h + 0.5) % 1.0;
+            
+            // Keep saturation and lightness high for visibility
+            playerHSL.s = Math.max(0.7, playerHSL.s);
+            playerHSL.l = Math.max(0.6, playerHSL.l);
+
+            playerMaterial.color.setHSL(playerHSL.h, playerHSL.s, playerHSL.l);
+        }
+
+        function setupControls() {
+            const particleSizeSlider = document.getElementById('particleSize');
+            const rotationSpeedSlider = document.getElementById('rotationSpeed');
+            const particleColorPicker = document.getElementById('particleColor');
+            const bloomStrengthSlider = document.getElementById('bloomStrength');
+            
+            particleSizeSlider.addEventListener('input', (e) => {
+                particleMaterial.uniforms.particleSize.value = parseFloat(e.target.value);
+                document.getElementById('particleSizeValue').textContent = e.target.value;
+            });
+            
+            rotationSpeedSlider.addEventListener('input', (e) => {
+                rotationSpeed = parseFloat(e.target.value);
+                document.getElementById('rotationSpeedValue').textContent = e.target.value;
+            });
+            
+            particleColorPicker.addEventListener('input', (e) => {
+                particleMaterial.uniforms.particleColor.value.setHex(e.target.value.replace('#', '0x'));
+                updatePlayerColor(); // Update player color when particle color changes
+            });
+            
+            bloomStrengthSlider.addEventListener('input', (e) => {
+                renderer.toneMappingExposure = parseFloat(e.target.value);
+                document.getElementById('bloomStrengthValue').textContent = e.target.value;
+            });
+        }
+        
+        function setupEventListeners() {
+            document.addEventListener('keydown', (e) => {
+                keys[e.code] = true;
+                if (e.code === 'Space') e.preventDefault();
+            });
+            document.addEventListener('keyup', (e) => {
+                keys[e.code] = false;
+            });
+            window.addEventListener('resize', () => {
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight);
+            });
+        }
+        
+        function morphToShape(targetShape) {
+            // (No changes to this function)
+            if (isTransitioning || !morphTargets[targetShape]) return;
+            isTransitioning = true;
+            currentTarget = targetShape;
+            const positions = particleGeometry.attributes.position.array;
+            const targetPositions = morphTargets[targetShape];
+            const duration = 2000;
+            const startTime = Date.now();
+            const startPositions = [];
+            for (let i = 0; i < PARTICLE_COUNT; i++) {
+                const i3 = i * 3;
+                startPositions.push({ x: positions[i3], y: positions[i3 + 1], z: positions[i3 + 2] });
+            }
+            function updateMorph() {
+                const elapsed = Date.now() - startTime;
+                const progress = Math.min(elapsed / duration, 1);
+                const easeProgress = 0.5 - 0.5 * Math.cos(progress * Math.PI);
+                for (let i = 0; i < PARTICLE_COUNT; i++) {
+                    const i3 = i * 3;
+                    const start = startPositions[i];
+                    const target = targetPositions[i];
+                    positions[i3] = start.x + (target.x - start.x) * easeProgress;
+                    positions[i3 + 1] = start.y + (target.y - start.y) * easeProgress;
+                    positions[i3 + 2] = start.z + (target.z - start.z) * easeProgress;
+                }
+                particleGeometry.attributes.position.needsUpdate = true;
+                if (progress < 1) {
+                    requestAnimationFrame(updateMorph);
+                } else {
+                    isTransitioning = false;
+                }
+            }
+            updateMorph();
+        }
+        
+        function updatePlayer() {
+            // Handle player movement
+            if (keys['ArrowLeft'] || keys['KeyA']) {
+                playerVelocity.x = -MOVE_SPEED;
+            } else if (keys['ArrowRight'] || keys['KeyD']) {
+                playerVelocity.x = MOVE_SPEED;
+            } else {
+                playerVelocity.x *= 0.8; // Friction
+            }
+            
+            // Jumping with squash effect
+            if ((keys['Space'] || keys['ArrowUp'] || keys['KeyW']) && onGround) {
+                playerVelocity.y = JUMP_FORCE;
+                onGround = false;
+                player.scale.set(1.2, 0.8, 1.2); // Squash on jump
+            }
+            
+            // Apply gravity
+            playerVelocity.y += GRAVITY;
+            
+            // Update position
+            player.position.x += playerVelocity.x;
+            player.position.y += playerVelocity.y;
+            
+            // Check platform collisions
+            let wasOnGround = onGround;
+            onGround = false;
+            platforms.forEach(platform => {
+                const platformTop = platform.position.y + 0.1;
+                const platformLeft = platform.position.x - 2;
+                const platformRight = platform.position.x + 2;
+                
+                if (player.position.x > platformLeft && player.position.x < platformRight) {
+                    if (player.position.y > platformTop && player.position.y - playerVelocity.y > platformTop) {
+                         // This condition prevents sticking to the side of a platform
+                    } else if (player.position.y <= platformTop && player.position.y > platform.position.y - 0.5) {
+                        if (playerVelocity.y <= 0) {
+                            player.position.y = platformTop;
+                            playerVelocity.y = 0;
+                            onGround = true;
+                        }
+                    }
+                }
+            });
+
+            // Stretch on land
+            if(onGround && !wasOnGround) {
+                 player.scale.set(0.8, 1.2, 0.8); // Stretch on land
+            }
+            // Return to normal scale
+            player.scale.lerp(new THREE.Vector3(1,1,1), 0.1);
+
+            // Check collectible collisions
+            collectibles.forEach(star => {
+                if (!star.userData.collected) {
+                    const distance = player.position.distanceTo(star.position);
+                    if (distance < 1.2) { // Increased hit box for bigger player
+                        star.userData.collected = true;
+                        star.visible = false;
+                        score++;
+                        document.getElementById('score').textContent = `Magic Soup Stars: ${score}`;
+                        const shapes = ['sphere', 'bird', 'face', 'tree'];
+                        const randomShape = shapes[Math.floor(Math.random() * shapes.length)];
+                        morphToShape(randomShape);
+                    }
+                }
+            });
+            
+            // Reset if player falls too far
+            if (player.position.y < -10) {
+                player.position.set(0, 0.5, 0);
+                playerVelocity = { x: 0, y: 0 };
+            }
+        }
+        
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            const time = Date.now() * 0.001;
+            
+            if (particleMaterial.uniforms) {
+                particleMaterial.uniforms.time.value = time;
+            }
+            
+            if (particles && rotationSpeed !== 0) {
+                particles.rotation.y += rotationSpeed * 0.01;
+            }
+            
+            updatePlayer();
+            
+            collectibles.forEach(star => {
+                if (!star.userData.collected) {
+                    star.rotation.x += star.userData.rotationSpeed;
+                    star.rotation.y += star.userData.rotationSpeed * 0.7;
+                    star.position.y += Math.sin(time * 2 + star.position.x) * 0.005;
+                }
+            });
+            
+            camera.position.x = player.position.x * 0.3;
+            camera.position.y = player.position.y + 5;
+            camera.lookAt(player.position.x, player.position.y + 1, 0); // Look slightly higher
+            
+            renderer.render(scene, camera);
+        }
+        
+        window.morphToShape = morphToShape;
+    </script>
+</body>
+</html>
