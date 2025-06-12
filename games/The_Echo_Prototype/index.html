@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Echo Protocol - Prototype</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Courier New', monospace;
+            background: #0a0a0a;
+            color: #00ff00;
+            overflow: hidden;
+        }
+        
+        .container {
+            display: flex;
+            height: 100vh;
+        }
+        
+        .game-area {
+            flex: 1;
+            position: relative;
+            background: 
+                linear-gradient(90deg, rgba(0,255,0,0.1) 1px, transparent 1px),
+                linear-gradient(rgba(0,255,0,0.1) 1px, transparent 1px);
+            background-size: 40px 40px;
+            border-right: 2px solid #00ff00;
+        }
+        
+        .ui-panel {
+            width: 300px;
+            background: #111;
+            border-left: 2px solid #00ff00;
+            padding: 20px;
+            overflow-y: auto;
+        }
+        
+        .agent {
+            position: absolute;
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            border: 2px solid;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            user-select: none;
+        }
+        
+        .agent:hover {
+            transform: scale(1.2);
+            box-shadow: 0 0 20px currentColor;
+        }
+        
+        .agent.selected {
+            box-shadow: 0 0 30px currentColor;
+            animation: pulse 1s infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+        
+        .agent.tech {
+            background: #001a33;
+            border-color: #0066cc;
+            color: #0066cc;
+        }
+        
+        .agent.muscle {
+            background: #330000;
+            border-color: #cc0000;
+            color: #cc0000;
+        }
+        
+        .agent.sensitive {
+            background: #1a0033;
+            border-color: #6600cc;
+            color: #6600cc;
+        }
+        
+        .echo-node {
+            position: absolute;
+            width: 40px;
+            height: 40px;
+            border: 3px solid #ffaa00;
+            background: rgba(255, 170, 0, 0.1);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .echo-node.active {
+            background: rgba(255, 170, 0, 0.5);
+            box-shadow: 0 0 20px #ffaa00;
+        }
+        
+        .echo-node:hover {
+            transform: scale(1.1);
+        }
+        
+        .terminal {
+            background: #000;
+            border: 1px solid #00ff00;
+            padding: 10px;
+            height: 200px;
+            overflow-y: auto;
+            font-size: 12px;
+            margin-bottom: 20px;
+        }
+        
+        .terminal-line {
+            margin-bottom: 5px;
+        }
+        
+        .terminal-line.error {
+            color: #ff0000;
+        }
+        
+        .terminal-line.success {
+            color: #00ff00;
+        }
+        
+        .terminal-line.info {
+            color: #ffaa00;
+        }
+        
+        .agent-status {
+            background: #222;
+            border: 1px solid #00ff00;
+            padding: 10px;
+            margin-bottom: 10px;
+        }
+        
+        .agent-status h3 {
+            color: #00ff00;
+            margin-bottom: 5px;
+        }
+        
+        .command-btn {
+            background: #003300;
+            border: 1px solid #00ff00;
+            color: #00ff00;
+            padding: 5px 10px;
+            margin: 2px;
+            cursor: pointer;
+            font-family: inherit;
+        }
+        
+        .command-btn:hover {
+            background: #00ff00;
+            color: #000;
+        }
+        
+        .command-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        .puzzle-status {
+            background: #330033;
+            border: 1px solid #ff00ff;
+            padding: 10px;
+            margin-bottom: 20px;
+        }
+        
+        .objective {
+            background: #333300;
+            border: 1px solid #ffff00;
+            padding: 10px;
+            margin-bottom: 20px;
+            color: #ffff00;
+        }
+        
+        .sequence-display {
+            font-size: 11px;
+            color: #888;
+            margin-top: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="game-area" id="gameArea">
+            <!-- Agents will be positioned here -->
+            <div class="agent tech" id="agent-tech" style="left: 100px; top: 100px;">T</div>
+            <div class="agent muscle" id="agent-muscle" style="left: 150px; top: 100px;">M</div>
+            <div class="agent sensitive" id="agent-sensitive" style="left: 200px; top: 100px;">S</div>
+            
+            <!-- Echo nodes -->
+            <div class="echo-node" id="node-1" style="left: 300px; top: 200px;" data-node="1">1</div>
+            <div class="echo-node" id="node-2" style="left: 400px; top: 200px;" data-node="2">2</div>
+            <div class="echo-node" id="node-3" style="left: 500px; top: 200px;" data-node="3">3</div>
+        </div>
+        
+        <div class="ui-panel">
+            <div class="objective">
+                <h3>OBJECTIVE</h3>
+                <p>Stabilize the Echo Anomaly by activating nodes in the correct sequence. Click agents to select, then click nodes to interact.</p>
+            </div>
+            
+            <div class="puzzle-status">
+                <h3>PUZZLE STATUS</h3>
+                <div>Current Step: <span id="currentStep">0</span> / 7</div>
+                <div>Nodes Active: <span id="activeNodes">000</span></div>
+                <div class="sequence-display" id="sequenceDisplay">Required: 1→2→1→3→1→2→1</div>
+            </div>
+            
+            <div class="terminal" id="terminal">
+                <div class="terminal-line success">> ECHO-1 OPERATOR INTERFACE ACTIVE</div>
+                <div class="terminal-line info">> Squad deployed to anomaly site</div>
+                <div class="terminal-line">> Awaiting commands...</div>
+            </div>
+            
+            <div class="agent-status">
+                <h3>SELECTED AGENT</h3>
+                <div id="selectedAgentInfo">Click an agent to select</div>
+                <div id="agentCommands"></div>
+            </div>
+            
+            <button class="command-btn" onclick="resetPuzzle()">RESET PUZZLE</button>
+            <button class="command-btn" onclick="showHint()">SHOW HINT</button>
+        </div>
+    </div>
+
+    <script>
+        // Game State
+        let selectedAgent = null;
+        let puzzleState = [false, false, false]; // nodes 1, 2, 3
+        let currentStep = 0;
+        
+        // Gray code sequence for 3-bit (Chinese Rings pattern)
+        const solutionSequence = [1, 2, 1, 3, 1, 2, 1];
+        
+        // Agent data
+        const agents = {
+            'agent-tech': {
+                name: 'Edison (Tech)',
+                ability: 'Can activate/deactivate any node',
+                color: '#0066cc'
+            },
+            'agent-muscle': {
+                name: 'Brick (Muscle)', 
+                ability: 'Can only activate odd-numbered nodes',
+                color: '#cc0000'
+            },
+            'agent-sensitive': {
+                name: 'Luna (Sensitive)',
+                ability: 'Can only activate even-numbered nodes',
+                color: '#6600cc'
+            }
+        };
+        
+        // Initialize
+        document.addEventListener('DOMContentLoaded', function() {
+            setupEventListeners();
+            updateDisplay();
+            logToTerminal('System initialized. Select an agent and begin.', 'info');
+        });
+        
+        function setupEventListeners() {
+            // Agent selection
+            document.querySelectorAll('.agent').forEach(agent => {
+                agent.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    selectAgent(this.id);
+                });
+            });
+            
+            // Node interaction
+            document.querySelectorAll('.echo-node').forEach(node => {
+                node.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    if (selectedAgent) {
+                        interactWithNode(parseInt(this.dataset.node));
+                    } else {
+                        logToTerminal('ERROR: No agent selected', 'error');
+                    }
+                });
+            });
+            
+            // Click to move (simplified - just for demo)
+            document.getElementById('gameArea').addEventListener('click', function(e) {
+                if (selectedAgent && e.target === this) {
+                    moveAgent(selectedAgent, e.clientX - this.offsetLeft, e.clientY - this.offsetTop);
+                }
+            });
+        }
+        
+        function selectAgent(agentId) {
+            // Remove previous selection
+            document.querySelectorAll('.agent').forEach(a => a.classList.remove('selected'));
+            
+            // Select new agent
+            selectedAgent = agentId;
+            document.getElementById(agentId).classList.add('selected');
+            
+            // Update UI
+            const agent = agents[agentId];
+            document.getElementById('selectedAgentInfo').innerHTML = `
+                <strong>${agent.name}</strong><br>
+                <small>${agent.ability}</small>
+            `;
+            
+            logToTerminal(`Agent ${agent.name} selected`, 'success');
+        }
+        
+        function moveAgent(agentId, x, y) {
+            const agent = document.getElementById(agentId);
+            agent.style.left = (x - 15) + 'px';
+            agent.style.top = (y - 15) + 'px';
+            
+            logToTerminal(`${agents[agentId].name} moving to position`, 'info');
+        }
+        
+        function interactWithNode(nodeNumber) {
+            const agentType = selectedAgent.split('-')[1];
+            
+            // Check if agent can interact with this node
+            if (!canAgentInteractWithNode(agentType, nodeNumber)) {
+                logToTerminal(`ERROR: ${agents[selectedAgent].name} cannot interact with Node ${nodeNumber}`, 'error');
+                return;
+            }
+            
+            // Check if this is the correct next step
+            if (solutionSequence[currentStep] !== nodeNumber) {
+                logToTerminal(`ERROR: Incorrect sequence. Expected Node ${solutionSequence[currentStep]}, got Node ${nodeNumber}`, 'error');
+                logToTerminal('Temporal paradox detected! Resetting...', 'error');
+                setTimeout(resetPuzzle, 1500);
+                return;
+            }
+            
+            // Toggle node state
+            puzzleState[nodeNumber - 1] = !puzzleState[nodeNumber - 1];
+            currentStep++;
+            
+            // Update visual
+            const nodeElement = document.getElementById(`node-${nodeNumber}`);
+            if (puzzleState[nodeNumber - 1]) {
+                nodeElement.classList.add('active');
+                logToTerminal(`Node ${nodeNumber} ACTIVATED by ${agents[selectedAgent].name}`, 'success');
+            } else {
+                nodeElement.classList.remove('active');
+                logToTerminal(`Node ${nodeNumber} DEACTIVATED by ${agents[selectedAgent].name}`, 'success');
+            }
+            
+            updateDisplay();
+            
+            // Check win condition
+            if (currentStep >= solutionSequence.length) {
+                setTimeout(() => {
+                    logToTerminal('SUCCESS: Echo anomaly stabilized!', 'success');
+                    logToTerminal('Reality restored. Mission complete.', 'success');
+                    // Add some visual effect
+                    document.querySelectorAll('.echo-node').forEach(node => {
+                        node.style.boxShadow = '0 0 40px #00ff00';
+                    });
+                }, 500);
+            }
+        }
+        
+        function canAgentInteractWithNode(agentType, nodeNumber) {
+            switch(agentType) {
+                case 'tech':
+                    return true; // Tech can interact with any node
+                case 'muscle':
+                    return nodeNumber % 2 === 1; // Muscle only with odd nodes
+                case 'sensitive':
+                    return nodeNumber % 2 === 0; // Sensitive only with even nodes
+                default:
+                    return false;
+            }
+        }
+        
+        function updateDisplay() {
+            document.getElementById('currentStep').textContent = currentStep;
+            document.getElementById('activeNodes').textContent = 
+                puzzleState.map(state => state ? '1' : '0').join('');
+            
+            // Highlight current step in sequence
+            const sequence = solutionSequence.map((step, index) => {
+                if (index === currentStep) {
+                    return `<span style="color: #ffff00; font-weight: bold;">${step}</span>`;
+                } else if (index < currentStep) {
+                    return `<span style="color: #00ff00;">${step}</span>`;
+                } else {
+                    return step;
+                }
+            }).join('→');
+            
+            document.getElementById('sequenceDisplay').innerHTML = `Required: ${sequence}`;
+        }
+        
+        function resetPuzzle() {
+            puzzleState = [false, false, false];
+            currentStep = 0;
+            
+            // Reset visual states
+            document.querySelectorAll('.echo-node').forEach(node => {
+                node.classList.remove('active');
+                node.style.boxShadow = '';
+            });
+            
+            updateDisplay();
+            logToTerminal('Puzzle reset. Reality flux stabilized.', 'info');
+        }
+        
+        function showHint() {
+            if (currentStep < solutionSequence.length) {
+                const nextNode = solutionSequence[currentStep];
+                const availableAgents = Object.keys(agents).filter(agentId => {
+                    const agentType = agentId.split('-')[1];
+                    return canAgentInteractWithNode(agentType, nextNode);
+                }).map(agentId => agents[agentId].name);
+                
+                logToTerminal(`HINT: Next step is Node ${nextNode}. Available agents: ${availableAgents.join(', ')}`, 'info');
+            } else {
+                logToTerminal('HINT: Puzzle complete!', 'success');
+            }
+        }
+        
+        function logToTerminal(message, type = '') {
+            const terminal = document.getElementById('terminal');
+            const line = document.createElement('div');
+            line.className = `terminal-line ${type}`;
+            line.innerHTML = `> ${message}`;
+            terminal.appendChild(line);
+            terminal.scrollTop = terminal.scrollHeight;
+            
+            // Keep terminal from getting too long
+            if (terminal.children.length > 20) {
+                terminal.removeChild(terminal.firstChild);
+            }
+        }
+    </script>
+</body>
+</html>
