@@ -1,0 +1,617 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Knight's Quest</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #000;
+            color: #fff;
+            font-family: monospace;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            overflow: hidden;
+        }
+
+        canvas {
+            border: 2px solid #fff;
+            background-color: #000;
+            image-rendering: pixelated;
+            image-rendering: -moz-crisp-edges;
+            image-rendering: crisp-edges;
+        }
+
+        .controls {
+            position: absolute;
+            bottom: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            text-align: center;
+            font-size: 12px;
+            color: #ffff00;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas" width="640" height="480"></canvas>
+    <div class="controls">
+        WASD/Arrows: Move | SPACE: Jump | R: Restart (Game Over)
+    </div>
+
+    <script>
+        // Game constants
+        const CANVAS_WIDTH = 640;
+        const CANVAS_HEIGHT = 480;
+        const TILE_SIZE = 16;
+        
+        // BBC Micro color palette
+        const COLORS = {
+            BLACK: '#000000',
+            RED: '#FF0000',
+            GREEN: '#00FF00',
+            YELLOW: '#FFFF00',
+            BLUE: '#0000FF',
+            MAGENTA: '#FF00FF',
+            CYAN: '#00FFFF',
+            WHITE: '#FFFFFF'
+        };
+
+        // Game states
+        const GAME_STATES = {
+            START: 'start',
+            PLAYING: 'playing',
+            LEVEL_COMPLETE: 'levelComplete',
+            GAME_OVER: 'gameOver'
+        };
+
+        class Game {
+            constructor() {
+                this.canvas = document.getElementById('gameCanvas');
+                this.ctx = this.canvas.getContext('2d');
+                this.ctx.imageSmoothingEnabled = false;
+                
+                this.state = GAME_STATES.START;
+                this.score = 0;
+                this.lives = 3;
+                this.level = 1;
+                this.treasuresCollected = 0;
+                this.totalTreasures = 0;
+                
+                this.knight = new Knight(100, 300);
+                this.enemies = [];
+                this.treasures = [];
+                this.platforms = [];
+                this.ladders = [];
+                this.dragon = null;
+                
+                this.keys = {};
+                this.lastTime = 0;
+                this.levelCompleteTimer = 0;
+                
+                this.setupInput();
+                this.generateLevel();
+                this.gameLoop();
+            }
+
+            setupInput() {
+                document.addEventListener('keydown', (e) => {
+                    this.keys[e.code] = true;
+                    if (this.state === GAME_STATES.START && e.code === 'Space') {
+                        this.state = GAME_STATES.PLAYING;
+                    }
+                    if (this.state === GAME_STATES.GAME_OVER && e.code === 'KeyR') {
+                        this.restart();
+                    }
+                });
+                
+                document.addEventListener('keyup', (e) => {
+                    this.keys[e.code] = false;
+                });
+            }
+
+            generateLevel() {
+                this.platforms = [];
+                this.ladders = [];
+                this.enemies = [];
+                this.treasures = [];
+                this.treasuresCollected = 0;
+
+                // Create platforms
+                this.platforms = [
+                    { x: 0, y: 400, width: CANVAS_WIDTH, height: 80 }, // Ground
+                    { x: 100, y: 320, width: 200, height: 16 },
+                    { x: 350, y: 320, width: 200, height: 16 },
+                    { x: 50, y: 240, width: 150, height: 16 },
+                    { x: 300, y: 240, width: 200, height: 16 },
+                    { x: 150, y: 160, width: 300, height: 16 },
+                    { x: 200, y: 80, width: 200, height: 16 }
+                ];
+
+                // Create ladders
+                this.ladders = [
+                    { x: 120, y: 240, width: 16, height: 80 },
+                    { x: 380, y: 240, width: 16, height: 80 },
+                    { x: 180, y: 160, width: 16, height: 80 },
+                    { x: 420, y: 160, width: 16, height: 80 },
+                    { x: 300, y: 80, width: 16, height: 80 }
+                ];
+
+                // Create dragon cage at top
+                this.dragon = new Dragon(250, 20, this.level);
+
+                // Create enemies based on level
+                const enemyCount = Math.min(2 + this.level, 5);
+                for (let i = 0; i < enemyCount; i++) {
+                    const platformIndex = Math.floor(Math.random() * (this.platforms.length - 1)) + 1;
+                    const platform = this.platforms[platformIndex];
+                    this.enemies.push(new Goblin(
+                        platform.x + 50 + (i * 80),
+                        platform.y - 20,
+                        platform,
+                        this.dragon.difficulty
+                    ));
+                }
+
+                // Create treasures
+                const treasureCount = 8 + this.level;
+                this.totalTreasures = treasureCount;
+                for (let i = 0; i < treasureCount; i++) {
+                    const platformIndex = Math.floor(Math.random() * (this.platforms.length - 1)) + 1;
+                    const platform = this.platforms[platformIndex];
+                    this.treasures.push(new Treasure(
+                        platform.x + Math.random() * (platform.width - 16),
+                        platform.y - 16
+                    ));
+                }
+
+                // Reset knight position
+                this.knight.x = 100;
+                this.knight.y = 300;
+                this.knight.velY = 0;
+                this.knight.onGround = false;
+            }
+
+            update(deltaTime) {
+                if (this.state === GAME_STATES.PLAYING) {
+                    this.knight.update(deltaTime, this.keys, this.platforms, this.ladders);
+                    
+                    this.enemies.forEach(enemy => enemy.update(deltaTime));
+                    
+                    // Check collisions
+                    this.checkCollisions();
+                    
+                    // Check win condition
+                    if (this.treasuresCollected === this.totalTreasures) {
+                        this.state = GAME_STATES.LEVEL_COMPLETE;
+                        this.levelCompleteTimer = 2000;
+                    }
+                    
+                    // Check if knight fell off screen
+                    if (this.knight.y > CANVAS_HEIGHT) {
+                        this.loseLife();
+                    }
+                } else if (this.state === GAME_STATES.LEVEL_COMPLETE) {
+                    this.levelCompleteTimer -= deltaTime;
+                    if (this.levelCompleteTimer <= 0) {
+                        this.level++;
+                        this.generateLevel();
+                        this.state = GAME_STATES.PLAYING;
+                    }
+                }
+            }
+
+            checkCollisions() {
+                // Enemy collisions
+                this.enemies.forEach(enemy => {
+                    if (this.knight.collidesWith(enemy)) {
+                        this.loseLife();
+                    }
+                });
+
+                // Treasure collisions
+                for (let i = this.treasures.length - 1; i >= 0; i--) {
+                    if (this.knight.collidesWith(this.treasures[i])) {
+                        this.treasures.splice(i, 1);
+                        this.treasuresCollected++;
+                        this.score += 100 * this.level;
+                    }
+                }
+            }
+
+            loseLife() {
+                this.lives--;
+                if (this.lives <= 0) {
+                    this.state = GAME_STATES.GAME_OVER;
+                } else {
+                    // Reset knight position
+                    this.knight.x = 100;
+                    this.knight.y = 300;
+                    this.knight.velY = 0;
+                }
+            }
+
+            restart() {
+                this.score = 0;
+                this.lives = 3;
+                this.level = 1;
+                this.generateLevel();
+                this.state = GAME_STATES.START;
+            }
+
+            render() {
+                // Clear canvas
+                this.ctx.fillStyle = COLORS.BLACK;
+                this.ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+                if (this.state === GAME_STATES.START) {
+                    this.renderStartScreen();
+                } else if (this.state === GAME_STATES.GAME_OVER) {
+                    this.renderGameOverScreen();
+                } else {
+                    // Render game objects
+                    this.renderPlatforms();
+                    this.renderLadders();
+                    this.dragon.render(this.ctx);
+                    this.treasures.forEach(treasure => treasure.render(this.ctx));
+                    this.enemies.forEach(enemy => enemy.render(this.ctx));
+                    this.knight.render(this.ctx);
+                    this.renderHUD();
+
+                    if (this.state === GAME_STATES.LEVEL_COMPLETE) {
+                        this.renderLevelComplete();
+                    }
+                }
+            }
+
+            renderStartScreen() {
+                this.ctx.fillStyle = COLORS.YELLOW;
+                this.ctx.font = '32px monospace';
+                this.ctx.textAlign = 'center';
+                this.ctx.fillText("KNIGHT'S QUEST", CANVAS_WIDTH / 2, 200);
+                
+                this.ctx.fillStyle = COLORS.WHITE;
+                this.ctx.font = '16px monospace';
+                this.ctx.fillText('Press SPACE to start', CANVAS_WIDTH / 2, 280);
+                
+                this.ctx.fillStyle = COLORS.CYAN;
+                this.ctx.font = '12px monospace';
+                this.ctx.fillText('Collect all treasures to complete each level!', CANVAS_WIDTH / 2, 320);
+                this.ctx.fillText('Avoid the goblins and beware the dragon!', CANVAS_WIDTH / 2, 340);
+            }
+
+            renderGameOverScreen() {
+                this.ctx.fillStyle = COLORS.RED;
+                this.ctx.font = '32px monospace';
+                this.ctx.textAlign = 'center';
+                this.ctx.fillText('GAME OVER', CANVAS_WIDTH / 2, 200);
+                
+                this.ctx.fillStyle = COLORS.WHITE;
+                this.ctx.font = '16px monospace';
+                this.ctx.fillText(`Final Score: ${this.score}`, CANVAS_WIDTH / 2, 260);
+                this.ctx.fillText('Press R to restart', CANVAS_WIDTH / 2, 300);
+            }
+
+            renderLevelComplete() {
+                this.ctx.fillStyle = COLORS.GREEN;
+                this.ctx.font = '24px monospace';
+                this.ctx.textAlign = 'center';
+                this.ctx.fillText('LEVEL COMPLETE!', CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2);
+            }
+
+            renderPlatforms() {
+                this.ctx.fillStyle = COLORS.WHITE;
+                this.platforms.forEach(platform => {
+                    this.ctx.fillRect(platform.x, platform.y, platform.width, platform.height);
+                });
+            }
+
+            renderLadders() {
+                this.ctx.fillStyle = COLORS.YELLOW;
+                this.ladders.forEach(ladder => {
+                    for (let y = ladder.y; y < ladder.y + ladder.height; y += 8) {
+                        this.ctx.fillRect(ladder.x, y, 4, 4);
+                        this.ctx.fillRect(ladder.x + 12, y, 4, 4);
+                        this.ctx.fillRect(ladder.x + 4, y + 4, 8, 2);
+                    }
+                });
+            }
+
+            renderHUD() {
+                this.ctx.fillStyle = COLORS.WHITE;
+                this.ctx.font = '16px monospace';
+                this.ctx.textAlign = 'left';
+                this.ctx.fillText(`Score: ${this.score}`, 10, 25);
+                this.ctx.fillText(`Level: ${this.level}`, 10, 45);
+                
+                this.ctx.textAlign = 'right';
+                this.ctx.fillText(`Lives: ${this.lives}`, CANVAS_WIDTH - 10, 25);
+                this.ctx.fillText(`Treasures: ${this.totalTreasures - this.treasuresCollected}`, CANVAS_WIDTH - 10, 45);
+            }
+
+            gameLoop(currentTime = 0) {
+                const deltaTime = currentTime - this.lastTime;
+                this.lastTime = currentTime;
+
+                this.update(deltaTime);
+                this.render();
+
+                requestAnimationFrame((time) => this.gameLoop(time));
+            }
+        }
+
+        class Knight {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
+                this.width = 16;
+                this.height = 20;
+                this.velX = 0;
+                this.velY = 0;
+                this.speed = 150;
+                this.jumpPower = 300;
+                this.onGround = false;
+                this.onLadder = false;
+                this.animFrame = 0;
+                this.animTimer = 0;
+            }
+
+            update(deltaTime, keys, platforms, ladders) {
+                const dt = deltaTime / 1000;
+
+                // Animation
+                this.animTimer += deltaTime;
+                if (this.animTimer > 200) {
+                    this.animFrame = (this.animFrame + 1) % 2;
+                    this.animTimer = 0;
+                }
+
+                // Check ladder collision
+                this.onLadder = false;
+                ladders.forEach(ladder => {
+                    if (this.x + this.width > ladder.x && this.x < ladder.x + ladder.width &&
+                        this.y + this.height > ladder.y && this.y < ladder.y + ladder.height) {
+                        this.onLadder = true;
+                    }
+                });
+
+                // Movement
+                this.velX = 0;
+                if (keys['ArrowLeft'] || keys['KeyA']) {
+                    this.velX = -this.speed;
+                }
+                if (keys['ArrowRight'] || keys['KeyD']) {
+                    this.velX = this.speed;
+                }
+
+                // Ladder climbing
+                if (this.onLadder) {
+                    if (keys['ArrowUp'] || keys['KeyW']) {
+                        this.velY = -this.speed;
+                    } else if (keys['ArrowDown'] || keys['KeyS']) {
+                        this.velY = this.speed;
+                    } else {
+                        this.velY = 0;
+                    }
+                } else {
+                    // Gravity
+                    this.velY += 800 * dt;
+                    
+                    // Jumping
+                    if ((keys['Space']) && this.onGround) {
+                        this.velY = -this.jumpPower;
+                        this.onGround = false;
+                    }
+                }
+
+                // Update position
+                this.x += this.velX * dt;
+                this.y += this.velY * dt;
+
+                // Screen wrapping
+                if (this.x < -this.width) {
+                    this.x = CANVAS_WIDTH;
+                } else if (this.x > CANVAS_WIDTH) {
+                    this.x = -this.width;
+                }
+
+                // Platform collision
+                this.onGround = false;
+                platforms.forEach(platform => {
+                    if (this.x + this.width > platform.x && this.x < platform.x + platform.width &&
+                        this.y + this.height > platform.y && this.y < platform.y + platform.height) {
+                        if (this.velY > 0) { // Falling down
+                            this.y = platform.y - this.height;
+                            this.velY = 0;
+                            this.onGround = true;
+                        }
+                    }
+                });
+            }
+
+            collidesWith(other) {
+                return this.x < other.x + other.width &&
+                       this.x + this.width > other.x &&
+                       this.y < other.y + other.height &&
+                       this.y + this.height > other.y;
+            }
+
+            render(ctx) {
+                // Knight sprite (helmet and sword)
+                ctx.fillStyle = COLORS.CYAN;
+                ctx.fillRect(this.x + 2, this.y, 12, 16); // Body
+                
+                ctx.fillStyle = COLORS.WHITE;
+                ctx.fillRect(this.x + 4, this.y + 2, 8, 6); // Helmet
+                
+                ctx.fillStyle = COLORS.YELLOW;
+                ctx.fillRect(this.x + 6, this.y + 4, 4, 2); // Helmet detail
+                
+                ctx.fillStyle = COLORS.RED;
+                ctx.fillRect(this.x + 12, this.y + 8, 3, 8); // Sword
+                
+                // Simple walk animation
+                if (this.velX !== 0 && this.onGround) {
+                    ctx.fillStyle = COLORS.CYAN;
+                    ctx.fillRect(this.x + this.animFrame * 2, this.y + 16, 4, 4); // Left foot
+                    ctx.fillRect(this.x + 10 - this.animFrame * 2, this.y + 16, 4, 4); // Right foot
+                } else {
+                    ctx.fillStyle = COLORS.CYAN;
+                    ctx.fillRect(this.x + 2, this.y + 16, 4, 4); // Feet
+                    ctx.fillRect(this.x + 10, this.y + 16, 4, 4);
+                }
+            }
+        }
+
+        class Goblin {
+            constructor(x, y, platform, difficulty) {
+                this.x = x;
+                this.y = y;
+                this.width = 14;
+                this.height = 16;
+                this.platform = platform;
+                this.speed = 30 + (difficulty * 20);
+                this.direction = Math.random() > 0.5 ? 1 : -1;
+                this.animFrame = 0;
+                this.animTimer = 0;
+            }
+
+            update(deltaTime) {
+                const dt = deltaTime / 1000;
+
+                // Animation
+                this.animTimer += deltaTime;
+                if (this.animTimer > 300) {
+                    this.animFrame = (this.animFrame + 1) % 2;
+                    this.animTimer = 0;
+                }
+
+                // Movement
+                this.x += this.direction * this.speed * dt;
+
+                // Platform boundary checking
+                if (this.x <= this.platform.x || this.x + this.width >= this.platform.x + this.platform.width) {
+                    this.direction *= -1;
+                    this.x = Math.max(this.platform.x, Math.min(this.platform.x + this.platform.width - this.width, this.x));
+                }
+            }
+
+            render(ctx) {
+                // Goblin sprite
+                ctx.fillStyle = COLORS.GREEN;
+                ctx.fillRect(this.x + 2, this.y + 4, 10, 8); // Body
+                
+                ctx.fillStyle = COLORS.RED;
+                ctx.fillRect(this.x + 4, this.y, 6, 6); // Head
+                
+                ctx.fillStyle = COLORS.WHITE;
+                ctx.fillRect(this.x + 5, this.y + 2, 2, 1); // Eyes
+                ctx.fillRect(this.x + 8, this.y + 2, 2, 1);
+                
+                // Walk animation
+                ctx.fillStyle = COLORS.GREEN;
+                ctx.fillRect(this.x + 1 + this.animFrame, this.y + 12, 3, 4); // Left leg
+                ctx.fillRect(this.x + 10 - this.animFrame, this.y + 12, 3, 4); // Right leg
+            }
+        }
+
+        class Dragon {
+            constructor(x, y, level) {
+                this.x = x;
+                this.y = y;
+                this.width = 140;
+                this.height = 40;
+                this.level = level;
+                this.difficulty = Math.min(Math.floor((level - 1) / 2), 2); // 0=Green, 1=Blue, 2=Red
+                this.breatheTimer = 0;
+                this.breathing = false;
+            }
+
+            update(deltaTime) {
+                this.breatheTimer += deltaTime;
+                if (this.breatheTimer > 3000) {
+                    this.breathing = true;
+                    setTimeout(() => { this.breathing = false; }, 1000);
+                    this.breatheTimer = 0;
+                }
+            }
+
+            render(ctx) {
+                // Dragon cage
+                ctx.fillStyle = COLORS.WHITE;
+                ctx.fillRect(this.x - 10, this.y, 4, 50);
+                ctx.fillRect(this.x + this.width + 6, this.y, 4, 50);
+                for (let i = 0; i < 6; i++) {
+                    ctx.fillRect(this.x - 6 + i * 25, this.y, 4, 50);
+                }
+                ctx.fillRect(this.x - 10, this.y, this.width + 20, 4);
+
+                // Dragon color based on difficulty
+                const dragonColors = [COLORS.GREEN, COLORS.BLUE, COLORS.RED];
+                ctx.fillStyle = dragonColors[this.difficulty];
+                ctx.fillRect(this.x, this.y + 10, 30, 20); // Body
+                ctx.fillRect(this.x + 25, this.y + 15, 20, 10); // Head
+                
+                // Eyes
+                ctx.fillStyle = COLORS.WHITE;
+                ctx.fillRect(this.x + 35, this.y + 17, 3, 3);
+                ctx.fillRect(this.x + 40, this.y + 17, 3, 3);
+
+                // Wings
+                ctx.fillStyle = dragonColors[this.difficulty];
+                ctx.fillRect(this.x + 5, this.y + 5, 15, 8);
+                ctx.fillRect(this.x + 5, this.y + 25, 15, 8);
+
+                // Fire breathing effect
+                if (this.breathing) {
+                    ctx.fillStyle = COLORS.RED;
+                    for (let i = 0; i < 5; i++) {
+                        ctx.fillRect(this.x + 45, this.y + 25 + i * 20, 8 - i, 4);
+                    }
+                    ctx.fillStyle = COLORS.YELLOW;
+                    for (let i = 0; i < 3; i++) {
+                        ctx.fillRect(this.x + 47, this.y + 27 + i * 20, 4 - i, 2);
+                    }
+                }
+            }
+        }
+
+        class Treasure {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
+                this.width = 12;
+                this.height = 12;
+                this.animTimer = 0;
+                this.animFrame = 0;
+            }
+
+            update(deltaTime) {
+                this.animTimer += deltaTime;
+                if (this.animTimer > 500) {
+                    this.animFrame = (this.animFrame + 1) % 2;
+                    this.animTimer = 0;
+                }
+            }
+
+            render(ctx) {
+                // Treasure gem with sparkle animation
+                const colors = [COLORS.YELLOW, COLORS.MAGENTA];
+                ctx.fillStyle = colors[this.animFrame];
+                ctx.fillRect(this.x + 2, this.y + 2, 8, 8);
+                
+                ctx.fillStyle = COLORS.WHITE;
+                ctx.fillRect(this.x + 4, this.y + 4, 2, 2);
+                ctx.fillRect(this.x + 8, this.y + 6, 1, 1);
+            }
+        }
+
+        // Start the game
+        const game = new Game();
+    </script>
+</body>
+</html>
