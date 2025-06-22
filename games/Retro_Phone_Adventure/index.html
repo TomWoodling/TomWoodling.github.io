@@ -2,171 +2,262 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>Treasure Quest - Retro Adventure</title>
     <style>
-        html, body {
+        body {
             margin: 0;
             padding: 0;
             background: #000;
             font-family: monospace;
-            color: #fff;
-            height: 100%;
-            width: 100%;
-            overflow: hidden;
-            touch-action: none;
-        }
-        body {
             display: flex;
             flex-direction: column;
             align-items: center;
-            justify-content: center;
+            justify-content: flex-start;
             min-height: 100vh;
-            min-width: 100vw;
+            color: #fff;
+            overflow: hidden;
         }
+        
         #gameContainer {
             border: 2px solid #00ff00;
             background: #001100;
             position: relative;
+            width: 100%;
+            max-width: 640px;
             display: flex;
             flex-direction: column;
-            align-items: center;
-            width: 100vw;
-            max-width: 100vw;
-            box-sizing: border-box;
+            height: 100vh;
         }
+        
+        #canvasContainer {
+            position: relative;
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #000;
+        }
+        
         #gameCanvas {
             display: block;
             image-rendering: pixelated;
             image-rendering: -moz-crisp-edges;
             image-rendering: crisp-edges;
-            width: 100vw;
+            max-width: 100%;
+            max-height: 100%;
+            width: auto;
             height: auto;
-            max-width: 100vw;
-            max-height: 60vh;
-            background: #000;
-            margin: 0 auto;
         }
+        
         #ui {
             background: #000;
             color: #00ff00;
-            padding: 10px 0 0 0;
-            font-size: 16px;
+            padding: 8px;
+            font-size: 12px;
             border-top: 2px solid #00ff00;
-            width: 100vw;
+            width: 100%;
             box-sizing: border-box;
-            text-align: center;
+            flex-shrink: 0;
         }
+        
+        #gameInfo {
+            display: flex;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            margin-bottom: 5px;
+        }
+        
+        #gameInfo > div {
+            margin: 2px 0;
+        }
+        
+        #message {
+            margin: 5px 0;
+            font-size: 11px;
+            min-height: 1.2em;
+        }
+        
         #controls {
-            margin: 12px 0 0 0;
             display: grid;
-            grid-template-columns: repeat(3, 70px);
-            grid-gap: 10px;
-            justify-content: center;
-            align-items: center;
-            width: 100vw;
-            max-width: 260px;
-            margin-left: auto;
-            margin-right: auto;
+            grid-template-columns: repeat(3, 1fr);
+            grid-gap: 3px;
+            max-width: 200px;
+            margin: 8px auto 0;
+            aspect-ratio: 3/3;
         }
+        
         .control-btn {
-            width: 70px;
-            height: 70px;
             background: #003300;
             border: 2px solid #00ff00;
             color: #00ff00;
-            font-size: 22px;
+            font-size: 14px;
             font-weight: bold;
             cursor: pointer;
             user-select: none;
             display: flex;
             align-items: center;
             justify-content: center;
-            border-radius: 14px;
             touch-action: manipulation;
+            min-height: 40px;
         }
+        
         .control-btn:active {
             background: #006600;
         }
-        #inventory {
-            margin-top: 14px;
-            display: flex;
-            gap: 8px;
-            justify-content: center;
-            flex-wrap: wrap;
+        
+        .control-btn:nth-child(1), .control-btn:nth-child(3), .control-btn:nth-child(7), .control-btn:nth-child(9) {
+            opacity: 0;
+            pointer-events: none;
         }
+        
+        #inventory {
+            margin-top: 8px;
+            display: flex;
+            gap: 3px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+        
         .item {
-            width: 36px;
-            height: 36px;
-            border: 1.5px solid #00ff00;
+            width: 25px;
+            height: 25px;
+            border: 1px solid #00ff00;
             background: #002200;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 18px;
+            font-size: 10px;
         }
-        @media (max-width: 600px) {
-            #gameCanvas {
-                max-width: 100vw;
-                max-height: 45vh;
+        
+        /* Landscape mobile optimizations */
+        @media screen and (orientation: landscape) and (max-height: 500px) {
+            body {
+                flex-direction: row;
             }
+            
+            #gameContainer {
+                flex-direction: row;
+                height: 100vh;
+                max-width: none;
+            }
+            
+            #canvasContainer {
+                flex: 1;
+            }
+            
+            #ui {
+                width: 200px;
+                border-top: none;
+                border-left: 2px solid #00ff00;
+                max-height: 100vh;
+                overflow-y: auto;
+            }
+            
             #controls {
-                grid-template-columns: repeat(3, 1fr);
-                max-width: 100vw;
+                max-width: 150px;
             }
+        }
+        
+        /* Very small screens */
+        @media (max-width: 360px), (max-height: 400px) {
+            #ui {
+                padding: 4px;
+                font-size: 10px;
+            }
+            
+            #message {
+                font-size: 9px;
+            }
+            
+            .control-btn {
+                font-size: 12px;
+                min-height: 35px;
+            }
+            
+            .item {
+                width: 20px;
+                height: 20px;
+                font-size: 8px;
+            }
+        }
+        
+        /* Desktop styles */
+        @media (min-width: 641px) {
+            body {
+                justify-content: center;
+            }
+            
+            #gameContainer {
+                height: 80vh;
+                max-height: 600px;
+            }
+            
             #ui {
                 font-size: 14px;
             }
-            .control-btn {
-                width: 52px;
-                height: 52px;
-                font-size: 18px;
+            
+            #controls {
+                max-width: 240px;
             }
-            .item {
-                width: 26px;
-                height: 26px;
-                font-size: 13px;
+            
+            .control-btn {
+                font-size: 16px;
+                min-height: 50px;
             }
         }
     </style>
 </head>
 <body>
     <div id="gameContainer">
-        <canvas id="gameCanvas" width="320" height="240"></canvas>
+        <div id="canvasContainer">
+            <canvas id="gameCanvas" width="320" height="240"></canvas>
+        </div>
         <div id="ui">
-            <div>Level: <span id="level">1</span> | Health: <span id="health">100</span> | Score: <span id="score">0</span></div>
-            <div>Items: <span id="itemCount">0</span>/5</div>
+            <div id="gameInfo">
+                <div>Level: <span id="level">1</span></div>
+                <div>Health: <span id="health">100</span></div>
+                <div>Score: <span id="score">0</span></div>
+                <div>Items: <span id="itemCount">0</span>/5</div>
+            </div>
             <div id="message">Find all 5 treasures to advance! Use arrow keys or touch controls.</div>
             <div id="controls">
-                <div></div>
+                <div class="control-btn"></div>
                 <div class="control-btn" data-key="up">↑</div>
-                <div></div>
+                <div class="control-btn"></div>
                 <div class="control-btn" data-key="left">←</div>
                 <div class="control-btn" data-key="down">↓</div>
                 <div class="control-btn" data-key="right">→</div>
-                <div></div>
-                <div class="control-btn" data-key="action">⎵</div>
-                <div></div>
+                <div class="control-btn"></div>
+                <div class="control-btn" data-key="action">⚡</div>
+                <div class="control-btn"></div>
             </div>
             <div id="inventory"></div>
         </div>
     </div>
+
     <script>
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
-        const BASE_WIDTH = 320, BASE_HEIGHT = 240;
-        // Responsively resize canvas to fit window while keeping aspect ratio
+        
+        // Responsive canvas scaling
+        let scale = 1;
+        
         function resizeCanvas() {
-            let w = window.innerWidth;
-            let h = Math.min(window.innerHeight, window.innerWidth * (BASE_HEIGHT/BASE_WIDTH));
-            let scale = Math.min(w / BASE_WIDTH, h / BASE_HEIGHT, 2);
-            canvas.style.width = Math.floor(BASE_WIDTH * scale) + 'px';
-            canvas.style.height = Math.floor(BASE_HEIGHT * scale) + 'px';
+            const container = document.getElementById('canvasContainer');
+            const containerWidth = container.clientWidth;
+            const containerHeight = container.clientHeight;
+            
+            // Calculate scale to fit container while maintaining aspect ratio
+            const scaleX = containerWidth / canvas.width;
+            const scaleY = containerHeight / canvas.height;
+            scale = Math.min(scaleX, scaleY);
+            
+            // Apply scaling via CSS transform
+            canvas.style.transform = `scale(${scale})`;
+            canvas.style.transformOrigin = 'center';
         }
-        window.addEventListener('resize', resizeCanvas);
-        window.addEventListener('orientationchange', resizeCanvas);
-        resizeCanvas();
-
+        
         // Game state
         const game = {
             player: { x: 50, y: 100, health: 100, score: 0 },
@@ -182,27 +273,387 @@
             maxLevel: 3,
             levelComplete: false
         };
-        // ... (rest of your original JS code goes here, unchanged) ...
-        // (Paste your original JavaScript logic below this section, unmodified except as noted.)
-
-        // === Rest of your original JS code unchanged ===
-        // ... (copy ALL your game logic here as is) ...
-
-        // --- Insert your entire game JS code here as in your original post ---
-        // (your original code from "const colors = ..." down to gameLoop();)
-
-        // (For brevity, I'm not repeating your entire code block here, but include all your JS logic as in your current file.)
-
-        // Add this after your gameLoop() call:
-        // Prevent double-tap zoom on iOS
-        let lastTouchEnd = 0;
-        document.addEventListener('touchend', function(event) {
-            let now = (new Date()).getTime();
-            if (now - lastTouchEnd <= 300) {
-                event.preventDefault();
+        
+        // Colors (ZX Spectrum inspired)
+        const colors = {
+            black: '#000000',
+            blue: '#0000ff',
+            red: '#ff0000',
+            magenta: '#ff00ff',
+            green: '#00ff00',
+            cyan: '#00ffff',
+            yellow: '#ffff00',
+            white: '#ffffff'
+        };
+        
+        // Initialize game world
+        function initGame() {
+            // Reset level-specific data
+            game.walls = [];
+            game.treasures = [];
+            game.enemies = [];
+            game.inventory = [];
+            game.levelComplete = false;
+            
+            // Level-specific generation
+            generateLevel(game.level);
+        }
+        
+        function generateLevel(level) {
+            // Reset player position
+            game.player.x = 50;
+            game.player.y = 100;
+            
+            if (level === 1) {
+                // Level 1: Simple maze
+                const wallData = [
+                    [0, 0, 320, 10], [0, 0, 10, 240], [310, 0, 10, 240], [0, 230, 320, 10],
+                    [60, 60, 80, 10], [200, 40, 10, 100], [100, 150, 120, 10],
+                    [50, 200, 100, 10], [250, 180, 60, 10]
+                ];
+                
+                game.walls = wallData.map(([x, y, w, h]) => ({x, y, width: w, height: h}));
+                
+                // Level 1 treasures
+                const treasurePositions = [
+                    {x: 280, y: 50, type: 'gem'}, {x: 30, y: 180, type: 'coin'},
+                    {x: 150, y: 30, type: 'key'}, {x: 270, y: 200, type: 'chest'},
+                    {x: 80, y: 120, type: 'crown'}
+                ];
+                
+                game.treasures = treasurePositions.map((pos, i) => ({
+                    ...pos, id: i, collected: false
+                }));
+                
+                // Level 1 enemies
+                game.enemies = [
+                    {x: 150, y: 80, dx: 1, dy: 0, type: 'ghost'},
+                    {x: 200, y: 150, dx: 0, dy: 1, type: 'spider'}
+                ];
+                
+            } else if (level === 2) {
+                // Level 2: More complex maze
+                const wallData = [
+                    [0, 0, 320, 10], [0, 0, 10, 240], [310, 0, 10, 240], [0, 230, 320, 10],
+                    [40, 40, 10, 80], [80, 40, 80, 10], [120, 80, 10, 60],
+                    [160, 60, 60, 10], [200, 100, 10, 80], [160, 140, 40, 10],
+                    [80, 180, 100, 10], [240, 40, 10, 120], [280, 120, 20, 10]
+                ];
+                
+                game.walls = wallData.map(([x, y, w, h]) => ({x, y, width: w, height: h}));
+                
+                // Level 2 treasures
+                const treasurePositions = [
+                    {x: 25, y: 50, type: 'ruby'}, {x: 290, y: 60, type: 'diamond'},
+                    {x: 60, y: 160, type: 'emerald'}, {x: 180, y: 200, type: 'pearl'},
+                    {x: 140, y: 100, type: 'sapphire'}
+                ];
+                
+                game.treasures = treasurePositions.map((pos, i) => ({
+                    ...pos, id: i, collected: false
+                }));
+                
+                // Level 2 enemies (more aggressive)
+                game.enemies = [
+                    {x: 100, y: 60, dx: 1.5, dy: 0, type: 'ghost'},
+                    {x: 220, y: 80, dx: 0, dy: 1.5, type: 'spider'},
+                    {x: 50, y: 200, dx: -1, dy: 0, type: 'bat'}
+                ];
+                
+            } else if (level === 3) {
+                // Level 3: Final challenging level
+                const wallData = [
+                    [0, 0, 320, 10], [0, 0, 10, 240], [310, 0, 10, 240], [0, 230, 320, 10],
+                    [30, 30, 10, 60], [60, 30, 40, 10], [90, 60, 10, 40],
+                    [120, 30, 10, 30], [150, 50, 50, 10], [180, 80, 10, 40],
+                    [210, 40, 10, 80], [240, 80, 40, 10], [260, 110, 10, 60],
+                    [40, 120, 60, 10], [120, 140, 80, 10], [80, 170, 10, 40],
+                    [120, 190, 60, 10], [200, 170, 80, 10]
+                ];
+                
+                game.walls = wallData.map(([x, y, w, h]) => ({x, y, width: w, height: h}));
+                
+                // Level 3 treasures
+                const treasurePositions = [
+                    {x: 25, y: 200, type: 'orb'}, {x: 290, y: 25, type: 'scepter'},
+                    {x: 160, y: 25, type: 'talisman'}, {x: 45, y: 90, type: 'amulet'},
+                    {x: 220, y: 200, type: 'relic'}
+                ];
+                
+                game.treasures = treasurePositions.map((pos, i) => ({
+                    ...pos, id: i, collected: false
+                }));
+                
+                // Level 3 enemies (most challenging)
+                game.enemies = [
+                    {x: 140, y: 70, dx: 2, dy: 0, type: 'ghost'},
+                    {x: 80, y: 140, dx: 0, dy: 2, type: 'spider'},
+                    {x: 240, y: 120, dx: -1.5, dy: 0, type: 'bat'},
+                    {x: 160, y: 180, dx: 1, dy: -1, type: 'wraith'}
+                ];
             }
-            lastTouchEnd = now;
-        }, false);
+        }
+        
+        // Collision detection
+        function checkCollision(rect1, rect2) {
+            return rect1.x < rect2.x + rect2.width &&
+                   rect1.x + rect1.width > rect2.x &&
+                   rect1.y < rect2.y + rect2.height &&
+                   rect1.y + rect1.height > rect2.y;
+        }
+        
+        function canMoveTo(x, y) {
+            const playerRect = {x, y, width: 12, height: 12};
+            
+            // Check walls
+            for (const wall of game.walls) {
+                if (checkCollision(playerRect, wall)) return false;
+            }
+            
+            // Check boundaries
+            if (x < 0 || y < 0 || x > canvas.width - 12 || y > canvas.height - 12) return false;
+            
+            return true;
+        }
+        
+        // Handle input
+        function handleInput() {
+            const speed = 2;
+            let newX = game.player.x;
+            let newY = game.player.y;
+            
+            if (game.keys['ArrowUp'] || game.keys['up']) newY -= speed;
+            if (game.keys['ArrowDown'] || game.keys['down']) newY += speed;
+            if (game.keys['ArrowLeft'] || game.keys['left']) newX -= speed;
+            if (game.keys['ArrowRight'] || game.keys['right']) newX += speed;
+            
+            if (canMoveTo(newX, game.player.y)) game.player.x = newX;
+            if (canMoveTo(game.player.x, newY)) game.player.y = newY;
+        }
+        
+        // Update game logic
+        function update() {
+            if (game.gameWon) return;
+            
+            handleInput();
+            
+            // Move enemies
+            game.enemies.forEach(enemy => {
+                let newX = enemy.x + enemy.dx;
+                let newY = enemy.y + enemy.dy;
+                
+                if (!canMoveTo(newX, enemy.y) || Math.random() < 0.02) {
+                    enemy.dx = (Math.random() - 0.5) * 2;
+                }
+                if (!canMoveTo(enemy.x, newY) || Math.random() < 0.02) {
+                    enemy.dy = (Math.random() - 0.5) * 2;
+                }
+                
+                if (canMoveTo(newX, enemy.y)) enemy.x = newX;
+                if (canMoveTo(enemy.x, newY)) enemy.y = newY;
+                
+                // Check collision with player
+                const playerRect = {x: game.player.x, y: game.player.y, width: 12, height: 12};
+                const enemyRect = {x: enemy.x, y: enemy.y, width: 10, height: 10};
+                
+                if (checkCollision(playerRect, enemyRect)) {
+                    game.player.health -= 1;
+                    if (game.player.health <= 0) {
+                        game.message = "Game Over! Refresh to restart.";
+                    }
+                }
+            });
+            
+            // Check treasure collection
+            game.treasures.forEach(treasure => {
+                if (treasure.collected) return;
+                
+                const playerRect = {x: game.player.x, y: game.player.y, width: 12, height: 12};
+                const treasureRect = {x: treasure.x, y: treasure.y, width: 8, height: 8};
+                
+                if (checkCollision(playerRect, treasureRect)) {
+                    treasure.collected = true;
+                    game.inventory.push(treasure);
+                    game.player.score += 100;
+                    game.message = `Found ${treasure.type}! (${game.inventory.length}/5)`;
+                    
+                    if (game.inventory.length >= 5) {
+                        game.levelComplete = true;
+                        if (game.level < game.maxLevel) {
+                            game.message = `Level ${game.level} complete! Press ⚡ to continue...`;
+                        } else {
+                            game.gameWon = true;
+                            game.message = "Congratulations! You completed all levels!";
+                        }
+                    }
+                }
+            });
+            
+            // Handle level progression
+            if (game.levelComplete && (game.keys[' '] || game.keys['action'])) {
+                if (game.level < game.maxLevel) {
+                    game.level++;
+                    game.player.health = Math.min(100, game.player.health + 20); // Bonus health
+                    game.inventory = []; // Clear inventory for new level
+                    game.levelComplete = false; // Reset level completion flag
+                    game.message = `Starting Level ${game.level}...`;
+                    generateLevel(game.level);
+                    // Clear the action key to prevent immediate re-triggering
+                    game.keys[' '] = false;
+                    game.keys['action'] = false;
+                } else {
+                    // Reset keys to prevent continuous triggering
+                    game.keys[' '] = false;
+                    game.keys['action'] = false;
+                }
+            }
+        }
+        
+        // Render game
+        function render() {
+            // Clear canvas
+            ctx.fillStyle = colors.black;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Draw walls
+            ctx.fillStyle = colors.cyan;
+            game.walls.forEach(wall => {
+                ctx.fillRect(wall.x, wall.y, wall.width, wall.height);
+            });
+            
+            // Draw treasures
+            game.treasures.forEach(treasure => {
+                if (treasure.collected) return;
+                
+                ctx.fillStyle = colors.yellow;
+                ctx.fillRect(treasure.x, treasure.y, 8, 8);
+                
+                // Add treasure type indicator
+                ctx.fillStyle = colors.red;
+                ctx.fillRect(treasure.x + 2, treasure.y + 2, 4, 4);
+            });
+            
+            // Draw enemies
+            ctx.fillStyle = colors.red;
+            game.enemies.forEach(enemy => {
+                ctx.fillRect(enemy.x, enemy.y, 10, 10);
+                ctx.fillStyle = colors.magenta;
+                ctx.fillRect(enemy.x + 2, enemy.y + 2, 6, 6);
+                ctx.fillStyle = colors.red;
+            });
+            
+            // Draw player
+            ctx.fillStyle = colors.green;
+            ctx.fillRect(game.player.x, game.player.y, 12, 12);
+            ctx.fillStyle = colors.white;
+            ctx.fillRect(game.player.x + 2, game.player.y + 2, 8, 8);
+            ctx.fillStyle = colors.blue;
+            ctx.fillRect(game.player.x + 4, game.player.y + 4, 4, 4);
+            
+            // Update UI
+            document.getElementById('level').textContent = game.level;
+            document.getElementById('health').textContent = Math.max(0, game.player.health);
+            document.getElementById('score').textContent = game.player.score;
+            document.getElementById('itemCount').textContent = game.inventory.length;
+            document.getElementById('message').textContent = game.message;
+            
+            // Update inventory display
+            const inventoryEl = document.getElementById('inventory');
+            inventoryEl.innerHTML = '';
+            game.inventory.forEach((item, i) => {
+                const itemEl = document.createElement('div');
+                itemEl.className = 'item';
+                itemEl.textContent = item.type[0].toUpperCase();
+                inventoryEl.appendChild(itemEl);
+            });
+        }
+        
+        // Game loop
+        function gameLoop() {
+            update();
+            render();
+            requestAnimationFrame(gameLoop);
+        }
+        
+        // Event listeners
+        document.addEventListener('keydown', (e) => {
+            game.keys[e.key] = true;
+            if (e.key === ' ') {
+                game.keys['action'] = true;
+                e.preventDefault(); // Prevent page scroll
+            }
+        });
+        
+        document.addEventListener('keyup', (e) => {
+            game.keys[e.key] = false;
+            if (e.key === ' ') {
+                game.keys['action'] = false;
+            }
+        });
+        
+        // Enhanced touch controls
+        document.querySelectorAll('.control-btn').forEach(btn => {
+            if (!btn.dataset.key) return; // Skip empty grid cells
+            
+            const key = btn.dataset.key;
+            
+            // Touch events
+            btn.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                game.keys[key] = true;
+                btn.style.background = '#006600';
+            });
+            
+            btn.addEventListener('touchend', (e) => {
+                e.preventDefault();
+                game.keys[key] = false;
+                btn.style.background = '#003300';
+            });
+            
+            btn.addEventListener('touchcancel', (e) => {
+                e.preventDefault();
+                game.keys[key] = false;
+                btn.style.background = '#003300';
+            });
+            
+            // Mouse events for desktop testing
+            btn.addEventListener('mousedown', (e) => {
+                e.preventDefault();
+                game.keys[key] = true;
+                btn.style.background = '#006600';
+            });
+            
+            btn.addEventListener('mouseup', (e) => {
+                e.preventDefault();
+                game.keys[key] = false;
+                btn.style.background = '#003300';
+            });
+            
+            btn.addEventListener('mouseleave', (e) => {
+                game.keys[key] = false;
+                btn.style.background = '#003300';
+            });
+        });
+        
+        // Prevent scrolling and zooming on touch devices
+        document.addEventListener('touchmove', (e) => {
+            e.preventDefault();
+        }, { passive: false });
+        
+        document.addEventListener('gesturestart', (e) => {
+            e.preventDefault();
+        });
+        
+        // Handle resize events
+        window.addEventListener('resize', resizeCanvas);
+        window.addEventListener('orientationchange', () => {
+            setTimeout(resizeCanvas, 100); // Delay for orientation change to complete
+        });
+        
+        // Initialize and start game
+        resizeCanvas();
+        initGame();
+        gameLoop();
     </script>
 </body>
 </html>
