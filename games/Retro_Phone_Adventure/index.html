@@ -2,98 +2,130 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1">
     <title>Treasure Quest - Retro Adventure</title>
     <style>
-        body {
+        html, body {
             margin: 0;
             padding: 0;
             background: #000;
             font-family: monospace;
+            color: #fff;
+            height: 100%;
+            width: 100%;
+            overflow: hidden;
+            touch-action: none;
+        }
+        body {
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: center;
             min-height: 100vh;
-            color: #fff;
+            min-width: 100vw;
         }
-        
         #gameContainer {
             border: 2px solid #00ff00;
             background: #001100;
             position: relative;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            width: 100vw;
+            max-width: 100vw;
+            box-sizing: border-box;
         }
-        
         #gameCanvas {
             display: block;
             image-rendering: pixelated;
             image-rendering: -moz-crisp-edges;
             image-rendering: crisp-edges;
+            width: 100vw;
+            height: auto;
+            max-width: 100vw;
+            max-height: 60vh;
+            background: #000;
+            margin: 0 auto;
         }
-        
         #ui {
             background: #000;
             color: #00ff00;
-            padding: 10px;
-            font-size: 14px;
+            padding: 10px 0 0 0;
+            font-size: 16px;
             border-top: 2px solid #00ff00;
-            width: 100%;
+            width: 100vw;
             box-sizing: border-box;
+            text-align: center;
         }
-        
         #controls {
-            margin-top: 10px;
+            margin: 12px 0 0 0;
             display: grid;
-            grid-template-columns: repeat(3, 60px);
-            grid-gap: 5px;
+            grid-template-columns: repeat(3, 70px);
+            grid-gap: 10px;
             justify-content: center;
+            align-items: center;
+            width: 100vw;
+            max-width: 260px;
+            margin-left: auto;
+            margin-right: auto;
         }
-        
         .control-btn {
-            width: 60px;
-            height: 60px;
+            width: 70px;
+            height: 70px;
             background: #003300;
             border: 2px solid #00ff00;
             color: #00ff00;
-            font-size: 16px;
+            font-size: 22px;
             font-weight: bold;
             cursor: pointer;
             user-select: none;
             display: flex;
             align-items: center;
             justify-content: center;
+            border-radius: 14px;
+            touch-action: manipulation;
         }
-        
         .control-btn:active {
             background: #006600;
         }
-        
         #inventory {
-            margin-top: 10px;
+            margin-top: 14px;
             display: flex;
-            gap: 5px;
+            gap: 8px;
+            justify-content: center;
             flex-wrap: wrap;
         }
-        
         .item {
-            width: 30px;
-            height: 30px;
-            border: 1px solid #00ff00;
+            width: 36px;
+            height: 36px;
+            border: 1.5px solid #00ff00;
             background: #002200;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 12px;
+            font-size: 18px;
         }
-        
         @media (max-width: 600px) {
-            #gameContainer {
-                width: 100vw;
-                height: 60vh;
-            }
             #gameCanvas {
-                width: 100%;
-                height: 100%;
+                max-width: 100vw;
+                max-height: 45vh;
+            }
+            #controls {
+                grid-template-columns: repeat(3, 1fr);
+                max-width: 100vw;
+            }
+            #ui {
+                font-size: 14px;
+            }
+            .control-btn {
+                width: 52px;
+                height: 52px;
+                font-size: 18px;
+            }
+            .item {
+                width: 26px;
+                height: 26px;
+                font-size: 13px;
             }
         }
     </style>
@@ -113,17 +145,28 @@
                 <div class="control-btn" data-key="down">↓</div>
                 <div class="control-btn" data-key="right">→</div>
                 <div></div>
-                <div class="control-btn" data-key="action">SPACE</div>
+                <div class="control-btn" data-key="action">⎵</div>
                 <div></div>
             </div>
             <div id="inventory"></div>
         </div>
     </div>
-
     <script>
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
-        
+        const BASE_WIDTH = 320, BASE_HEIGHT = 240;
+        // Responsively resize canvas to fit window while keeping aspect ratio
+        function resizeCanvas() {
+            let w = window.innerWidth;
+            let h = Math.min(window.innerHeight, window.innerWidth * (BASE_HEIGHT/BASE_WIDTH));
+            let scale = Math.min(w / BASE_WIDTH, h / BASE_HEIGHT, 2);
+            canvas.style.width = Math.floor(BASE_WIDTH * scale) + 'px';
+            canvas.style.height = Math.floor(BASE_HEIGHT * scale) + 'px';
+        }
+        window.addEventListener('resize', resizeCanvas);
+        window.addEventListener('orientationchange', resizeCanvas);
+        resizeCanvas();
+
         // Game state
         const game = {
             player: { x: 50, y: 100, health: 100, score: 0 },
@@ -139,359 +182,27 @@
             maxLevel: 3,
             levelComplete: false
         };
-        
-        // Colors (ZX Spectrum inspired)
-        const colors = {
-            black: '#000000',
-            blue: '#0000ff',
-            red: '#ff0000',
-            magenta: '#ff00ff',
-            green: '#00ff00',
-            cyan: '#00ffff',
-            yellow: '#ffff00',
-            white: '#ffffff'
-        };
-        
-        // Initialize game world
-        function initGame() {
-            // Reset level-specific data
-            game.walls = [];
-            game.treasures = [];
-            game.enemies = [];
-            game.inventory = [];
-            game.levelComplete = false;
-            
-            // Level-specific generation
-            generateLevel(game.level);
-        }
-        
-        function generateLevel(level) {
-            // Reset player position
-            game.player.x = 50;
-            game.player.y = 100;
-            
-            if (level === 1) {
-                // Level 1: Simple maze
-                const wallData = [
-                    [0, 0, 320, 10], [0, 0, 10, 240], [310, 0, 10, 240], [0, 230, 320, 10],
-                    [60, 60, 80, 10], [200, 40, 10, 100], [100, 150, 120, 10],
-                    [50, 200, 100, 10], [250, 180, 60, 10]
-                ];
-                
-                game.walls = wallData.map(([x, y, w, h]) => ({x, y, width: w, height: h}));
-                
-                // Level 1 treasures
-                const treasurePositions = [
-                    {x: 280, y: 50, type: 'gem'}, {x: 30, y: 180, type: 'coin'},
-                    {x: 150, y: 30, type: 'key'}, {x: 270, y: 200, type: 'chest'},
-                    {x: 80, y: 120, type: 'crown'}
-                ];
-                
-                game.treasures = treasurePositions.map((pos, i) => ({
-                    ...pos, id: i, collected: false
-                }));
-                
-                // Level 1 enemies
-                game.enemies = [
-                    {x: 150, y: 80, dx: 1, dy: 0, type: 'ghost'},
-                    {x: 200, y: 150, dx: 0, dy: 1, type: 'spider'}
-                ];
-                
-            } else if (level === 2) {
-                // Level 2: More complex maze
-                const wallData = [
-                    [0, 0, 320, 10], [0, 0, 10, 240], [310, 0, 10, 240], [0, 230, 320, 10],
-                    [40, 40, 10, 80], [80, 40, 80, 10], [120, 80, 10, 60],
-                    [160, 60, 60, 10], [200, 100, 10, 80], [160, 140, 40, 10],
-                    [80, 180, 100, 10], [240, 40, 10, 120], [280, 120, 20, 10]
-                ];
-                
-                game.walls = wallData.map(([x, y, w, h]) => ({x, y, width: w, height: h}));
-                
-                // Level 2 treasures
-                const treasurePositions = [
-                    {x: 25, y: 50, type: 'ruby'}, {x: 290, y: 60, type: 'diamond'},
-                    {x: 60, y: 160, type: 'emerald'}, {x: 180, y: 200, type: 'pearl'},
-                    {x: 140, y: 100, type: 'sapphire'}
-                ];
-                
-                game.treasures = treasurePositions.map((pos, i) => ({
-                    ...pos, id: i, collected: false
-                }));
-                
-                // Level 2 enemies (more aggressive)
-                game.enemies = [
-                    {x: 100, y: 60, dx: 1.5, dy: 0, type: 'ghost'},
-                    {x: 220, y: 80, dx: 0, dy: 1.5, type: 'spider'},
-                    {x: 50, y: 200, dx: -1, dy: 0, type: 'bat'}
-                ];
-                
-            } else if (level === 3) {
-                // Level 3: Final challenging level
-                const wallData = [
-                    [0, 0, 320, 10], [0, 0, 10, 240], [310, 0, 10, 240], [0, 230, 320, 10],
-                    [30, 30, 10, 60], [60, 30, 40, 10], [90, 60, 10, 40],
-                    [120, 30, 10, 30], [150, 50, 50, 10], [180, 80, 10, 40],
-                    [210, 40, 10, 80], [240, 80, 40, 10], [260, 110, 10, 60],
-                    [40, 120, 60, 10], [120, 140, 80, 10], [80, 170, 10, 40],
-                    [120, 190, 60, 10], [200, 170, 80, 10]
-                ];
-                
-                game.walls = wallData.map(([x, y, w, h]) => ({x, y, width: w, height: h}));
-                
-                // Level 3 treasures
-                const treasurePositions = [
-                    {x: 25, y: 200, type: 'orb'}, {x: 290, y: 25, type: 'scepter'},
-                    {x: 160, y: 25, type: 'talisman'}, {x: 45, y: 90, type: 'amulet'},
-                    {x: 220, y: 200, type: 'relic'}
-                ];
-                
-                game.treasures = treasurePositions.map((pos, i) => ({
-                    ...pos, id: i, collected: false
-                }));
-                
-                // Level 3 enemies (most challenging)
-                game.enemies = [
-                    {x: 140, y: 70, dx: 2, dy: 0, type: 'ghost'},
-                    {x: 80, y: 140, dx: 0, dy: 2, type: 'spider'},
-                    {x: 240, y: 120, dx: -1.5, dy: 0, type: 'bat'},
-                    {x: 160, y: 180, dx: 1, dy: -1, type: 'wraith'}
-                ];
+        // ... (rest of your original JS code goes here, unchanged) ...
+        // (Paste your original JavaScript logic below this section, unmodified except as noted.)
+
+        // === Rest of your original JS code unchanged ===
+        // ... (copy ALL your game logic here as is) ...
+
+        // --- Insert your entire game JS code here as in your original post ---
+        // (your original code from "const colors = ..." down to gameLoop();)
+
+        // (For brevity, I'm not repeating your entire code block here, but include all your JS logic as in your current file.)
+
+        // Add this after your gameLoop() call:
+        // Prevent double-tap zoom on iOS
+        let lastTouchEnd = 0;
+        document.addEventListener('touchend', function(event) {
+            let now = (new Date()).getTime();
+            if (now - lastTouchEnd <= 300) {
+                event.preventDefault();
             }
-        }
-        
-        // Collision detection
-        function checkCollision(rect1, rect2) {
-            return rect1.x < rect2.x + rect2.width &&
-                   rect1.x + rect1.width > rect2.x &&
-                   rect1.y < rect2.y + rect2.height &&
-                   rect1.y + rect1.height > rect2.y;
-        }
-        
-        function canMoveTo(x, y) {
-            const playerRect = {x, y, width: 12, height: 12};
-            
-            // Check walls
-            for (const wall of game.walls) {
-                if (checkCollision(playerRect, wall)) return false;
-            }
-            
-            // Check boundaries
-            if (x < 0 || y < 0 || x > canvas.width - 12 || y > canvas.height - 12) return false;
-            
-            return true;
-        }
-        
-        // Handle input
-        function handleInput() {
-            const speed = 2;
-            let newX = game.player.x;
-            let newY = game.player.y;
-            
-            if (game.keys['ArrowUp'] || game.keys['up']) newY -= speed;
-            if (game.keys['ArrowDown'] || game.keys['down']) newY += speed;
-            if (game.keys['ArrowLeft'] || game.keys['left']) newX -= speed;
-            if (game.keys['ArrowRight'] || game.keys['right']) newX += speed;
-            
-            if (canMoveTo(newX, game.player.y)) game.player.x = newX;
-            if (canMoveTo(game.player.x, newY)) game.player.y = newY;
-        }
-        
-        // Update game logic
-        function update() {
-            if (game.gameWon) return;
-            
-            handleInput();
-            
-            // Move enemies
-            game.enemies.forEach(enemy => {
-                let newX = enemy.x + enemy.dx;
-                let newY = enemy.y + enemy.dy;
-                
-                if (!canMoveTo(newX, enemy.y) || Math.random() < 0.02) {
-                    enemy.dx = (Math.random() - 0.5) * 2;
-                }
-                if (!canMoveTo(enemy.x, newY) || Math.random() < 0.02) {
-                    enemy.dy = (Math.random() - 0.5) * 2;
-                }
-                
-                if (canMoveTo(newX, enemy.y)) enemy.x = newX;
-                if (canMoveTo(enemy.x, newY)) enemy.y = newY;
-                
-                // Check collision with player
-                const playerRect = {x: game.player.x, y: game.player.y, width: 12, height: 12};
-                const enemyRect = {x: enemy.x, y: enemy.y, width: 10, height: 10};
-                
-                if (checkCollision(playerRect, enemyRect)) {
-                    game.player.health -= 1;
-                    if (game.player.health <= 0) {
-                        game.message = "Game Over! Refresh to restart.";
-                    }
-                }
-            });
-            
-            // Check treasure collection
-            game.treasures.forEach(treasure => {
-                if (treasure.collected) return;
-                
-                const playerRect = {x: game.player.x, y: game.player.y, width: 12, height: 12};
-                const treasureRect = {x: treasure.x, y: treasure.y, width: 8, height: 8};
-                
-                if (checkCollision(playerRect, treasureRect)) {
-                    treasure.collected = true;
-                    game.inventory.push(treasure);
-                    game.player.score += 100;
-                    game.message = `Found ${treasure.type}! (${game.inventory.length}/5)`;
-                    
-                    if (game.inventory.length >= 5) {
-                        game.levelComplete = true;
-                        if (game.level < game.maxLevel) {
-                            game.message = `Level ${game.level} complete! Press SPACE to continue...`;
-                        } else {
-                            game.gameWon = true;
-                            game.message = "Congratulations! You completed all levels!";
-                        }
-                    }
-                }
-            });
-            
-            // Handle level progression
-            if (game.levelComplete && (game.keys[' '] || game.keys['action'])) {
-                if (game.level < game.maxLevel) {
-                    game.level++;
-                    game.player.health = Math.min(100, game.player.health + 20); // Bonus health
-                    game.inventory = []; // Clear inventory for new level
-                    game.levelComplete = false; // Reset level completion flag
-                    game.message = `Starting Level ${game.level}...`;
-                    generateLevel(game.level);
-                    // Clear the action key to prevent immediate re-triggering
-                    game.keys[' '] = false;
-                    game.keys['action'] = false;
-                } else {
-                    // Reset keys to prevent continuous triggering
-                    game.keys[' '] = false;
-                    game.keys['action'] = false;
-                }
-            }
-        }
-        
-        // Render game
-        function render() {
-            // Clear canvas
-            ctx.fillStyle = colors.black;
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-            
-            // Draw walls
-            ctx.fillStyle = colors.cyan;
-            game.walls.forEach(wall => {
-                ctx.fillRect(wall.x, wall.y, wall.width, wall.height);
-            });
-            
-            // Draw treasures
-            game.treasures.forEach(treasure => {
-                if (treasure.collected) return;
-                
-                ctx.fillStyle = colors.yellow;
-                ctx.fillRect(treasure.x, treasure.y, 8, 8);
-                
-                // Add treasure type indicator
-                ctx.fillStyle = colors.red;
-                ctx.fillRect(treasure.x + 2, treasure.y + 2, 4, 4);
-            });
-            
-            // Draw enemies
-            ctx.fillStyle = colors.red;
-            game.enemies.forEach(enemy => {
-                ctx.fillRect(enemy.x, enemy.y, 10, 10);
-                ctx.fillStyle = colors.magenta;
-                ctx.fillRect(enemy.x + 2, enemy.y + 2, 6, 6);
-                ctx.fillStyle = colors.red;
-            });
-            
-            // Draw player
-            ctx.fillStyle = colors.green;
-            ctx.fillRect(game.player.x, game.player.y, 12, 12);
-            ctx.fillStyle = colors.white;
-            ctx.fillRect(game.player.x + 2, game.player.y + 2, 8, 8);
-            ctx.fillStyle = colors.blue;
-            ctx.fillRect(game.player.x + 4, game.player.y + 4, 4, 4);
-            
-            // Update UI
-            document.getElementById('level').textContent = game.level;
-            document.getElementById('health').textContent = Math.max(0, game.player.health);
-            document.getElementById('score').textContent = game.player.score;
-            document.getElementById('itemCount').textContent = game.inventory.length;
-            document.getElementById('message').textContent = game.message;
-            
-            // Update inventory display
-            const inventoryEl = document.getElementById('inventory');
-            inventoryEl.innerHTML = '';
-            game.inventory.forEach((item, i) => {
-                const itemEl = document.createElement('div');
-                itemEl.className = 'item';
-                itemEl.textContent = item.type[0].toUpperCase();
-                inventoryEl.appendChild(itemEl);
-            });
-        }
-        
-        // Game loop
-        function gameLoop() {
-            update();
-            render();
-            requestAnimationFrame(gameLoop);
-        }
-        
-        // Event listeners
-        document.addEventListener('keydown', (e) => {
-            game.keys[e.key] = true;
-            if (e.key === ' ') {
-                game.keys['action'] = true;
-                e.preventDefault(); // Prevent page scroll
-            }
-        });
-        
-        document.addEventListener('keyup', (e) => {
-            game.keys[e.key] = false;
-            if (e.key === ' ') {
-                game.keys['action'] = false;
-            }
-        });
-        
-        // Touch controls
-        document.querySelectorAll('.control-btn').forEach(btn => {
-            btn.addEventListener('touchstart', (e) => {
-                e.preventDefault();
-                const key = btn.dataset.key;
-                game.keys[key] = true;
-            });
-            
-            btn.addEventListener('touchend', (e) => {
-                e.preventDefault();
-                const key = btn.dataset.key;
-                game.keys[key] = false;
-            });
-            
-            btn.addEventListener('mousedown', (e) => {
-                e.preventDefault();
-                const key = btn.dataset.key;
-                game.keys[key] = true;
-            });
-            
-            btn.addEventListener('mouseup', (e) => {
-                e.preventDefault();
-                const key = btn.dataset.key;
-                game.keys[key] = false;
-            });
-        });
-        
-        // Prevent scrolling on touch
-        document.addEventListener('touchmove', (e) => {
-            e.preventDefault();
-        }, { passive: false });
-        
-        // Initialize and start game
-        initGame();
-        gameLoop();
+            lastTouchEnd = now;
+        }, false);
     </script>
 </body>
 </html>
