@@ -1,0 +1,570 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>The Signifying Chain: A Lacanian Adventure</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: #000;
+            color: #0f0;
+            font-family: 'Courier New', monospace;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            overflow: hidden;
+        }
+        
+        #gameContainer {
+            position: relative;
+            width: 800px;
+            height: 600px;
+            background: #001122;
+            border: 4px solid #0f0;
+        }
+        
+        #gameCanvas {
+            display: block;
+            background: #001122;
+        }
+        
+        #ui {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            z-index: 100;
+            color: #0f0;
+            font-size: 14px;
+            text-shadow: 0 0 10px #0f0;
+        }
+        
+        #completion {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.9);
+            color: #0f0;
+            padding: 30px;
+            border: 2px solid #0f0;
+            text-align: center;
+            font-size: 18px;
+            display: none;
+            z-index: 200;
+        }
+        
+        #gameOver {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.9);
+            color: #0f0;
+            padding: 20px;
+            border: 2px solid #0f0;
+            text-align: center;
+            font-size: 16px;
+            display: none;
+            z-index: 200;
+        }
+        
+        #instructions {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            font-size: 12px;
+            color: #0a0;
+        }
+        
+        .blink {
+            animation: blink 1s infinite;
+        }
+        
+        @keyframes blink {
+            0%, 50% { opacity: 1; }
+            51%, 100% { opacity: 0; }
+        }
+    </style>
+</head>
+<body>
+    <div id="gameContainer">
+        <canvas id="gameCanvas" width="800" height="600"></canvas>
+        <div id="ui">
+            <div>COINS: <span id="coinCount">0</span></div>
+            <div>WELL: <span id="wellCount">0</span></div>
+            <div>CHAIN: <span id="chainDisplay"></span></div>
+            <div>LIVES: <span id="lives">3</span></div>
+        </div>
+        <div id="gameOver">
+            <h2>GAME OVER</h2>
+            <p id="gameOverText">The signifying chain has collapsed!</p>
+            <p>Press SPACE to restart</p>
+        </div>
+        <div id="completion">
+            <h2>CHAIN COMPLETE!</h2>
+            <div id="completionChain"></div>
+            <p id="completionText">The Elder will now judge your chain...</p>
+            <p>Press SPACE to see the verdict</p>
+        </div>
+        <div id="instructions">
+            Arrow keys to move • SPACE to break blocks/throw coins • Collect 3 coins for each well
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        // Game state
+        let gameState = 'playing'; // 'playing', 'gameOver', 'completion'
+        let player = { x: 50, y: 500, width: 20, height: 20, vx: 0, vy: 0, onGround: false };
+        let coins = [];
+        let collectedCoins = [];
+        let blocks = [];
+        let wells = [];
+        let chain = [];
+        let lives = 3;
+        let wellCount = 0;
+        let camera = { x: 0 };
+        let completionState = 'waiting'; // 'waiting', 'judging', 'verdict'
+        
+        // Triad colors - 8 possible triads (HHH, HHT, HTH, HTT, THH, THT, TTH, TTT)
+        const triadColors = [
+            '#ff0000', '#00ff00', '#0000ff', '#ffff00',
+            '#ff00ff', '#00ffff', '#ffa500', '#800080'
+        ];
+        
+        const triadNames = ['HHH', 'HHT', 'HTH', 'HTT', 'THH', 'THT', 'TTH', 'TTT'];
+        
+        // Initialize game
+        function init() {
+            // Create blocks every 80 pixels
+            for (let i = 0; i < 50; i++) {
+                blocks.push({
+                    x: 100 + i * 80,
+                    y: 450,
+                    width: 30,
+                    height: 30,
+                    broken: false,
+                    coinType: Math.random() < 0.5 ? 'H' : 'T'
+                });
+            }
+            
+            // Create wells every 3 blocks
+            for (let i = 0; i < 16; i++) {
+                wells.push({
+                    x: 320 + i * 240,
+                    y: 480,
+                    width: 40,
+                    height: 40,
+                    active: false,
+                    used: false
+                });
+            }
+            
+            gameLoop();
+        }
+        
+        function update() {
+            if (gameState !== 'playing') return;
+            
+            // Update camera to follow player
+            camera.x = player.x - 400;
+            if (camera.x < 0) camera.x = 0;
+            
+            // Player physics
+            player.x += player.vx;
+            player.y += player.vy;
+            
+            // Gravity
+            player.vy += 0.5;
+            
+            // Ground collision
+            if (player.y > 520) {
+                player.y = 520;
+                player.vy = 0;
+                player.onGround = true;
+            }
+            
+            // Friction
+            player.vx *= 0.8;
+            
+            // Check block collisions
+            blocks.forEach(block => {
+                if (!block.broken && 
+                    player.x < block.x + block.width &&
+                    player.x + player.width > block.x &&
+                    player.y < block.y + block.height &&
+                    player.y + player.height > block.y) {
+                    
+                    // Push player away from block
+                    if (player.x < block.x) {
+                        player.x = block.x - player.width;
+                    } else {
+                        player.x = block.x + block.width;
+                    }
+                    player.vx = 0;
+                }
+            });
+            
+            // Check well activation
+            wells.forEach(well => {
+                if (!well.used && 
+                    Math.abs(player.x - well.x) < 60 &&
+                    Math.abs(player.y - well.y) < 60) {
+                    well.active = true;
+                } else {
+                    well.active = false;
+                }
+            });
+            
+            // Update coins
+            coins.forEach(coin => {
+                coin.y += coin.vy;
+                coin.vy += 0.3;
+                
+                // Collect coins
+                if (Math.abs(player.x - coin.x) < 20 && Math.abs(player.y - coin.y) < 20) {
+                    collectedCoins.push(coin.type);
+                    coin.collected = true;
+                }
+                
+                // Remove coins that fall off screen
+                if (coin.y > 600) coin.collected = true;
+            });
+            
+            coins = coins.filter(coin => !coin.collected);
+            
+            // Check if player falls off screen
+            if (player.y > 600) {
+                lives--;
+                if (lives <= 0) {
+                    gameState = 'gameOver';
+                    document.getElementById('gameOver').style.display = 'block';
+                } else {
+                    // Reset player position
+                    player.x = 50;
+                    player.y = 500;
+                    player.vx = 0;
+                    player.vy = 0;
+                }
+            }
+            
+            updateUI();
+        }
+        
+        function render() {
+            // Clear canvas
+            ctx.fillStyle = '#001122';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Save context for camera
+            ctx.save();
+            ctx.translate(-camera.x, 0);
+            
+            // Draw ground
+            ctx.fillStyle = '#0a4a0a';
+            ctx.fillRect(0, 540, 4000, 60);
+            
+            // Draw blocks
+            blocks.forEach(block => {
+                if (!block.broken) {
+                    ctx.fillStyle = '#8b4513';
+                    ctx.fillRect(block.x, block.y, block.width, block.height);
+                    
+                    // Draw coin hint
+                    ctx.fillStyle = block.coinType === 'H' ? '#ffd700' : '#8b4513';
+                    ctx.fillRect(block.x + 5, block.y + 5, 8, 8);
+                }
+            });
+            
+            // Draw wells
+            wells.forEach(well => {
+                ctx.fillStyle = well.active ? '#00ffff' : '#006666';
+                ctx.fillRect(well.x, well.y, well.width, well.height);
+                
+                // Draw well opening
+                ctx.fillStyle = '#000';
+                ctx.fillRect(well.x + 5, well.y + 5, well.width - 10, well.height - 10);
+                
+                if (well.active && !well.used) {
+                    ctx.fillStyle = '#00ffff';
+                    ctx.font = '12px Courier New';
+                    ctx.fillText('WELL', well.x, well.y - 5);
+                }
+            });
+            
+            // Draw coins
+            coins.forEach(coin => {
+                ctx.fillStyle = coin.type === 'H' ? '#ffd700' : '#8b4513';
+                ctx.beginPath();
+                ctx.arc(coin.x, coin.y, 8, 0, Math.PI * 2);
+                ctx.fill();
+                
+                ctx.fillStyle = '#000';
+                ctx.font = '10px Courier New';
+                ctx.fillText(coin.type, coin.x - 3, coin.y + 3);
+            });
+            
+            // Draw player
+            ctx.fillStyle = '#00ff00';
+            ctx.fillRect(player.x, player.y, player.width, player.height);
+            
+            // Draw chain links - now following the player!
+            const chainStartX = player.x - 200;
+            const chainY = 30;
+            
+            for (let i = 0; i < chain.length; i++) {
+                const link = chain[i];
+                const x = chainStartX + i * 45;
+                
+                // Draw chain link background
+                ctx.fillStyle = triadColors[link.colorIndex];
+                ctx.fillRect(x, chainY, 40, 25);
+                
+                // Draw chain link border
+                ctx.strokeStyle = '#fff';
+                ctx.lineWidth = 2;
+                ctx.strokeRect(x, chainY, 40, 25);
+                
+                // Draw triad text
+                ctx.fillStyle = '#000';
+                ctx.font = 'bold 12px Courier New';
+                ctx.fillText(link.triad, x + 4, chainY + 17);
+                
+                // Draw connecting chain between links
+                if (i < chain.length - 1) {
+                    ctx.strokeStyle = '#666';
+                    ctx.lineWidth = 3;
+                    ctx.beginPath();
+                    ctx.moveTo(x + 40, chainY + 12);
+                    ctx.lineTo(x + 45, chainY + 12);
+                    ctx.stroke();
+                }
+            }
+            
+            // Draw progress indicator
+            ctx.fillStyle = '#ffff00';
+            ctx.font = '14px Courier New';
+            ctx.fillText(`CHAIN PROGRESS: ${chain.length}/10`, chainStartX, chainY - 10);
+            
+            ctx.restore();
+        }
+        
+        function updateUI() {
+            document.getElementById('coinCount').textContent = collectedCoins.length;
+            document.getElementById('wellCount').textContent = wellCount;
+            document.getElementById('lives').textContent = lives;
+            
+            // Update chain display
+            const chainText = chain.map(link => link.triad).join('-');
+            document.getElementById('chainDisplay').textContent = chainText;
+        }
+        
+        function gameLoop() {
+            update();
+            render();
+            requestAnimationFrame(gameLoop);
+        }
+        
+        function breakBlock(blockX) {
+            const block = blocks.find(b => 
+                !b.broken && 
+                Math.abs(b.x - blockX) < 50
+            );
+            
+            if (block) {
+                block.broken = true;
+                
+                // Create coin
+                coins.push({
+                    x: block.x + 15,
+                    y: block.y,
+                    type: block.coinType,
+                    vy: -5,
+                    collected: false
+                });
+            }
+        }
+        
+        function useWell() {
+            const activeWell = wells.find(w => w.active && !w.used);
+            if (activeWell && collectedCoins.length >= 3) {
+                activeWell.used = true;
+                wellCount++;
+                
+                // Create triad from last 3 coins
+                const triad = collectedCoins.slice(-3).join('');
+                const colorIndex = triadNames.indexOf(triad);
+                
+                chain.push({
+                    triad: triad,
+                    colorIndex: colorIndex >= 0 ? colorIndex : 0
+                });
+                
+                // Remove used coins
+                collectedCoins = collectedCoins.slice(0, -3);
+                
+                // Check for completion (10 triads)
+                if (chain.length >= 10) {
+                    gameState = 'completion';
+                    completionState = 'waiting';
+                    showCompletionScreen();
+                    return;
+                }
+                
+                // Check for elder judgment every 5 wells
+                if (wellCount % 5 === 0) {
+                    elderJudgment();
+                }
+            }
+        }
+        
+        function showCompletionScreen() {
+            const completionDiv = document.getElementById('completion');
+            const chainDiv = document.getElementById('completionChain');
+            
+            // Display the completed chain
+            chainDiv.innerHTML = '';
+            chain.forEach((link, i) => {
+                const linkElement = document.createElement('span');
+                linkElement.style.background = triadColors[link.colorIndex];
+                linkElement.style.color = '#000';
+                linkElement.style.padding = '5px 10px';
+                linkElement.style.margin = '2px';
+                linkElement.style.border = '2px solid #fff';
+                linkElement.style.fontFamily = 'Courier New';
+                linkElement.style.fontWeight = 'bold';
+                linkElement.textContent = link.triad;
+                chainDiv.appendChild(linkElement);
+            });
+            
+            completionDiv.style.display = 'block';
+        }
+        
+        function finalJudgment() {
+            const completionText = document.getElementById('completionText');
+            
+            if (completionState === 'waiting') {
+                completionState = 'judging';
+                completionText.innerHTML = 'The Elder examines your chain...<br><span class="blink">ANALYZING SYMMETRY...</span>';
+                
+                setTimeout(() => {
+                    completionState = 'verdict';
+                    
+                    // More elaborate symmetry check for final judgment
+                    const firstHalf = chain.slice(0, 5);
+                    const secondHalf = chain.slice(5, 10);
+                    const hasSymmetry = firstHalf.some((link, i) => 
+                        secondHalf.some(link2 => link.triad === link2.triad)
+                    );
+                    
+                    if (hasSymmetry) {
+                        completionText.innerHTML = `
+                            <div style="color: #00ff00; font-size: 20px;">🎉 SYMMETRY ACHIEVED! 🎉</div>
+                            <p>The Elder is pleased with your signifying chain!</p>
+                            <p>You have demonstrated the arbitrary nature of meaning!</p>
+                            <p style="font-size: 12px;">(Press SPACE to restart)</p>
+                        `;
+                    } else {
+                        completionText.innerHTML = `
+                            <div style="color: #ff0000; font-size: 20px;">❌ NO SYMMETRY FOUND ❌</div>
+                            <p>The Elder finds your chain lacking...</p>
+                            <p>The signifying chain has failed to achieve meaning!</p>
+                            <p style="font-size: 12px;">(Press SPACE to restart)</p>
+                        `;
+                    }
+                }, 2000);
+            } else if (completionState === 'verdict') {
+                // Restart game
+                restartGame();
+            }
+        }
+        
+        function elderJudgment() {
+            // Arbitrary symmetry check (deliberately nonsensical)
+            const lastFiveTriads = chain.slice(-5);
+            const hasSymmetry = lastFiveTriads.length >= 2 && 
+                                lastFiveTriads[0].triad === lastFiveTriads[lastFiveTriads.length - 1].triad;
+            
+            if (hasSymmetry) {
+                // Reward: move player up (nothing actually happens)
+                player.y -= 50;
+                // Simple message display in console for now
+                console.log("ELDER APPROVES: SYMMETRY DETECTED!");
+            } else {
+                // Punishment: lose a life
+                lives--;
+                console.log("ELDER DISAPPROVES: NO SYMMETRY!");
+                if (lives <= 0) {
+                    gameState = 'gameOver';
+                    document.getElementById('gameOver').style.display = 'block';
+                }
+            }
+        }
+        
+        function restartGame() {
+            gameState = 'playing';
+            completionState = 'waiting';
+            lives = 3;
+            wellCount = 0;
+            chain = [];
+            collectedCoins = [];
+            coins = [];
+            player = { x: 50, y: 500, width: 20, height: 20, vx: 0, vy: 0, onGround: false };
+            
+            // Reset blocks and wells
+            blocks.forEach(block => {
+                block.broken = false;
+                block.coinType = Math.random() < 0.5 ? 'H' : 'T';
+            });
+            wells.forEach(well => { well.used = false; well.active = false; });
+            
+            document.getElementById('gameOver').style.display = 'none';
+            document.getElementById('completion').style.display = 'none';
+        }
+        
+        // Input handling
+        const keys = {};
+        
+        document.addEventListener('keydown', (e) => {
+            keys[e.key] = true;
+            
+            if (gameState === 'gameOver' && e.key === ' ') {
+                restartGame();
+            }
+            
+            if (gameState === 'completion' && e.key === ' ') {
+                finalJudgment();
+            }
+        });
+        
+        document.addEventListener('keyup', (e) => {
+            keys[e.key] = false;
+        });
+        
+        // Continuous input handling
+        setInterval(() => {
+            if (gameState !== 'playing') return;
+            
+            if (keys['ArrowLeft'] || keys['a']) {
+                player.vx = -3;
+            }
+            if (keys['ArrowRight'] || keys['d']) {
+                player.vx = 3;
+            }
+            if (keys[' ']) {
+                // Break block or use well
+                breakBlock(player.x);
+                useWell();
+            }
+        }, 16);
+        
+        // Start game
+        init();
+    </script>
+</body>
+</html>
