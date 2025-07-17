@@ -1,0 +1,705 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Warehouse Package Sorting System</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Courier New', monospace;
+            background: linear-gradient(135deg, #2c5aa0 0%, #1e3f73 100%);
+            color: #fff;
+            overflow: hidden;
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .game-container {
+            width: 100%;
+            max-width: 900px;
+            height: 100vh;
+            position: relative;
+            background: linear-gradient(135deg, #2c5aa0 0%, #1e3f73 100%);
+            border: 3px solid #ff8c42;
+            border-radius: 10px;
+            overflow: hidden;
+        }
+
+        .decorative-circles {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 1;
+        }
+
+        .circle {
+            position: absolute;
+            border-radius: 50%;
+            background: rgba(255, 140, 66, 0.1);
+            border: 2px solid rgba(255, 140, 66, 0.3);
+        }
+
+        .circle.large {
+            width: 200px;
+            height: 200px;
+            top: 10%;
+            right: 10%;
+            animation: pulse 4s ease-in-out infinite;
+        }
+
+        .circle.medium {
+            width: 120px;
+            height: 120px;
+            bottom: 20%;
+            left: 15%;
+            animation: pulse 3s ease-in-out infinite reverse;
+        }
+
+        .circle.small {
+            width: 80px;
+            height: 80px;
+            top: 60%;
+            right: 25%;
+            animation: pulse 2s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); opacity: 0.1; }
+            50% { transform: scale(1.1); opacity: 0.3; }
+        }
+
+        .hud {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            right: 10px;
+            z-index: 10;
+            display: flex;
+            justify-content: space-between;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 10px;
+            border-radius: 5px;
+            border: 1px solid #ff8c42;
+        }
+
+        .hud-item {
+            text-align: center;
+            margin: 0 10px;
+        }
+
+        .hud-label {
+            font-size: 12px;
+            color: #ff8c42;
+            margin-bottom: 2px;
+        }
+
+        .hud-value {
+            font-size: 18px;
+            font-weight: bold;
+            color: #fff;
+        }
+
+        .error-indicator {
+            color: #ff4444;
+            animation: flash 0.5s ease-in-out infinite;
+        }
+
+        @keyframes flash {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+
+        canvas {
+            display: block;
+            background: linear-gradient(135deg, #2c5aa0 0%, #1e3f73 100%);
+            border: 2px solid #ff8c42;
+            border-radius: 5px;
+            position: absolute;
+            top: 80px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 5;
+        }
+
+        .controls {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            right: 10px;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 10px;
+            border-radius: 5px;
+            border: 1px solid #ff8c42;
+            text-align: center;
+            z-index: 10;
+            font-size: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .speed-control {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+
+        .speed-slider {
+            width: 200px;
+            height: 5px;
+            background: #444;
+            border-radius: 3px;
+            outline: none;
+            cursor: pointer;
+        }
+
+        .speed-slider::-webkit-slider-thumb {
+            appearance: none;
+            width: 15px;
+            height: 15px;
+            background: #ff8c42;
+            border-radius: 50%;
+            cursor: pointer;
+        }
+
+        .speed-slider::-moz-range-thumb {
+            width: 15px;
+            height: 15px;
+            background: #ff8c42;
+            border-radius: 50%;
+            cursor: pointer;
+            border: none;
+        }
+
+        .game-over {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.9);
+            padding: 30px;
+            border-radius: 10px;
+            border: 2px solid #ff8c42;
+            text-align: center;
+            z-index: 20;
+            display: none;
+        }
+
+        .game-over h2 {
+            color: #ff8c42;
+            margin-bottom: 10px;
+        }
+
+        .game-over button {
+            background: #ff8c42;
+            color: #fff;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-family: inherit;
+            font-size: 14px;
+            margin-top: 10px;
+        }
+
+        .game-over button:hover {
+            background: #e67c37;
+        }
+    </style>
+</head>
+<body>
+    <div class="game-container">
+        <div class="decorative-circles">
+            <div class="circle large"></div>
+            <div class="circle medium"></div>
+            <div class="circle small"></div>
+        </div>
+
+        <div class="hud">
+            <div class="hud-item">
+                <div class="hud-label">SCORE</div>
+                <div class="hud-value" id="score">0</div>
+            </div>
+            <div class="hud-item">
+                <div class="hud-label">LEVEL</div>
+                <div class="hud-value" id="level">1</div>
+            </div>
+            <div class="hud-item">
+                <div class="hud-label">ERRORS</div>
+                <div class="hud-value" id="errors">0</div>
+            </div>
+            <div class="hud-item">
+                <div class="hud-label">STATUS</div>
+                <div class="hud-value" id="status">OPERATIONAL</div>
+            </div>
+        </div>
+
+        <canvas id="gameCanvas" width="800" height="600"></canvas>
+
+        <div class="controls">
+            <div class="speed-control">
+                <span>SLOW</span>
+                <input type="range" id="speedSlider" class="speed-slider" min="0.5" max="3" step="0.1" value="1">
+                <span>FAST</span>
+                <span style="margin-left: 10px;">Speed: <span id="speedValue">1.0</span>x</span>
+            </div>
+            <div>
+                <strong>CONTROLS:</strong> ←→↑↓ Move Scanner | SPACE Scan Package | 1-5 Select Bin (1=XL, 2=L, 3=M, 4=S, 5=XS) | R Restart
+            </div>
+        </div>
+
+        <div class="game-over" id="gameOver">
+            <h2>SYSTEM BREAKDOWN</h2>
+            <p>Warehouse sorting system has failed!</p>
+            <p>Final Score: <span id="finalScore">0</span></p>
+            <button onclick="restartGame()">REPAIR SYSTEM</button>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        // Game state
+        let gameState = {
+            score: 0,
+            level: 1,
+            errors: 0,
+            maxErrors: 5,
+            gameOver: false,
+            scannerX: 400,
+            scannerY: 480,
+            selectedBin: 1,
+            packages: [],
+            bins: [[], [], [], [], []],
+            conveyorSpeed: 1,
+            packageSpawnRate: 1.0,
+            lastPackageSpawn: 0,
+            scanEffect: { active: false, intensity: 0, startTime: 0 }
+        };
+
+        // Package types
+        const packageTypes = {
+            XL: { size: 60, color: '#f0f0f0', name: 'White Goods', bin: 0 },
+            L: { size: 50, color: '#1a1a1a', name: 'TVs', bin: 1 },
+            M: { size: 40, color: '#888888', name: 'Electronics', bin: 2 },
+            S: { size: 30, color: '#4a4a4a', name: 'Laptops', bin: 3 },
+            XS: { size: 20, color: '#2a2a2a', name: 'iPhone', bin: 4 },
+            GIFT: { size: 35, color: '#ff8c42', name: 'Gift Card', bin: -1 }
+        };
+
+        // Input handling
+        const keys = {};
+        document.addEventListener('keydown', (e) => {
+            keys[e.key] = true;
+            handleKeyPress(e.key);
+        });
+        document.addEventListener('keyup', (e) => {
+            keys[e.key] = false;
+        });
+
+        // Speed slider control
+        const speedSlider = document.getElementById('speedSlider');
+        const speedValue = document.getElementById('speedValue');
+        
+        speedSlider.addEventListener('input', (e) => {
+            gameState.packageSpawnRate = parseFloat(e.target.value);
+            speedValue.textContent = gameState.packageSpawnRate.toFixed(1);
+        });
+
+        function handleKeyPress(key) {
+            if (gameState.gameOver) return;
+
+            switch(key) {
+                case ' ':
+                case 'Enter':
+                    scanPackage();
+                    break;
+                case '1':
+                    gameState.selectedBin = 1;
+                    break;
+                case '2':
+                    gameState.selectedBin = 2;
+                    break;
+                case '3':
+                    gameState.selectedBin = 3;
+                    break;
+                case '4':
+                    gameState.selectedBin = 4;
+                    break;
+                case '5':
+                    gameState.selectedBin = 5;
+                    break;
+                case 'r':
+                case 'R':
+                    restartGame();
+                    break;
+            }
+        }
+
+        function scanPackage() {
+            // Find package at scanner position with expanded Y range
+            const packageAtScanner = gameState.packages.find(pkg => 
+                pkg.x < gameState.scannerX + 30 && 
+                pkg.x + packageTypes[pkg.type].size > gameState.scannerX - 30 &&
+                pkg.y < gameState.scannerY + 30 && 
+                pkg.y + packageTypes[pkg.type].size > gameState.scannerY - 30
+            );
+
+            if (packageAtScanner) {
+                const correctBin = packageTypes[packageAtScanner.type].bin;
+                const selectedBinIndex = gameState.selectedBin - 1;
+
+                // Animate package moving to selected bin
+                const targetX = selectedBinIndex * 160 + 90 - packageTypes[packageAtScanner.type].size / 2;
+                
+                // Visual feedback - flash scanner and move package
+                showScanEffect();
+                animatePackageToBin(packageAtScanner, targetX, selectedBinIndex);
+                
+                // Gift cards can go in any bin
+                if (packageAtScanner.type === 'GIFT' || correctBin === selectedBinIndex) {
+                    // Correct sort
+                    gameState.bins[selectedBinIndex].push(packageAtScanner);
+                    gameState.packages = gameState.packages.filter(pkg => pkg !== packageAtScanner);
+                    gameState.score += 10;
+                    
+                    // Delay match check to allow animation
+                    setTimeout(() => checkMatches(selectedBinIndex), 300);
+                } else {
+                    // Wrong bin - system error
+                    gameState.errors++;
+                    gameState.packages = gameState.packages.filter(pkg => pkg !== packageAtScanner);
+                    flashError();
+                }
+            }
+        }
+
+        function showScanEffect() {
+            // Create visual scan effect
+            gameState.scanEffect = {
+                active: true,
+                intensity: 1.0,
+                startTime: Date.now()
+            };
+        }
+
+        function animatePackageToBin(pkg, targetX, binIndex) {
+            const startX = pkg.x;
+            const startY = pkg.y;
+            const targetY = 520;
+            const duration = 300; // 300ms animation
+            const startTime = Date.now();
+
+            function animate() {
+                const elapsed = Date.now() - startTime;
+                const progress = Math.min(elapsed / duration, 1);
+                
+                // Smooth easing
+                const easeProgress = 1 - Math.pow(1 - progress, 3);
+                
+                pkg.x = startX + (targetX - startX) * easeProgress;
+                pkg.y = startY + (targetY - startY) * easeProgress;
+                
+                if (progress < 1) {
+                    requestAnimationFrame(animate);
+                }
+            }
+            
+            animate();
+        }
+
+        function checkMatches(binIndex) {
+            const bin = gameState.bins[binIndex];
+            if (bin.length >= 5) {
+                // Check for 5 in a row of same type
+                const lastFive = bin.slice(-5);
+                const firstType = lastFive[0].type;
+                
+                if (lastFive.every(pkg => pkg.type === firstType || pkg.type === 'GIFT')) {
+                    // Match found!
+                    gameState.bins[binIndex] = bin.slice(0, -5);
+                    gameState.score += 100;
+                    
+                    // Reset error count as reward for 5-in-a-row match
+                    gameState.errors = 0;
+                    
+                    showMatchEffect(binIndex);
+                }
+            }
+        }
+
+        function showMatchEffect(binIndex) {
+            // Visual effect for matches
+            ctx.fillStyle = '#ff8c42';
+            ctx.fillRect(binIndex * 160 + 20, 520, 140, 60);
+            setTimeout(() => render(), 100);
+        }
+
+        function flashError() {
+            document.getElementById('errors').classList.add('error-indicator');
+            setTimeout(() => {
+                document.getElementById('errors').classList.remove('error-indicator');
+            }, 500);
+        }
+
+        function spawnPackage() {
+            // Spawn rate controlled by slider (0.5x to 3x speed)
+            const baseDelay = 1500; // 1.5 seconds base
+            const adjustedDelay = baseDelay / gameState.packageSpawnRate;
+            
+            if (Date.now() - gameState.lastPackageSpawn < adjustedDelay) return;
+
+            const types = Object.keys(packageTypes);
+            const type = types[Math.floor(Math.random() * types.length)];
+            
+            gameState.packages.push({
+                x: Math.random() * (canvas.width - packageTypes[type].size),
+                y: -packageTypes[type].size,
+                type: type,
+                flashTime: 0
+            });
+            
+            gameState.lastPackageSpawn = Date.now();
+        }
+
+        function updatePackages() {
+            gameState.packages = gameState.packages.filter(pkg => {
+                pkg.y += gameState.conveyorSpeed;
+                
+                // Remove packages that fall off screen
+                if (pkg.y > canvas.height + 50) {
+                    gameState.errors++;
+                    return false;
+                }
+                
+                return true;
+            });
+        }
+
+        function updateGameState() {
+            // Check for game over
+            if (gameState.errors >= gameState.maxErrors) {
+                gameState.gameOver = true;
+                document.getElementById('gameOver').style.display = 'block';
+                document.getElementById('finalScore').textContent = gameState.score;
+                return;
+            }
+
+            // Level progression
+            const newLevel = Math.floor(gameState.score / 500) + 1;
+            if (newLevel > gameState.level) {
+                gameState.level = newLevel;
+                gameState.conveyorSpeed += 0.5;
+                gameState.packageSpawnRate += 0.005;
+            }
+
+            // Update HUD
+            document.getElementById('score').textContent = gameState.score;
+            document.getElementById('level').textContent = gameState.level;
+            document.getElementById('errors').textContent = gameState.errors;
+            
+            const status = gameState.errors === 0 ? 'OPERATIONAL' : 
+                          gameState.errors < 3 ? 'WARNING' : 'CRITICAL';
+            document.getElementById('status').textContent = status;
+        }
+
+        function handleInput() {
+            if (keys['ArrowLeft'] && gameState.scannerX > 50) {
+                gameState.scannerX -= 5;
+            }
+            if (keys['ArrowRight'] && gameState.scannerX < canvas.width - 50) {
+                gameState.scannerX += 5;
+            }
+            if (keys['ArrowUp'] && gameState.scannerY > 70) {
+                gameState.scannerY -= 5;
+            }
+            if (keys['ArrowDown'] && gameState.scannerY < 500) {
+                gameState.scannerY += 5;
+            }
+        }
+
+        function render() {
+            // Clear canvas
+            ctx.fillStyle = '#1e3f73';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Draw conveyor belt
+            ctx.fillStyle = '#333';
+            ctx.fillRect(0, 0, canvas.width, 50);
+            
+            // Conveyor belt pattern
+            ctx.strokeStyle = '#666';
+            ctx.lineWidth = 2;
+            for (let i = 0; i < canvas.width; i += 20) {
+                ctx.beginPath();
+                ctx.moveTo(i, 10);
+                ctx.lineTo(i + 10, 40);
+                ctx.stroke();
+            }
+
+            // Draw packages
+            gameState.packages.forEach(pkg => {
+                const pkgType = packageTypes[pkg.type];
+                
+                if (pkg.type === 'GIFT') {
+                    // Flashing gift card
+                    pkg.flashTime += 0.1;
+                    const flash = Math.sin(pkg.flashTime) * 0.5 + 0.5;
+                    ctx.fillStyle = `rgba(255, 140, 66, ${0.5 + flash * 0.5})`;
+                } else {
+                    ctx.fillStyle = pkgType.color;
+                }
+                
+                ctx.fillRect(pkg.x, pkg.y, pkgType.size, pkgType.size);
+                
+                // Package border
+                ctx.strokeStyle = '#ff8c42';
+                ctx.lineWidth = 2;
+                ctx.strokeRect(pkg.x, pkg.y, pkgType.size, pkgType.size);
+                
+                // Package label
+                ctx.fillStyle = '#fff';
+                ctx.font = '10px Courier New';
+                ctx.textAlign = 'center';
+                ctx.fillText(pkg.type, pkg.x + pkgType.size/2, pkg.y + pkgType.size/2);
+            });
+
+            // Draw sorting bins
+            for (let i = 0; i < 5; i++) {
+                const binX = i * 160 + 20;
+                const binY = 520;
+                
+                // Bin background
+                ctx.fillStyle = i === gameState.selectedBin - 1 ? '#ff8c42' : '#444';
+                ctx.fillRect(binX, binY, 140, 60);
+                
+                // Bin border
+                ctx.strokeStyle = '#ff8c42';
+                ctx.lineWidth = 3;
+                ctx.strokeRect(binX, binY, 140, 60);
+                
+                // Bin label
+                ctx.fillStyle = '#fff';
+                ctx.font = '12px Courier New';
+                ctx.textAlign = 'center';
+                const labels = ['XL', 'L', 'M', 'S', 'XS'];
+                ctx.fillText(labels[i], binX + 70, binY + 35);
+                
+                // Packages in bin
+                gameState.bins[i].forEach((pkg, index) => {
+                    ctx.fillStyle = packageTypes[pkg.type].color;
+                    ctx.fillRect(binX + 10 + (index * 5), binY + 10, 15, 15);
+                });
+            }
+
+            // Draw scanner
+            ctx.fillStyle = '#ff8c42';
+            ctx.fillRect(gameState.scannerX - 30, gameState.scannerY, 60, 20);
+            
+            // Scanner beam with scan effect
+            if (gameState.scanEffect.active) {
+                const elapsed = Date.now() - gameState.scanEffect.startTime;
+                gameState.scanEffect.intensity = Math.max(0, 1 - elapsed / 200);
+                
+                if (gameState.scanEffect.intensity <= 0) {
+                    gameState.scanEffect.active = false;
+                }
+                
+                // Intense scan beam (vertical and horizontal)
+                ctx.strokeStyle = `rgba(255, 140, 66, ${gameState.scanEffect.intensity})`;
+                ctx.lineWidth = 4 + gameState.scanEffect.intensity * 6;
+                
+                // Vertical beam
+                ctx.beginPath();
+                ctx.moveTo(gameState.scannerX, gameState.scannerY);
+                ctx.lineTo(gameState.scannerX, 50);
+                ctx.stroke();
+                
+                // Horizontal beam
+                ctx.beginPath();
+                ctx.moveTo(0, gameState.scannerY + 10);
+                ctx.lineTo(canvas.width, gameState.scannerY + 10);
+                ctx.stroke();
+                
+                // Scan flash effect
+                ctx.fillStyle = `rgba(255, 140, 66, ${gameState.scanEffect.intensity * 0.2})`;
+                ctx.fillRect(gameState.scannerX - 40, 50, 80, gameState.scannerY - 50);
+                ctx.fillRect(0, gameState.scannerY - 20, canvas.width, 40);
+            } else {
+                // Normal scanner beams
+                ctx.strokeStyle = '#ff8c42';
+                ctx.lineWidth = 2;
+                
+                // Vertical beam
+                ctx.beginPath();
+                ctx.moveTo(gameState.scannerX, gameState.scannerY);
+                ctx.lineTo(gameState.scannerX, 50);
+                ctx.stroke();
+                
+                // Horizontal beam
+                ctx.setLineDash([5, 5]);
+                ctx.beginPath();
+                ctx.moveTo(0, gameState.scannerY + 10);
+                ctx.lineTo(canvas.width, gameState.scannerY + 10);
+                ctx.stroke();
+                ctx.setLineDash([]);
+            }
+            
+            // Scanner label
+            ctx.fillStyle = '#fff';
+            ctx.font = '10px Courier New';
+            ctx.textAlign = 'center';
+            ctx.fillText('SCAN', gameState.scannerX, gameState.scannerY + 15);
+        }
+
+        function gameLoop() {
+            if (!gameState.gameOver) {
+                handleInput();
+                spawnPackage();
+                updatePackages();
+                updateGameState();
+            }
+            render();
+            requestAnimationFrame(gameLoop);
+        }
+
+        function restartGame() {
+            gameState = {
+                score: 0,
+                level: 1,
+                errors: 0,
+                maxErrors: 5,
+                gameOver: false,
+                scannerX: 400,
+                scannerY: 480,
+                selectedBin: 1,
+                packages: [],
+                bins: [[], [], [], [], []],
+                conveyorSpeed: 1,
+                packageSpawnRate: 1.0,
+                lastPackageSpawn: 0,
+                scanEffect: { active: false, intensity: 0, startTime: 0 }
+            };
+            
+            document.getElementById('gameOver').style.display = 'none';
+            document.getElementById('errors').classList.remove('error-indicator');
+        }
+
+        // Start the game
+        gameLoop();
+    </script>
+</body>
+</html>
