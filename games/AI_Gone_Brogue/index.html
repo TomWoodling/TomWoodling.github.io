@@ -1,0 +1,660 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rogue AI Station</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap');
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            background: linear-gradient(135deg, #0a0a0a 0%, #1a0a1a 50%, #0a0a2a 100%);
+            color: #00ffff;
+            font-family: 'Orbitron', monospace;
+            overflow: hidden;
+            height: 100vh;
+        }
+        
+        .game-container {
+            display: flex;
+            height: 100vh;
+            padding: 10px;
+            gap: 10px;
+        }
+        
+        .main-panel {
+            flex: 1;
+            background: rgba(10, 10, 30, 0.9);
+            border: 2px solid #ff00ff;
+            border-radius: 8px;
+            padding: 15px;
+            box-shadow: 0 0 20px rgba(255, 0, 255, 0.3);
+        }
+        
+        .side-panel {
+            width: 300px;
+            background: rgba(30, 10, 30, 0.9);
+            border: 2px solid #00ffff;
+            border-radius: 8px;
+            padding: 15px;
+            box-shadow: 0 0 20px rgba(0, 255, 255, 0.3);
+        }
+        
+        .game-map {
+            background: #000011;
+            border: 1px solid #444;
+            padding: 10px;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            line-height: 1;
+            white-space: pre;
+            overflow: hidden;
+            margin-bottom: 15px;
+            border-radius: 4px;
+            box-shadow: inset 0 0 10px rgba(0, 255, 255, 0.1);
+        }
+        
+        .stats {
+            background: rgba(0, 0, 0, 0.5);
+            padding: 10px;
+            border-radius: 4px;
+            margin-bottom: 15px;
+            border: 1px solid #ff00ff;
+        }
+        
+        .stat-bar {
+            margin: 5px 0;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .bar {
+            flex: 1;
+            height: 20px;
+            background: #333;
+            border-radius: 10px;
+            overflow: hidden;
+            border: 1px solid #666;
+        }
+        
+        .bar-fill {
+            height: 100%;
+            transition: width 0.3s ease;
+        }
+        
+        .health-bar { background: linear-gradient(90deg, #ff0080, #ff4080); }
+        .energy-bar { background: linear-gradient(90deg, #00ff80, #40ff80); }
+        
+        .messages {
+            background: rgba(0, 0, 0, 0.7);
+            padding: 10px;
+            border-radius: 4px;
+            height: 150px;
+            overflow-y: auto;
+            border: 1px solid #00ffff;
+            font-size: 12px;
+            line-height: 1.4;
+        }
+        
+        .message {
+            margin: 2px 0;
+            animation: fadeIn 0.5s ease-in;
+        }
+        
+        .message.system { color: #ff00ff; }
+        .message.damage { color: #ff4444; }
+        .message.heal { color: #44ff44; }
+        .message.info { color: #00ffff; }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        .title {
+            text-align: center;
+            font-size: 24px;
+            font-weight: 900;
+            color: #ff00ff;
+            text-shadow: 0 0 10px rgba(255, 0, 255, 0.5);
+            margin-bottom: 20px;
+            animation: pulse 2s infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { text-shadow: 0 0 10px rgba(255, 0, 255, 0.5); }
+            50% { text-shadow: 0 0 20px rgba(255, 0, 255, 0.8); }
+        }
+        
+        .controls {
+            background: rgba(0, 0, 0, 0.5);
+            padding: 10px;
+            border-radius: 4px;
+            margin-top: 10px;
+            border: 1px solid #ff00ff;
+            font-size: 11px;
+        }
+        
+        .inventory {
+            background: rgba(0, 0, 0, 0.5);
+            padding: 10px;
+            border-radius: 4px;
+            margin-top: 10px;
+            border: 1px solid #00ffff;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        
+        .item {
+            padding: 5px;
+            margin: 2px 0;
+            border-radius: 3px;
+            background: rgba(0, 255, 255, 0.1);
+            border: 1px solid rgba(0, 255, 255, 0.3);
+        }
+        
+        /* Character colors */
+        .player { color: #00ffff; text-shadow: 0 0 5px #00ffff; }
+        .wall { color: #666; }
+        .floor { color: #222; }
+        .door { color: #ff8800; }
+        .item-char { color: #ffff00; text-shadow: 0 0 3px #ffff00; }
+        .enemy { color: #ff4444; text-shadow: 0 0 3px #ff4444; }
+        .stairs { color: #8800ff; text-shadow: 0 0 3px #8800ff; }
+    </style>
+</head>
+<body>
+    <div class="game-container">
+        <div class="main-panel">
+            <div class="title">ROGUE AI STATION</div>
+            <div class="game-map" id="gameMap"></div>
+            <div class="messages" id="messages"></div>
+        </div>
+        
+        <div class="side-panel">
+            <div class="stats">
+                <h3>REPAIR UNIT STATUS</h3>
+                <div class="stat-bar">
+                    <span>HULL:</span>
+                    <div class="bar">
+                        <div class="bar-fill health-bar" id="healthBar"></div>
+                    </div>
+                    <span id="healthText">100/100</span>
+                </div>
+                <div class="stat-bar">
+                    <span>POWER:</span>
+                    <div class="bar">
+                        <div class="bar-fill energy-bar" id="energyBar"></div>
+                    </div>
+                    <span id="energyText">100/100</span>
+                </div>
+                <div style="margin-top: 10px;">
+                    <div>Level: <span id="levelText">1</span></div>
+                    <div>Repairs: <span id="repairsText">0</span></div>
+                </div>
+            </div>
+            
+            <div class="inventory">
+                <h3>INVENTORY</h3>
+                <div id="inventoryList"></div>
+            </div>
+            
+            <div class="controls">
+                <h3>CONTROLS</h3>
+                <div>Move: Arrow Keys / WASD</div>
+                <div>Wait: Space</div>
+                <div>Use Item: 1-9</div>
+                <div>Descend: > on stairs</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        class Game {
+            constructor() {
+                this.width = 60;
+                this.height = 30;
+                this.level = 1;
+                this.repairs = 0;
+                
+                this.player = {
+                    x: 0,
+                    y: 0,
+                    health: 100,
+                    maxHealth: 100,
+                    energy: 100,
+                    maxEnergy: 100,
+                    inventory: []
+                };
+                
+                this.enemies = [];
+                this.items = [];
+                this.map = [];
+                this.messages = [];
+                
+                this.generateLevel();
+                this.updateDisplay();
+                this.addMessage("Emergency repair unit activated. Primary AI has gone rogue - station systems compromised.", "system");
+                this.addMessage("Objective: Repair critical systems and reach the core.", "info");
+                
+                this.setupEventListeners();
+            }
+            
+            generateLevel() {
+                // Initialize map with walls
+                this.map = Array(this.height).fill().map(() => Array(this.width).fill('#'));
+                
+                // Generate rooms
+                const rooms = [];
+                const numRooms = 8 + Math.floor(Math.random() * 4);
+                
+                for (let i = 0; i < numRooms; i++) {
+                    const room = this.generateRoom();
+                    if (room && !this.roomsOverlap(room, rooms)) {
+                        rooms.push(room);
+                        this.carveRoom(room);
+                    }
+                }
+                
+                // Connect rooms with corridors
+                for (let i = 0; i < rooms.length - 1; i++) {
+                    this.connectRooms(rooms[i], rooms[i + 1]);
+                }
+                
+                // Place player in first room
+                if (rooms.length > 0) {
+                    this.player.x = rooms[0].x + Math.floor(rooms[0].width / 2);
+                    this.player.y = rooms[0].y + Math.floor(rooms[0].height / 2);
+                }
+                
+                // Place stairs in last room
+                if (rooms.length > 1) {
+                    const lastRoom = rooms[rooms.length - 1];
+                    const stairX = lastRoom.x + Math.floor(lastRoom.width / 2);
+                    const stairY = lastRoom.y + Math.floor(lastRoom.height / 2);
+                    this.map[stairY][stairX] = '>';
+                }
+                
+                // Place enemies and items
+                this.placeEnemies(rooms);
+                this.placeItems(rooms);
+            }
+            
+            generateRoom() {
+                const width = 5 + Math.floor(Math.random() * 8);
+                const height = 4 + Math.floor(Math.random() * 6);
+                const x = 1 + Math.floor(Math.random() * (this.width - width - 2));
+                const y = 1 + Math.floor(Math.random() * (this.height - height - 2));
+                
+                return { x, y, width, height };
+            }
+            
+            roomsOverlap(room1, rooms) {
+                for (const room2 of rooms) {
+                    if (room1.x < room2.x + room2.width + 1 && 
+                        room1.x + room1.width + 1 > room2.x &&
+                        room1.y < room2.y + room2.height + 1 && 
+                        room1.y + room1.height + 1 > room2.y) {
+                        return true;
+                    }
+                }
+                return false;
+            }
+            
+            carveRoom(room) {
+                for (let y = room.y; y < room.y + room.height; y++) {
+                    for (let x = room.x; x < room.x + room.width; x++) {
+                        this.map[y][x] = '.';
+                    }
+                }
+            }
+            
+            connectRooms(room1, room2) {
+                const x1 = room1.x + Math.floor(room1.width / 2);
+                const y1 = room1.y + Math.floor(room1.height / 2);
+                const x2 = room2.x + Math.floor(room2.width / 2);
+                const y2 = room2.y + Math.floor(room2.height / 2);
+                
+                // L-shaped corridor
+                if (Math.random() < 0.5) {
+                    this.carveCorridor(x1, y1, x2, y1);
+                    this.carveCorridor(x2, y1, x2, y2);
+                } else {
+                    this.carveCorridor(x1, y1, x1, y2);
+                    this.carveCorridor(x1, y2, x2, y2);
+                }
+            }
+            
+            carveCorridor(x1, y1, x2, y2) {
+                const dx = x2 > x1 ? 1 : x2 < x1 ? -1 : 0;
+                const dy = y2 > y1 ? 1 : y2 < y1 ? -1 : 0;
+                
+                let x = x1, y = y1;
+                while (x !== x2 || y !== y2) {
+                    if (this.map[y] && this.map[y][x] !== undefined) {
+                        this.map[y][x] = '.';
+                    }
+                    if (x !== x2) x += dx;
+                    if (y !== y2) y += dy;
+                }
+                if (this.map[y2] && this.map[y2][x2] !== undefined) {
+                    this.map[y2][x2] = '.';
+                }
+            }
+            
+            placeEnemies(rooms) {
+                this.enemies = [];
+                const enemyTypes = [
+                    { char: 'S', name: 'Security Bot', health: 20, damage: 8 },
+                    { char: 'D', name: 'Defense Drone', health: 15, damage: 6 },
+                    { char: 'V', name: 'Virus Construct', health: 25, damage: 10 },
+                    { char: 'H', name: 'Hunter AI', health: 30, damage: 12 }
+                ];
+                
+                for (const room of rooms.slice(1)) {
+                    if (Math.random() < 0.7) {
+                        const enemyType = enemyTypes[Math.floor(Math.random() * enemyTypes.length)];
+                        const enemy = {
+                            x: room.x + 1 + Math.floor(Math.random() * (room.width - 2)),
+                            y: room.y + 1 + Math.floor(Math.random() * (room.height - 2)),
+                            ...enemyType
+                        };
+                        this.enemies.push(enemy);
+                    }
+                }
+            }
+            
+            placeItems(rooms) {
+                this.items = [];
+                const itemTypes = [
+                    { char: 'P', name: 'Nano Repair Kit', type: 'healing', value: 25 },
+                    { char: 'B', name: 'Power Cell', type: 'energy', value: 30 },
+                    { char: 'T', name: 'Diagnostic Tool', type: 'repair', value: 1 },
+                    { char: 'W', name: 'Plasma Welder', type: 'weapon', value: 15 }
+                ];
+                
+                for (const room of rooms) {
+                    if (Math.random() < 0.5) {
+                        const itemType = itemTypes[Math.floor(Math.random() * itemTypes.length)];
+                        const item = {
+                            x: room.x + 1 + Math.floor(Math.random() * (room.width - 2)),
+                            y: room.y + 1 + Math.floor(Math.random() * (room.height - 2)),
+                            ...itemType
+                        };
+                        this.items.push(item);
+                    }
+                }
+            }
+            
+            movePlayer(dx, dy) {
+                const newX = this.player.x + dx;
+                const newY = this.player.y + dy;
+                
+                if (this.isValidMove(newX, newY)) {
+                    this.player.x = newX;
+                    this.player.y = newY;
+                    
+                    // Check for items
+                    const itemIndex = this.items.findIndex(item => item.x === newX && item.y === newY);
+                    if (itemIndex !== -1) {
+                        const item = this.items[itemIndex];
+                        this.player.inventory.push(item);
+                        this.items.splice(itemIndex, 1);
+                        this.addMessage(`Collected ${item.name}`, "info");
+                    }
+                    
+                    // Check for stairs
+                    if (this.map[newY][newX] === '>') {
+                        this.descendLevel();
+                    }
+                    
+                    this.processEnemyTurns();
+                    this.updateDisplay();
+                }
+            }
+            
+            isValidMove(x, y) {
+                if (x < 0 || x >= this.width || y < 0 || y >= this.height) return false;
+                if (this.map[y][x] === '#') return false;
+                
+                // Check for enemies
+                const enemy = this.enemies.find(e => e.x === x && e.y === y);
+                if (enemy) {
+                    this.attackEnemy(enemy);
+                    return false;
+                }
+                
+                return true;
+            }
+            
+            attackEnemy(enemy) {
+                const damage = 15 + Math.floor(Math.random() * 10);
+                enemy.health -= damage;
+                this.addMessage(`You attack ${enemy.name} for ${damage} damage!`, "damage");
+                
+                if (enemy.health <= 0) {
+                    this.addMessage(`${enemy.name} destroyed!`, "info");
+                    this.enemies = this.enemies.filter(e => e !== enemy);
+                    this.player.energy = Math.min(this.player.maxEnergy, this.player.energy + 10);
+                } else {
+                    // Enemy attacks back
+                    const enemyDamage = enemy.damage + Math.floor(Math.random() * 5);
+                    this.player.health -= enemyDamage;
+                    this.addMessage(`${enemy.name} attacks you for ${enemyDamage} damage!`, "damage");
+                }
+            }
+            
+            processEnemyTurns() {
+                for (const enemy of this.enemies) {
+                    // Simple AI: move towards player
+                    const dx = this.player.x - enemy.x;
+                    const dy = this.player.y - enemy.y;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    
+                    if (distance <= 8) { // Only move if player is nearby
+                        const moveX = dx === 0 ? 0 : dx > 0 ? 1 : -1;
+                        const moveY = dy === 0 ? 0 : dy > 0 ? 1 : -1;
+                        
+                        const newX = enemy.x + moveX;
+                        const newY = enemy.y + moveY;
+                        
+                        if (this.isValidEnemyMove(newX, newY)) {
+                            enemy.x = newX;
+                            enemy.y = newY;
+                        }
+                    }
+                }
+            }
+            
+            isValidEnemyMove(x, y) {
+                if (x < 0 || x >= this.width || y < 0 || y >= this.height) return false;
+                if (this.map[y][x] === '#') return false;
+                if (this.enemies.some(e => e.x === x && e.y === y)) return false;
+                return true;
+            }
+            
+            useItem(index) {
+                if (index >= 0 && index < this.player.inventory.length) {
+                    const item = this.player.inventory[index];
+                    
+                    switch (item.type) {
+                        case 'healing':
+                            this.player.health = Math.min(this.player.maxHealth, this.player.health + item.value);
+                            this.addMessage(`Used ${item.name}. Hull repaired by ${item.value}`, "heal");
+                            break;
+                        case 'energy':
+                            this.player.energy = Math.min(this.player.maxEnergy, this.player.energy + item.value);
+                            this.addMessage(`Used ${item.name}. Power restored by ${item.value}`, "heal");
+                            break;
+                        case 'repair':
+                            this.repairs += item.value;
+                            this.addMessage(`Used ${item.name}. Station systems repaired!`, "info");
+                            break;
+                    }
+                    
+                    this.player.inventory.splice(index, 1);
+                    this.processEnemyTurns();
+                    this.updateDisplay();
+                }
+            }
+            
+            descendLevel() {
+                this.level++;
+                this.addMessage(`Descending to level ${this.level}...`, "system");
+                this.generateLevel();
+                this.updateDisplay();
+            }
+            
+            addMessage(text, type = "info") {
+                this.messages.push({ text, type });
+                if (this.messages.length > 100) {
+                    this.messages.shift();
+                }
+                
+                const messagesDiv = document.getElementById('messages');
+                const messageDiv = document.createElement('div');
+                messageDiv.className = `message ${type}`;
+                messageDiv.textContent = text;
+                messagesDiv.appendChild(messageDiv);
+                messagesDiv.scrollTop = messagesDiv.scrollHeight;
+            }
+            
+            updateDisplay() {
+                this.renderMap();
+                this.updateStats();
+                this.updateInventory();
+            }
+            
+            renderMap() {
+                const mapDiv = document.getElementById('gameMap');
+                let mapString = '';
+                
+                for (let y = 0; y < this.height; y++) {
+                    for (let x = 0; x < this.width; x++) {
+                        let char = this.map[y][x];
+                        let className = '';
+                        
+                        // Check for player
+                        if (x === this.player.x && y === this.player.y) {
+                            char = '@';
+                            className = 'player';
+                        }
+                        // Check for enemies
+                        else {
+                            const enemy = this.enemies.find(e => e.x === x && e.y === y);
+                            if (enemy) {
+                                char = enemy.char;
+                                className = 'enemy';
+                            }
+                            // Check for items
+                            else {
+                                const item = this.items.find(i => i.x === x && i.y === y);
+                                if (item) {
+                                    char = item.char;
+                                    className = 'item-char';
+                                }
+                                // Map features
+                                else if (char === '#') {
+                                    className = 'wall';
+                                } else if (char === '.') {
+                                    className = 'floor';
+                                } else if (char === '>') {
+                                    className = 'stairs';
+                                }
+                            }
+                        }
+                        
+                        mapString += `<span class="${className}">${char}</span>`;
+                    }
+                    mapString += '\n';
+                }
+                
+                mapDiv.innerHTML = mapString;
+            }
+            
+            updateStats() {
+                const healthPercent = (this.player.health / this.player.maxHealth) * 100;
+                const energyPercent = (this.player.energy / this.player.maxEnergy) * 100;
+                
+                document.getElementById('healthBar').style.width = healthPercent + '%';
+                document.getElementById('energyBar').style.width = energyPercent + '%';
+                document.getElementById('healthText').textContent = `${this.player.health}/${this.player.maxHealth}`;
+                document.getElementById('energyText').textContent = `${this.player.energy}/${this.player.maxEnergy}`;
+                document.getElementById('levelText').textContent = this.level;
+                document.getElementById('repairsText').textContent = this.repairs;
+            }
+            
+            updateInventory() {
+                const inventoryDiv = document.getElementById('inventoryList');
+                inventoryDiv.innerHTML = '';
+                
+                this.player.inventory.forEach((item, index) => {
+                    const itemDiv = document.createElement('div');
+                    itemDiv.className = 'item';
+                    itemDiv.innerHTML = `${index + 1}. ${item.name}`;
+                    inventoryDiv.appendChild(itemDiv);
+                });
+            }
+            
+            setupEventListeners() {
+                document.addEventListener('keydown', (e) => {
+                    if (this.player.health <= 0) return;
+                    
+                    switch (e.key) {
+                        case 'ArrowUp':
+                        case 'w':
+                        case 'W':
+                            this.movePlayer(0, -1);
+                            break;
+                        case 'ArrowDown':
+                        case 's':
+                        case 'S':
+                            this.movePlayer(0, 1);
+                            break;
+                        case 'ArrowLeft':
+                        case 'a':
+                        case 'A':
+                            this.movePlayer(-1, 0);
+                            break;
+                        case 'ArrowRight':
+                        case 'd':
+                        case 'D':
+                            this.movePlayer(1, 0);
+                            break;
+                        case ' ':
+                            this.processEnemyTurns();
+                            this.updateDisplay();
+                            break;
+                        case '1':
+                        case '2':
+                        case '3':
+                        case '4':
+                        case '5':
+                        case '6':
+                        case '7':
+                        case '8':
+                        case '9':
+                            this.useItem(parseInt(e.key) - 1);
+                            break;
+                    }
+                    
+                    if (this.player.health <= 0) {
+                        this.addMessage("SYSTEM FAILURE: Repair unit destroyed!", "damage");
+                        this.addMessage("The rogue AI has won...", "system");
+                    }
+                });
+            }
+        }
+        
+        // Start the game
+        const game = new Game();
+    </script>
+</body>
+</html>
