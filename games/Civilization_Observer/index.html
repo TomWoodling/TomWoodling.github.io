@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Civilization Observer (Refactored)</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: #0a0a0a;
+            color: #00ff41;
+            font-family: 'Courier New', monospace;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+
+        .game-container {
+            width: 900px;
+            height: 600px;
+            border: 2px solid #00ff41;
+            position: relative;
+            background: #111;
+        }
+
+        .hud {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            z-index: 100;
+            font-size: 12px;
+        }
+
+        /* REFACTORED: Renamed from .screen-area for clarity */
+        .display-monitor {
+            position: absolute;
+            top: 50px;
+            right: 20px;
+            width: 414px;
+            height: 320px;
+            border: 1px solid #00ff41;
+            background: #000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden; /* Crucial for containing animations */
+            z-index: 10; /* Ensure it's below overlays but above other base elements */
+        }
+
+        /* REFACTORED: Simplified static noise container */
+        .static-noise-container {
+            width: 100%;
+            height: 100%;
+            background-size: cover;
+            background-position: center;
+        }
+        
+        /* REFACTORED: New styles for the spritesheet animation container and image */
+        .sprite-animation-container {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            position: relative; /* Context for the absolutely positioned image */
+        }
+
+        .sprite-animation-image {
+            position: absolute;
+            top: 0;
+            left: 0;
+            height: 100%; /* Sprite sheet height fills the container */
+            width: auto; /* Width will be set dynamically by its natural aspect ratio */
+            image-rendering: pixelated;
+            image-rendering: -moz-crisp-edges;
+            image-rendering: crisp-edges;
+            /* Using transform for animation is more performant */
+        }
+
+
+        .maze-area {
+            position: absolute;
+            left: 20px;
+            top: 50px;
+            width: 400px;
+            height: 400px;
+        }
+
+        .maze-row {
+            display: flex;
+        }
+
+        .maze-cell {
+            width: 40px;
+            height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            border: 1px solid #333;
+        }
+
+        .wall { background: #444; }
+        .floor { background: #111; }
+        .fragment { background: #ff6600; }
+        .core { background: #0066ff; }
+        .player { background: #00ff41; color: #000; }
+
+        .puzzle-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.9);
+            display: none;
+            z-index: 200;
+        }
+
+        .puzzle-container {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 400px;
+            height: 300px;
+            border: 2px solid #00ff41;
+            background: #111;
+            padding: 20px;
+        }
+
+        .puzzle-grid {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 2px;
+            margin: 20px 0;
+        }
+
+        .puzzle-tile {
+            width: 60px;
+            height: 60px;
+            background: #222;
+            border: 1px solid #555;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            font-size: 20px;
+            transition: all 0.2s;
+        }
+
+        .puzzle-tile:hover {
+            background: #333;
+        }
+
+        .pipe-straight { background-image: linear-gradient(90deg, #00ff41 40%, transparent 40%, transparent 60%, #00ff41 60%); }
+        .pipe-corner { background-image: conic-gradient(from 0deg at 50% 50%, transparent 90deg, #00ff41 90deg, #00ff41 180deg, transparent 180deg); }
+        .pipe-t { background: radial-gradient(circle at center, #00ff41 20%, transparent 20%); }
+
+        .controls {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            font-size: 14px;
+        }
+
+        .narrative-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.95);
+            display: none;
+            z-index: 300;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .narrative-text {
+            max-width: 600px;
+            text-align: center;
+            line-height: 1.6;
+            padding: 40px;
+        }
+
+        .button {
+            background: transparent;
+            border: 1px solid #00ff41;
+            color: #00ff41;
+            padding: 10px 20px;
+            margin: 10px;
+            cursor: pointer;
+            font-family: inherit;
+        }
+
+        .button:hover {
+            background: #00ff41;
+            color: #000;
+        }
+
+        .progress-bar {
+            position: absolute;
+            bottom: 60px;
+            right: 20px;
+            width: 200px;
+            height: 20px;
+            border: 1px solid #00ff41;
+            background: #000;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: #00ff41;
+            width: 0%;
+            transition: width 0.5s;
+        }
+    </style>
+</head>
+<body>
+    <div class="game-container">
+        <div class="hud">
+            <div>DEEP SPACE OBSERVATORY - SECTOR 7</div>
+            <div>FRAGMENTS RECOVERED: <span id="fragment-count">0</span>/4</div>
+            <div>STATUS: <span id="status">SCANNING...</span></div>
+        </div>
+
+        <div class="display-monitor" id="display-monitor">
+            <!-- Content like static or video will be injected here by JS -->
+        </div>
+
+        <div class="progress-bar">
+            <div class="progress-fill" id="progress"></div>
+        </div>
+
+        <div class="maze-area" id="maze"></div>
+
+        <div class="controls">
+            <div>WASD or Arrow Keys: Move</div>
+            <div>Enter: Interact</div>
+            <div>R: Reset level</div>
+        </div>
+
+        <!-- Puzzle Overlay -->
+        <div class="puzzle-overlay" id="puzzle-overlay">
+            <div class="puzzle-container">
+                <div>DATA FRAGMENT DECODER</div>
+                <div>Rotate tiles to connect the data stream</div>
+                <div class="puzzle-grid" id="puzzle-grid"></div>
+                <button class="button" onclick="checkPuzzleSolution()">DECODE</button>
+                <button class="button" onclick="closePuzzle()">CANCEL</button>
+            </div>
+        </div>
+
+        <!-- Narrative Overlay -->
+        <div class="narrative-overlay" id="narrative-overlay">
+            <div class="narrative-text" id="narrative-text">
+                <!-- Narrative text injected here -->
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Game state
+        let gameState = {
+            playerX: 1,
+            playerY: 1,
+            fragmentsCollected: 0,
+            currentLevel: 0,
+            fragments: [
+                { x: 8, y: 2, collected: false, type: 'war' },
+                { x: 3, y: 8, collected: false, type: 'economic' },
+                { x: 8, y: 8, collected: false, type: 'climate' },
+                { x: 3, y: 3, collected: false, type: 'extraction' }
+            ],
+            coreX: 5,
+            coreY: 5,
+            currentPuzzle: null,
+            spritesheets: {
+                // Using placeholder images that are known to work
+                war: 'war_spritesheet.png',
+                economic: 'economic_spritesheet.png',
+                climate: 'climate_spritesheet.png',
+                extraction: 'extraction_spritesheet.png'
+            },
+            frameCount: 20,
+            currentAnimation: null,
+            staticInterval: null
+        };
+
+        const mazeLayout = [
+            [1,1,1,1,1,1,1,1,1,1], [1,0,0,1,0,0,0,1,0,1], [1,0,1,1,0,1,0,1,0,1],
+            [1,0,0,0,0,1,0,0,0,1], [1,1,1,0,1,1,1,0,1,1], [1,0,0,0,1,0,1,0,0,1],
+            [1,0,1,0,0,0,1,1,0,1], [1,0,1,1,1,0,0,0,0,1], [1,0,0,0,1,1,1,1,0,1],
+            [1,1,1,1,1,1,1,1,1,1]
+        ];
+
+        function initGame() {
+            renderMaze();
+            startStaticNoise();
+            updateHUD();
+        }
+
+        // MISSING FUNCTION - This was the problem!
+        function movePlayer(dx, dy) {
+            const newX = gameState.playerX + dx;
+            const newY = gameState.playerY + dy;
+            
+            // Check bounds and walls
+            if (newX >= 0 && newX < mazeLayout[0].length && 
+                newY >= 0 && newY < mazeLayout.length && 
+                mazeLayout[newY][newX] === 0) {
+                
+                gameState.playerX = newX;
+                gameState.playerY = newY;
+                renderMaze();
+            }
+        }
+
+        function renderMaze() {
+            const mazeEl = document.getElementById('maze');
+            mazeEl.innerHTML = '';
+            for (let y = 0; y < mazeLayout.length; y++) {
+                const row = document.createElement('div');
+                row.className = 'maze-row';
+                for (let x = 0; x < mazeLayout[y].length; x++) {
+                    const cell = document.createElement('div');
+                    cell.className = 'maze-cell';
+                    if (mazeLayout[y][x] === 1) {
+                        cell.classList.add('wall');
+                        cell.textContent = '█';
+                    } else {
+                        cell.classList.add('floor');
+                    }
+                    if (x === gameState.playerX && y === gameState.playerY) {
+                        cell.classList.add('player');
+                        cell.textContent = '@';
+                    }
+                    gameState.fragments.forEach(fragment => {
+                        if (x === fragment.x && y === fragment.y && !fragment.collected) {
+                            cell.classList.add('fragment');
+                            cell.textContent = '◆';
+                        }
+                    });
+                    if (x === gameState.coreX && y === gameState.coreY) {
+                        cell.classList.add('core');
+                        cell.textContent = '●';
+                    }
+                    row.appendChild(cell);
+                }
+                mazeEl.appendChild(row);
+            }
+        }
+
+        function clearMonitor() {
+            if (gameState.currentAnimation) {
+                clearInterval(gameState.currentAnimation);
+                gameState.currentAnimation = null;
+            }
+            if (gameState.staticInterval) {
+                clearInterval(gameState.staticInterval);
+                gameState.staticInterval = null;
+            }
+            document.getElementById('display-monitor').innerHTML = '';
+        }
+
+        function startStaticNoise() {
+            clearMonitor();
+            const monitor = document.getElementById('display-monitor');
+            const staticContainer = document.createElement('div');
+            staticContainer.className = 'static-noise-container';
+            monitor.appendChild(staticContainer);
+
+            const rect = monitor.getBoundingClientRect();
+            const screenWidth = Math.floor(rect.width);
+            const screenHeight = Math.floor(rect.height);
+
+            gameState.staticInterval = setInterval(() => {
+                const canvas = document.createElement('canvas');
+                canvas.width = screenWidth / 4; // Generate smaller noise for performance
+                canvas.height = screenHeight / 4;
+                const ctx = canvas.getContext('2d');
+                const imageData = ctx.createImageData(canvas.width, canvas.height);
+                for (let i = 0; i < imageData.data.length; i += 4) {
+                    const val = Math.random() > 0.5 ? 255 : 0;
+                    imageData.data[i] = val; imageData.data[i + 1] = val; imageData.data[i + 2] = val; imageData.data[i + 3] = 255;
+                }
+                ctx.putImageData(imageData, 0, 0);
+                staticContainer.style.backgroundImage = `url(${canvas.toDataURL()})`;
+            }, 100);
+        }
+        
+        function playVideo(type) {
+            clearMonitor();
+            const monitor = document.getElementById('display-monitor');
+            
+            const spriteContainer = document.createElement('div');
+            spriteContainer.className = 'sprite-animation-container';
+
+            const spriteImg = document.createElement('img');
+            spriteImg.className = 'sprite-animation-image';
+
+            spriteContainer.appendChild(spriteImg);
+            monitor.appendChild(spriteContainer);
+            
+            const img = new Image();
+            img.onload = function() {
+                const totalFrames = gameState.frameCount;
+                const frameWidth = this.naturalWidth / totalFrames;
+                
+                spriteImg.src = this.src;
+
+                let currentFrame = 0;
+                // Animation runs at 10 FPS (1000ms / 10 = 100ms)
+                gameState.currentAnimation = setInterval(() => {
+                    // Use transform for smoother, more performant animation
+                    const xOffset = -(currentFrame * frameWidth);
+                    spriteImg.style.transform = `translateX(${xOffset}px)`;
+                    
+                    currentFrame = (currentFrame + 1) % totalFrames; // Loop animation
+                }, 100); 
+
+                setTimeout(() => {
+                    startStaticNoise();
+                }, 4000); // Play animation for 4 seconds
+            };
+
+            img.onerror = function() {
+                monitor.innerHTML = `<div style="color: #ff6600; text-align: center; padding: 20px;">ERROR: ${gameState.spritesheets[type]} NOT FOUND</div>`;
+                setTimeout(startStaticNoise, 2000);
+            };
+
+            img.src = gameState.spritesheets[type];
+        }
+
+
+        function updateHUD() {
+            document.getElementById('fragment-count').textContent = `${gameState.fragmentsCollected}/4`;
+            document.getElementById('progress').style.width = `${(gameState.fragmentsCollected / 4) * 100}%`;
+            if (gameState.fragmentsCollected === 4) {
+                document.getElementById('status').textContent = 'ANALYSIS COMPLETE';
+                setTimeout(showNarrativeEnd, 1500);
+            }
+        }
+
+        function interact() {
+            const fragment = gameState.fragments.find(f => f.x === gameState.playerX && f.y === gameState.playerY && !f.collected);
+            if (fragment) {
+                gameState.currentPuzzle = fragment.type;
+                showPuzzle();
+                return;
+            }
+            if (gameState.playerX === gameState.coreX && gameState.playerY === gameState.coreY) {
+                document.getElementById('status').textContent = 'CORE ACCESSED';
+            }
+        }
+
+        function showPuzzle() {
+            document.getElementById('puzzle-overlay').style.display = 'block';
+            const grid = document.getElementById('puzzle-grid');
+            grid.innerHTML = '';
+            for (let i = 0; i < 25; i++) {
+                const tile = document.createElement('div');
+                tile.className = 'puzzle-tile';
+                tile.dataset.rotation = '0';
+                tile.onclick = () => rotateTile(tile);
+                const types = ['pipe-straight', 'pipe-corner', 'pipe-t'];
+                tile.classList.add(types[Math.floor(Math.random() * types.length)]);
+                grid.appendChild(tile);
+            }
+        }
+
+        function rotateTile(tile) {
+            let rotation = (parseInt(tile.dataset.rotation) + 90) % 360;
+            tile.dataset.rotation = rotation;
+            tile.style.transform = `rotate(${rotation}deg)`;
+        }
+
+        function checkPuzzleSolution() {
+            const solved = Math.random() > 0.3; // Simplified 70% chance of solving
+            if (solved) {
+                const fragment = gameState.fragments.find(f => f.type === gameState.currentPuzzle);
+                if (fragment) {
+                    fragment.collected = true;
+                }
+                gameState.fragmentsCollected++;
+                closePuzzle();
+                playVideo(gameState.currentPuzzle);
+                renderMaze();
+                updateHUD();
+            } else {
+                alert('Connection failed. Try again.');
+            }
+        }
+        
+        function closePuzzle() {
+            document.getElementById('puzzle-overlay').style.display = 'none';
+        }
+
+        function showNarrativeEnd() {
+            const narrativeTextContainer = document.getElementById('narrative-text');
+            narrativeTextContainer.innerHTML = `
+                <div style="font-size: 18px; margin-bottom: 30px;">ANALYSIS COMPLETE</div>
+                <div style="margin-bottom: 20px;">
+                    You have witnessed the fall of four civilizations:
+                    <br><br>
+                    War. Economic collapse. Climate catastrophe. Resource depletion.
+                    <br><br>
+                    Each civilization showed the same pattern... the same inevitable decline.
+                </div>
+                <div style="color: #ff6600; margin-bottom: 30px;">
+                    But there's something else in the data... A recurring anomaly in the timeline.
+                    <br><br>
+                    These collapse events... they all seem to begin *after* our initial deep-space transmission reached their sector.
+                    <br><br>
+                    We didn't just observe their fall. We may have been the catalyst.
+                </div>
+                <div>What do you do now, Observer?</div>
+                <div style="margin-top: 30px;">
+                    <button class="button" onclick="chooseHope()">Continue the Search</button>
+                    <button class="button" onclick="chooseDispair()">End Transmission Protocol</button>
+                </div>`;
+            document.getElementById('narrative-overlay').style.display = 'flex';
+        }
+
+        function chooseHope() {
+            document.getElementById('narrative-text').innerHTML = `
+                <div style="font-size: 16px; line-height: 1.8;">
+                The pattern is not a certainty. It is a warning.<br><br>
+                Perhaps the next civilization will be different.<br><br>
+                Perhaps knowledge of the danger is the only thing that can prevent it.<br><br>
+                <div style="color: #00ff41; margin-top:20px;">CONTINUING THE SEARCH...</div>
+                </div>`;
+        }
+
+        function chooseDispair() {
+            document.getElementById('narrative-text').innerHTML = `
+                <div style="font-size: 16px; line-height: 1.8;">
+                No. The mission is compromised. We are a plague.<br><br>
+                We are the Great Filter, not its observers.<br><br>
+                Some knowledge is too dangerous to share.<br><br>
+                <div style="color: #ff0000; margin-top:20px;">OBSERVATION PROTOCOL TERMINATED. TRANSMITTER SHUTDOWN INITIATED.</div>
+                </div>`;
+        }
+
+
+        document.addEventListener('keydown', (e) => {
+            if (document.getElementById('puzzle-overlay').style.display === 'block' ||
+                document.getElementById('narrative-overlay').style.display === 'flex') {
+                return;
+            }
+            switch(e.key.toLowerCase()) {
+                case 'w': case 'arrowup': movePlayer(0, -1); break;
+                case 's': case 'arrowdown': movePlayer(0, 1); break;
+                case 'a': case 'arrowleft': movePlayer(-1, 0); break;
+                case 'd': case 'arrowright': movePlayer(1, 0); break;
+                case 'enter': interact(); break;
+                case 'r': location.reload(); break;
+            }
+        });
+
+        initGame();
+    </script>
+</body>
+</html>
