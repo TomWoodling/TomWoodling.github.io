@@ -1,5 +1,5 @@
 {
   "title": "Civilization Observer",
-  "description": "Retrieve and decode the fragments to gain knowledge of lost civilizations! Don't worry about the puzzles, just keep clicking decode...",
+  "description": "Retrieve and decode the fragments to gain knowledge of lost civilizations! Don't worry about the puzzles, just keep clicking decode.  Images from https://deepai.org/ made into videos at https://huggingface.co/spaces/multimodalart/wan2-1-fast and converted to spritesheets at https://ezgif.com/",
   "cover": "civ_observe.png"
 }
