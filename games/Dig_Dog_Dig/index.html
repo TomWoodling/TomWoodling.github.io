@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Dig Dog Dig!</title>
+    <style>
+        :root {
+            --primary-color: #ffff00;
+            --danger-color: #ff0000;
+            --safe-color: #00ff00;
+            --dark-bg: #1a1a1a;
+            --dark-container: #000;
+        }
+
+        body {
+            background-color: var(--dark-bg);
+            color: #f0f0f0;
+            font-family: 'Courier New', Courier, monospace;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            flex-direction: column;
+            overflow: hidden; /* Prevents scrolling on mobile */
+        }
+
+        h1 {
+            color: var(--primary-color);
+            text-shadow: 2px 2px var(--danger-color);
+            font-size: 3em;
+            letter-spacing: 4px;
+            margin: 10px 0;
+        }
+
+        #game-container {
+            border: 4px solid #444;
+            padding: 10px;
+            background-color: var(--dark-container);
+            box-shadow: 0 0 20px rgba(0,0,0,0.5);
+            text-align: center;
+            width: 95%;
+            max-width: 600px;
+        }
+
+        canvas {
+            background-color: #332211;
+            border: 2px solid var(--primary-color);
+            max-width: 100%;
+            height: auto;
+        }
+
+        #ui {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 10px;
+            font-size: 1.5em;
+            color: var(--safe-color);
+            padding: 0 10px;
+        }
+        
+        button#restart-button {
+            margin-top: 15px;
+            padding: 10px 20px;
+            font-size: 1em;
+            font-family: 'Courier New', Courier, monospace;
+            background-color: #4CAF50;
+            color: white;
+            border: 2px solid var(--primary-color);
+            cursor: pointer;
+            box-shadow: 2px 2px var(--danger-color);
+        }
+
+        button#restart-button:active {
+            box-shadow: none;
+            transform: translate(2px, 2px);
+        }
+
+        /* --- D-Pad for Mobile --- */
+        #d-pad {
+            /* --- FIX: Display is now block by default for easier testing. --- */
+            /* --- To hide on desktop, change 'display: block' to 'display: none' --- */
+            /* --- and uncomment the media query at the bottom. --- */
+            display: block;
+            position: fixed;
+            bottom: 20px;
+            left: 20px;
+            opacity: 0.7;
+            user-select: none;
+        }
+
+        .d-pad-grid {
+            display: grid;
+            grid-template-columns: 50px 50px 50px;
+            grid-template-rows: 50px 50px 50px;
+            gap: 5px;
+        }
+
+        .d-pad-btn {
+            background-color: rgba(255, 255, 255, 0.3);
+            border: 2px solid white;
+            border-radius: 10px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 24px;
+            color: white;
+            cursor: pointer;
+        }
+        .d-pad-btn:active {
+             background-color: rgba(255, 255, 0, 0.5);
+        }
+
+        #d-pad-up { grid-column: 2; grid-row: 1; }
+        #d-pad-left { grid-column: 1; grid-row: 2; }
+        #d-pad-right { grid-column: 3; grid-row: 2; }
+        #d-pad-down { grid-column: 2; grid-row: 3; }
+
+
+        /* Media Query for mobile devices */
+        @media (max-width: 768px) {
+            h1 {
+                font-size: 1.8em;
+            }
+            #ui {
+                font-size: 1.1em;
+            }
+            /* If you hide the D-pad by default, this media query will make it reappear on mobile */
+            /*
+            #d-pad {
+                display: block;
+            }
+            */
+        }
+    </style>
+</head>
+<body>
+
+    <div id="game-container">
+        <h1>Dig Dog Dig!</h1>
+        <canvas id="gameCanvas"></canvas>
+        <div id="ui">
+            <div id="level-display">Level: 1</div>
+            <div id="bones-display">Bones: 0 / 0</div>
+        </div>
+        <button id="restart-button">Restart Level</button>
+    </div>
+
+    <!-- On-screen controls -->
+    <div id="d-pad">
+        <div class="d-pad-grid">
+            <div class="d-pad-btn" id="d-pad-up">▲</div>
+            <div class="d-pad-btn" id="d-pad-left">◄</div>
+            <div class="d-pad-btn" id="d-pad-right">►</div>
+            <div class="d-pad-btn" id="d-pad-down">▼</div>
+        </div>
+    </div>
+
+    <script>
+        // --- Game Setup ---
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const levelDisplay = document.getElementById('level-display');
+        const bonesDisplay = document.getElementById('bones-display');
+        const restartButton = document.getElementById('restart-button');
+
+        const TILE_SIZE = 32;
+        const GAME_SPEED = 150;
+
+        const TILES = {
+            EMPTY: ' ', DIRT: 'D', BOULDER: 'R', BONE: 'B', WALL: 'W',
+            PLAYER: 'P', EXIT: 'E', MOLE: 'M', KEY: 'K', LOCK: 'L'
+        };
+
+        const LEVELS = [
+            ["WWWWWWWWWWWW","W   B      W","W DDDDDDDDDW","W D  R   D W","W DP B   D W","W DDDDDDDDDW","W   B      W","W  E       W","WWWWWWWWWWWW"],
+            ["WWWWWWWWWWWWWW","W P          W","W D R        W","W D R        W","W D R        W","W D   MMMM   W","W DDDDDDDDDDDW","W  B   E   B W","WWWWWWWWWWWWWW"],
+            ["WWWWWWWWWWWWWW","WP B W     B W","W D DW WWWWW W","W D DW W B   W","W DR W WDDDDDW","W D  W   R M W","W BDDWWWWDDDDW","W    W B D B W","W M     DD E W","WWWWWWWWWWWWWW"],
+            ["WWWWWWWWWWWWWWWW","W P   W      K W","W DDR W DDDDDDDW","W D B W D      W","W DDD L DDD B DDW","W D B   D B DDDW","W DDRRRRD      W","W D     DDDDDDDW","W   MM    E    W","WWWWWWWWWWWWWWWW"],
+            ["WWWWWWWWWWWWWW","W    RRRR    W","W P D    D   W","W  D R  R D  W","W   D M  D   W","W    DBD     W","W     R      W","W   DDEDD    W","W  D RRRD    W","W DDDDDDDDDD W","W            W","WWWWWWWWWWWWWW"]
+        ];
+
+        let currentLevelIndex = 0;
+        let grid = [];
+        let player = { x: 1, y: 1, lastMoveTime: 0 };
+        let totalBones = 0;
+        let bonesCollected = 0;
+        let hasKey = false;
+        let moles = [];
+        let isGameOver = false;
+        let exitOpen = false;
+
+        function parseLevel(levelData) {
+            grid = levelData.map(row => row.split(''));
+            totalBones = 0; bonesCollected = 0; hasKey = false;
+            moles = []; isGameOver = false; exitOpen = false;
+
+            grid.forEach((row, y) => {
+                row.forEach((tile, x) => {
+                    if (tile === TILES.PLAYER) { player.x = x; player.y = y; }
+                    else if (tile === TILES.BONE) { totalBones++; }
+                    else if (tile === TILES.MOLE) { moles.push({ x: x, y: y, dir: 1 }); }
+                });
+            });
+            canvas.width = grid[0].length * TILE_SIZE;
+            canvas.height = grid.length * TILE_SIZE;
+            updateUI();
+        }
+
+        function updateUI() {
+            levelDisplay.textContent = `Level: ${currentLevelIndex + 1}`;
+            bonesDisplay.textContent = `Bones: ${bonesCollected} / ${totalBones}`;
+        }
+        
+        function movePlayer(dx, dy) {
+            if (isGameOver) return;
+            
+            let newX = player.x + dx;
+            let newY = player.y + dy;
+
+            if (newX < 0 || newX >= grid[0].length || newY < 0 || newY >= grid.length) return;
+
+            const targetTile = grid[newY][newX];
+            let moved = false;
+
+            switch(targetTile) {
+                case TILES.EMPTY: case TILES.DIRT: case TILES.BONE: case TILES.KEY:
+                    grid[player.y][player.x] = TILES.EMPTY;
+                    player.x = newX; player.y = newY;
+                    grid[player.y][player.x] = TILES.PLAYER;
+                    if (targetTile === TILES.BONE) { bonesCollected++; if (bonesCollected === totalBones) exitOpen = true; }
+                    if (targetTile === TILES.KEY) hasKey = true;
+                    moved = true;
+                    break;
+                case TILES.BOULDER:
+                    const pushX = newX + dx;
+                    if (grid[newY][pushX] === TILES.EMPTY) {
+                        grid[newY][pushX] = TILES.BOULDER;
+                        grid[player.y][player.x] = TILES.EMPTY;
+                        player.x = newX; player.y = newY;
+                        grid[player.y][player.x] = TILES.PLAYER;
+                        moved = true;
+                    }
+                    break;
+                case TILES.EXIT: if (exitOpen) levelUp(); break;
+                case TILES.LOCK: if (hasKey) { grid[newY][newX] = TILES.EMPTY; hasKey = false; } break;
+            }
+            if (moved) player.lastMoveTime = Date.now();
+            updateUI();
+        }
+
+        function updatePhysics() {
+             if (isGameOver) return;
+            for (let y = grid.length - 2; y >= 0; y--) {
+                for (let x = 0; x < grid[y].length; x++) {
+                    const tile = grid[y][x];
+                    const tileBelow = grid[y + 1][x];
+                    const tileBelowIsPlayer = (player.x === x && player.y === y + 1);
+
+                    // --- FIX: Simplified the falling condition ---
+                    // This was the main bug. The old logic was too restrictive and prevented gravity from working.
+                    if ((tile === TILES.BOULDER || tile === TILES.BONE) && tileBelow === TILES.EMPTY) {
+                        
+                        // Check if an object fell *on* the player in the last tick
+                        const objectAbove = grid[y-1] ? grid[y-1][x] : null;
+                        const wasFalling = objectAbove === TILES.BOULDER || objectAbove === TILES.BONE;
+                        if (tileBelowIsPlayer && wasFalling) {
+                             gameOver();
+                             return; // Stop further physics checks this frame
+                        }
+
+                        // Make the object fall
+                        grid[y][x] = TILES.EMPTY;
+                        grid[y + 1][x] = tile;
+
+                        // Check if we landed on a mole
+                        const landingSpot = grid[y + 2] ? grid[y + 2][x] : null;
+                        if (tile === TILES.BOULDER && landingSpot === TILES.MOLE) {
+                            grid[y + 2][x] = TILES.EMPTY;
+                            moles = moles.filter(m => !(m.x === x && m.y === y + 2));
+                        }
+                    }
+                }
+            }
+        }
+        
+        function updateMoles() {
+            if (isGameOver) return;
+            moles.forEach(mole => {
+                const nextX = mole.x + mole.dir;
+                if (grid[mole.y][nextX] === TILES.EMPTY) {
+                    grid[mole.y][mole.x] = TILES.EMPTY;
+                    mole.x = nextX;
+                    grid[mole.y][mole.x] = TILES.MOLE;
+                } else {
+                    mole.dir *= -1;
+                }
+                if (mole.x === player.x && mole.y === player.y) gameOver();
+            });
+        }
+        
+        function gameOver() { if (!isGameOver) { isGameOver = true; } }
+        function levelUp() {
+            currentLevelIndex++;
+            if (currentLevelIndex >= LEVELS.length) {
+                alert("You Win! Restarting from Level 1.");
+                currentLevelIndex = 0;
+            }
+            parseLevel(LEVELS[currentLevelIndex]);
+        }
+        
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            grid.forEach((row, y) => row.forEach((tile, x) => drawTile(x, y, tile)));
+            if (isGameOver) {
+                ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                ctx.fillStyle = "#FF0000";
+                ctx.font = "bold 40px 'Courier New', monospace";
+                ctx.textAlign = "center";
+                ctx.fillText("GAME OVER", canvas.width / 2, canvas.height / 2);
+            }
+        }
+
+        function drawTile(x, y, type) {
+            const px = x * TILE_SIZE, py = y * TILE_SIZE;
+            switch (type) {
+                case TILES.WALL: ctx.fillStyle = `rgb(74, 37, 10)`; ctx.fillRect(px, py, TILE_SIZE, TILE_SIZE); break;
+                case TILES.DIRT: ctx.fillStyle = `rgb(160, 82, 45)`; ctx.fillRect(px, py, TILE_SIZE, TILE_SIZE); break;
+                case TILES.BOULDER:
+                    const bGrad = ctx.createRadialGradient(px+16,py+16,4,px+16,py+16,16);
+                    bGrad.addColorStop(0,"#A9A9A9"); bGrad.addColorStop(1,"#696969");
+                    ctx.fillStyle = bGrad; ctx.beginPath(); ctx.arc(px+16,py+16,14,0,Math.PI*2); ctx.fill(); break;
+                case TILES.BONE:
+                    ctx.fillStyle='#FFF'; ctx.fillRect(px+12,py+4,8,24); ctx.fillRect(px+8,py+4,16,6); ctx.fillRect(px+8,py+22,16,6); break;
+                case TILES.PLAYER:
+                    ctx.fillStyle='#ffd700'; ctx.fillRect(px+6,py+18,20,10); ctx.fillRect(px+22,py+14,8,8);
+                    ctx.fillRect(px+28,py+22,4,6); ctx.fillStyle='#000'; ctx.fillRect(px+26,py+16,2,2); break;
+                case TILES.EXIT:
+                    ctx.fillStyle=exitOpen?'#00FF00':'#FF0000'; ctx.fillRect(px,py,TILE_SIZE,TILE_SIZE);
+                    ctx.fillStyle='#000'; ctx.fillRect(px+4,py+4,TILE_SIZE-8,TILE_SIZE-8); break;
+                case TILES.MOLE:
+                    ctx.fillStyle='#3b3b3b'; ctx.beginPath(); ctx.arc(px+16,py+21,12,0,Math.PI*2); ctx.fill();
+                    ctx.fillStyle='#ffc0cb'; ctx.fillRect(px+14,py+12,4,4); break;
+                case TILES.KEY:
+                    ctx.fillStyle='gold'; ctx.fillRect(px+10,py+4,12,12); ctx.fillRect(px+14,py+16,4,12); ctx.fillRect(px+10,py+24,8,4); break;
+                case TILES.LOCK:
+                    ctx.fillStyle='silver'; ctx.fillRect(px+6,py+6,20,20);
+                    ctx.fillStyle='black'; ctx.beginPath(); ctx.arc(px+16,py+14,4,0,Math.PI*2); ctx.fill(); break;
+            }
+        }
+
+        function gameLoop() { updatePhysics(); updateMoles(); draw(); }
+
+        document.addEventListener('keydown', (e) => {
+            if (Date.now() - player.lastMoveTime < 50) return;
+            switch (e.key) {
+                case 'ArrowUp': case 'w': movePlayer(0, -1); break;
+                case 'ArrowDown': case 's': movePlayer(0, 1); break;
+                case 'ArrowLeft': case 'a': movePlayer(-1, 0); break;
+                case 'ArrowRight': case 'd': movePlayer(1, 0); break;
+            }
+        });
+        
+        restartButton.addEventListener('click', () => parseLevel(LEVELS[currentLevelIndex]));
+
+        const handleTouch = (e, dx, dy) => { e.preventDefault(); movePlayer(dx, dy); };
+        ['touchstart', 'click'].forEach(evt => {
+            document.getElementById('d-pad-up').addEventListener(evt, (e) => handleTouch(e, 0, -1));
+            document.getElementById('d-pad-down').addEventListener(evt, (e) => handleTouch(e, 0, 1));
+            document.getElementById('d-pad-left').addEventListener(evt, (e) => handleTouch(e, -1, 0));
+            document.getElementById('d-pad-right').addEventListener(evt, (e) => handleTouch(e, 1, 0));
+        });
+
+        parseLevel(LEVELS[currentLevelIndex]);
+        setInterval(gameLoop, GAME_SPEED);
+    </script>
+
+</body>
+</html>
