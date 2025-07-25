@@ -1,0 +1,802 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Popeye Brawler</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: #000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            font-family: Arial, sans-serif;
+        }
+        #gameContainer {
+            position: relative;
+            border: 2px solid #333;
+        }
+        #gameCanvas {
+            background: #87CEEB;
+            display: block;
+        }
+        #ui {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: white;
+            font-size: 18px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.8);
+            z-index: 10;
+        }
+        #controls {
+            position: absolute;
+            bottom: -80px;
+            left: 0;
+            right: 0;
+            text-align: center;
+            color: white;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <div id="gameContainer">
+        <canvas id="gameCanvas" width="1200" height="600"></canvas>
+        <div id="ui">
+            <div>Health: <span id="health">10</span></div>
+            <div id="powerupStatus"></div>
+        </div>
+        <div id="controls">
+            Use A/D or Arrow Keys to move, W/Space to jump, S/Enter to punch
+        </div>
+    </div>
+
+    <script>
+        class Game {
+            constructor() {
+                this.canvas = document.getElementById('gameCanvas');
+                this.ctx = this.canvas.getContext('2d');
+                this.width = this.canvas.width;
+                this.height = this.canvas.height;
+                
+                // Constants
+                this.GRAVITY = 0.8;
+                this.GROUND_Y = this.height - (this.height * 0.05);
+                this.WORLD_WIDTH = 2400; // Extended world size
+                
+                // Game state
+                this.keys = {};
+                this.gameObjects = {
+                    player: null,
+                    enemies: [],
+                    platforms: [],
+                    pickups: []
+                };
+                
+                // Camera system
+                this.camera = {
+                    x: 0,
+                    smoothing: 0.1,
+                    bounds: { min: 0, max: this.WORLD_WIDTH - this.width }
+                };
+                
+                // Assets
+                this.assets = {};
+                this.assetsLoaded = 0;
+                this.totalAssets = 0;
+                
+                this.init();
+            }
+            
+            init() {
+                this.setupEventListeners();
+                this.loadAssets();
+            }
+            
+            setupEventListeners() {
+                const keyHandler = (e, pressed) => {
+                    this.keys[e.code] = pressed;
+                    e.preventDefault();
+                };
+                
+                window.addEventListener('keydown', (e) => keyHandler(e, true));
+                window.addEventListener('keyup', (e) => keyHandler(e, false));
+            }
+            
+            loadAssets() {
+                const assetList = [
+                    'main_bg.png', 'pop_walk_sheet.png', 'pop_jump_sheet.png', 
+                    'pop_punch_sheet.png', 'enemy1.png', 'enemy2.png', 
+                    'enemy3.png', 'spinach.png', 'burger.png'
+                ];
+                
+                this.totalAssets = assetList.length;
+                
+                assetList.forEach(src => {
+                    const img = new Image();
+                    img.onload = () => this.onAssetLoaded();
+                    img.onerror = () => {
+                        console.warn(`Could not load ${src}, using placeholder`);
+                        this.onAssetLoaded();
+                    };
+                    img.src = src;
+                    this.assets[src] = img;
+                });
+            }
+            
+            onAssetLoaded() {
+                this.assetsLoaded++;
+                if (this.assetsLoaded === this.totalAssets) {
+                    this.startGame();
+                }
+            }
+            
+            startGame() {
+                this.createGameObjects();
+                this.gameLoop();
+            }
+            
+            createGameObjects() {
+                this.gameObjects.player = new Player(200, this.GROUND_Y - 135, this.assets);
+                this.createPlatforms();
+                this.createEnemies();
+                this.createPickups();
+            }
+            
+            createPlatforms() {
+                this.gameObjects.platforms = [
+                    // First area
+                    new Platform(300, this.GROUND_Y - 150, 200, 20),
+                    new Platform(450, this.GROUND_Y - 250, 150, 20),
+                    new Platform(200, this.GROUND_Y - 300, 180, 20),
+                    
+                    // Second area
+                    new Platform(700, this.GROUND_Y - 120, 180, 20),
+                    new Platform(820, this.GROUND_Y - 220, 160, 20),
+                    new Platform(650, this.GROUND_Y - 320, 200, 20),
+                    new Platform(750, this.GROUND_Y - 400, 150, 20),
+                    
+                    // Extended areas
+                    new Platform(1000, this.GROUND_Y - 100, 150, 20),
+                    new Platform(950, this.GROUND_Y - 200, 120, 20),
+                    new Platform(1200, this.GROUND_Y - 180, 200, 20),
+                    new Platform(1500, this.GROUND_Y - 150, 180, 20),
+                    new Platform(1800, this.GROUND_Y - 250, 160, 20),
+                    new Platform(2000, this.GROUND_Y - 120, 150, 20)
+                ];
+            }
+            
+            createEnemies() {
+                this.gameObjects.enemies = [
+                    new Enemy(500, this.GROUND_Y - 128, this.assets['enemy1.png'], 3, 1),
+                    new Enemy(800, this.GROUND_Y - 128, this.assets['enemy2.png'], 5, 1),
+                    new Enemy(1100, this.GROUND_Y - 128, this.assets['enemy3.png'], 10, 2),
+                    new Enemy(1400, this.GROUND_Y - 128, this.assets['enemy1.png'], 4, 1),
+                    new Enemy(1700, this.GROUND_Y - 128, this.assets['enemy2.png'], 6, 2),
+                    new Enemy(2100, this.GROUND_Y - 128, this.assets['enemy3.png'], 12, 2)
+                ];
+            }
+            
+            createPickups() {
+                this.gameObjects.pickups = [
+                    new Pickup(350, this.GROUND_Y - 200, 'burger', this.assets['burger.png']),
+                    new Pickup(750, this.GROUND_Y - 150, 'spinach', this.assets['spinach.png']),
+                    new Pickup(1050, this.GROUND_Y - 150, 'burger', this.assets['burger.png']),
+                    new Pickup(1250, this.GROUND_Y - 230, 'spinach', this.assets['spinach.png']),
+                    new Pickup(1550, this.GROUND_Y - 200, 'burger', this.assets['burger.png']),
+                    new Pickup(1850, this.GROUND_Y - 300, 'spinach', this.assets['spinach.png'])
+                ];
+            }
+            
+            updateCamera() {
+                const player = this.gameObjects.player;
+                const targetX = player.x - this.width / 2;
+                
+                // Smooth camera movement
+                const clampedTarget = Math.max(this.camera.bounds.min, 
+                    Math.min(this.camera.bounds.max, targetX));
+                
+                this.camera.x += (clampedTarget - this.camera.x) * this.camera.smoothing;
+            }
+            
+            update() {
+                const { player, enemies, platforms, pickups } = this.gameObjects;
+                
+                // Update player
+                player.update(this.keys, platforms, this.GROUND_Y);
+                
+                // Update camera
+                this.updateCamera();
+                
+                // Update enemies
+                enemies.forEach(enemy => enemy.update(player, platforms, this.GROUND_Y));
+                
+                // Update pickups
+                pickups.forEach(pickup => pickup.update());
+                
+                // Check collisions
+                this.checkCollisions();
+                
+                // Clean up dead/collected objects
+                this.gameObjects.enemies = enemies.filter(enemy => enemy.health > 0);
+                this.gameObjects.pickups = pickups.filter(pickup => !pickup.collected);
+                
+                // Update UI
+                this.updateUI();
+            }
+            
+            checkCollisions() {
+                const { player, enemies, pickups } = this.gameObjects;
+                
+                // Player attacks
+                if (player.isAttacking && player.attackFrame >= 2 && player.attackFrame <= 4) {
+                    const attackBox = player.getAttackBox();
+                    
+                    enemies.forEach(enemy => {
+                        if (!enemy.hitThisAttack && this.checkCollision(attackBox, enemy.getBounds())) {
+                            const damage = player.spinachTime > 0 ? 3 : 1;
+                            enemy.takeDamage(damage);
+                            enemy.hitThisAttack = true;
+                        }
+                    });
+                }
+                
+                // Reset hit flags when attack ends
+                if (!player.isAttacking) {
+                    enemies.forEach(enemy => enemy.hitThisAttack = false);
+                }
+                
+                // Enemy damage to player
+                enemies.forEach(enemy => {
+                    if (!player.invulnerable && this.checkCollision(player.getBounds(), enemy.getBounds())) {
+                        player.takeDamage(enemy.damage);
+                    }
+                });
+                
+                // Pickup collection
+                pickups.forEach(pickup => {
+                    if (this.checkCollision(player.getBounds(), pickup.getBounds())) {
+                        pickup.collect(player);
+                    }
+                });
+            }
+            
+            checkCollision(rect1, rect2) {
+                return rect1.x < rect2.x + rect2.width &&
+                       rect1.x + rect1.width > rect2.x &&
+                       rect1.y < rect2.y + rect2.height &&
+                       rect1.y + rect1.height > rect2.y;
+            }
+            
+            updateUI() {
+                const player = this.gameObjects.player;
+                document.getElementById('health').textContent = player.health;
+                
+                const powerupDiv = document.getElementById('powerupStatus');
+                if (player.spinachTime > 0) {
+                    powerupDiv.textContent = `SPINACH POWER! ${Math.ceil(player.spinachTime / 60)}s`;
+                    powerupDiv.style.color = '#00ff00';
+                } else {
+                    powerupDiv.textContent = '';
+                }
+            }
+            
+            render() {
+                // Clear canvas
+                this.ctx.clearRect(0, 0, this.width, this.height);
+                
+                // Apply camera transform
+                this.ctx.save();
+                this.ctx.translate(-this.camera.x, 0);
+                
+                // Render background with parallax
+                this.renderBackground();
+                
+                // Render game objects
+                this.renderPlatforms();
+                this.gameObjects.pickups.forEach(pickup => pickup.render(this.ctx));
+                this.gameObjects.enemies.forEach(enemy => enemy.render(this.ctx));
+                this.gameObjects.player.render(this.ctx);
+                
+                this.ctx.restore();
+            }
+            
+            renderBackground() {
+                const bg = this.assets['main_bg.png'];
+                if (bg && bg.complete) {
+                    const scale = 2.5; // Increased scale as requested
+                    const bgWidth = 1386 * scale;
+                    const bgHeight = 158 * scale;
+                    
+                    // Parallax scrolling - background moves slower than camera
+                    const parallaxX = -this.camera.x * 0.3;
+                    
+                    // Draw multiple copies for seamless scrolling
+                    const startIndex = Math.floor(parallaxX / bgWidth) - 1;
+                    const endIndex = Math.ceil((parallaxX + this.width) / bgWidth) + 1;
+                    
+                    for (let i = startIndex; i <= endIndex; i++) {
+                        this.ctx.drawImage(
+                            bg,
+                            parallaxX + (i * bgWidth),
+                            this.height - bgHeight,
+                            bgWidth,
+                            bgHeight
+                        );
+                    }
+                }
+            }
+            
+            renderPlatforms() {
+                this.ctx.fillStyle = '#8B4513';
+                this.gameObjects.platforms.forEach(platform => platform.render(this.ctx));
+            }
+            
+            gameLoop() {
+                this.update();
+                this.render();
+                requestAnimationFrame(() => this.gameLoop());
+            }
+        }
+        
+        class Player {
+            constructor(x, y, assets) {
+                this.x = x;
+                this.y = y;
+                this.width = 128;
+                this.height = 135;
+                this.vx = 0;
+                this.vy = 0;
+                this.speed = 4;
+                this.jumpPower = 15;
+                this.onGround = false;
+                this.facingRight = false;
+                this.health = 10;
+                this.maxHealth = 10;
+                this.invulnerable = false;
+                this.invulnerabilityTime = 0;
+                
+                // Animation system
+                this.animation = {
+                    current: 'idle',
+                    frame: 0,
+                    timer: 0,
+                    speed: 6
+                };
+                
+                // Attack system
+                this.isAttacking = false;
+                this.attackTimer = 0;
+                this.attackDuration = 36;
+                this.attackFrame = 0;
+                
+                // Power-ups
+                this.spinachTime = 0;
+                
+                this.assets = assets;
+            }
+            
+            update(keys, platforms, groundY) {
+                this.handleInput(keys);
+                this.applyPhysics();
+                this.checkCollisions(platforms, groundY);
+                this.updateTimers();
+                this.updateAnimation();
+            }
+            
+            handleInput(keys) {
+                this.vx = 0;
+                
+                const currentSpeed = this.spinachTime > 0 ? this.speed * 1.5 : this.speed;
+                const currentJumpPower = this.spinachTime > 0 ? this.jumpPower * 1.3 : this.jumpPower;
+                
+                if (!this.isAttacking) {
+                    if (keys['KeyA'] || keys['ArrowLeft']) {
+                        this.vx = -currentSpeed;
+                        this.facingRight = false;
+                    }
+                    if (keys['KeyD'] || keys['ArrowRight']) {
+                        this.vx = currentSpeed;
+                        this.facingRight = true;
+                    }
+                    if ((keys['KeyW'] || keys['Space']) && this.onGround) {
+                        this.vy = -currentJumpPower;
+                        this.onGround = false;
+                    }
+                }
+                
+                if ((keys['KeyS'] || keys['Enter']) && !this.isAttacking) {
+                    this.isAttacking = true;
+                    this.attackTimer = 0;
+                }
+            }
+            
+            applyPhysics() {
+                this.vy += 0.8; // gravity
+                this.x += this.vx;
+                this.y += this.vy;
+            }
+            
+            checkCollisions(platforms, groundY) {
+                this.onGround = false;
+                
+                // Platform collisions
+                platforms.forEach(platform => {
+                    if (this.x < platform.x + platform.width &&
+                        this.x + this.width > platform.x &&
+                        this.y < platform.y + platform.height &&
+                        this.y + this.height > platform.y) {
+                        
+                        if (this.vy > 0 && this.y + this.height - this.vy <= platform.y) {
+                            this.y = platform.y - this.height;
+                            this.vy = 0;
+                            this.onGround = true;
+                        }
+                    }
+                });
+                
+                // Ground collision
+                if (this.y + this.height > groundY) {
+                    this.y = groundY - this.height;
+                    this.vy = 0;
+                    this.onGround = true;
+                }
+                
+                // Left boundary
+                if (this.x < 0) this.x = 0;
+            }
+            
+            updateTimers() {
+                // Attack timer
+                if (this.isAttacking) {
+                    this.attackTimer++;
+                    this.attackFrame = Math.floor(this.attackTimer / 6);
+                    if (this.attackTimer >= this.attackDuration) {
+                        this.isAttacking = false;
+                        this.attackTimer = 0;
+                        this.attackFrame = 0;
+                    }
+                }
+                
+                // Invulnerability timer
+                if (this.invulnerable) {
+                    this.invulnerabilityTime--;
+                    if (this.invulnerabilityTime <= 0) {
+                        this.invulnerable = false;
+                    }
+                }
+                
+                // Spinach timer
+                if (this.spinachTime > 0) {
+                    this.spinachTime--;
+                }
+            }
+            
+            updateAnimation() {
+                let targetAnimation = 'idle';
+                
+                if (this.isAttacking) {
+                    targetAnimation = 'punch';
+                } else if (!this.onGround) {
+                    targetAnimation = 'jump';
+                } else if (this.vx !== 0) {
+                    targetAnimation = 'walk';
+                }
+                
+                if (targetAnimation !== this.animation.current) {
+                    this.animation.current = targetAnimation;
+                    this.animation.frame = 0;
+                    this.animation.timer = 0;
+                }
+                
+                this.animation.timer++;
+                if (this.animation.timer >= this.animation.speed) {
+                    this.animation.timer = 0;
+                    const frameCount = this.getFrameCount();
+                    this.animation.frame = (this.animation.frame + 1) % frameCount;
+                }
+            }
+            
+            getFrameCount() {
+                const frameCounts = {
+                    walk: 11,
+                    jump: 6,
+                    punch: 6,
+                    idle: 1
+                };
+                return frameCounts[this.animation.current] || 1;
+            }
+            
+            takeDamage(damage) {
+                this.health -= damage;
+                this.invulnerable = true;
+                this.invulnerabilityTime = 120;
+                if (this.health <= 0) {
+                    console.log("Game Over!");
+                }
+            }
+            
+            heal(amount) {
+                this.health = Math.min(this.maxHealth, this.health + amount);
+            }
+            
+            activateSpinach() {
+                this.spinachTime = 600; // 10 seconds
+            }
+            
+            getBounds() {
+                return {
+                    x: this.x + 15, // Refined hitbox
+                    y: this.y + 10,
+                    width: this.width - 30,
+                    height: this.height - 15
+                };
+            }
+            
+            getAttackBox() {
+                const attackWidth = 90;
+                const attackHeight = 70;
+                
+                const attackX = this.facingRight ? 
+                    this.x + this.width - 10 : 
+                    this.x - attackWidth + 10;
+                
+                return {
+                    x: attackX,
+                    y: this.y + 25,
+                    width: attackWidth,
+                    height: attackHeight
+                };
+            }
+            
+            render(ctx) {
+                ctx.save();
+                
+                // Visual effects
+                if (this.invulnerable && Math.floor(this.invulnerabilityTime / 10) % 2) {
+                    ctx.globalAlpha = 0.5;
+                }
+                
+                if (this.spinachTime > 0) {
+                    ctx.shadowColor = '#00ff00';
+                    ctx.shadowBlur = 10;
+                }
+                
+                const spriteSheet = this.getSpriteSheet();
+                if (spriteSheet && spriteSheet.complete) {
+                    // Fixed sprite rendering
+                    if (this.facingRight) {
+                        ctx.scale(-1, 1);
+                        ctx.drawImage(
+                            spriteSheet,
+                            this.animation.frame * 128, 0,
+                            128, 135,
+                            -(this.x + this.width), this.y,
+                            128, 135
+                        );
+                    } else {
+                        ctx.drawImage(
+                            spriteSheet,
+                            this.animation.frame * 128, 0,
+                            128, 135,
+                            this.x, this.y,
+                            128, 135
+                        );
+                    }
+                } else {
+                    // Fallback rectangle
+                    ctx.fillStyle = this.spinachTime > 0 ? '#00ff00' : '#ffffff';
+                    ctx.fillRect(this.x, this.y, this.width, this.height);
+                }
+                
+                ctx.restore();
+            }
+            
+            getSpriteSheet() {
+                const sheets = {
+                    walk: this.assets['pop_walk_sheet.png'],
+                    jump: this.assets['pop_jump_sheet.png'],
+                    punch: this.assets['pop_punch_sheet.png']
+                };
+                return sheets[this.animation.current] || sheets.walk;
+            }
+        }
+        
+        class Enemy {
+            constructor(x, y, sprite, health, damage) {
+                this.x = x;
+                this.y = y;
+                this.width = 64;
+                this.height = 128;
+                this.maxHealth = health;
+                this.health = health;
+                this.damage = damage;
+                this.vx = 0;
+                this.vy = 0;
+                this.speed = 1;
+                this.onGround = false;
+                this.sprite = sprite;
+                this.hitThisAttack = false;
+                
+                // Animation
+                this.animation = {
+                    frame: 0,
+                    timer: 0,
+                    speed: 8
+                };
+                
+                // AI
+                this.direction = Math.random() > 0.5 ? 1 : -1;
+                this.aiTimer = 0;
+                this.aggroRange = 200;
+            }
+            
+            update(player, platforms, groundY) {
+                this.updateAI(player);
+                this.applyPhysics();
+                this.checkCollisions(platforms, groundY);
+                this.updateAnimation();
+            }
+            
+            updateAI(player) {
+                this.aiTimer++;
+                if (this.aiTimer > 120) {
+                    const distance = Math.abs(this.x - player.x);
+                    if (distance < this.aggroRange) {
+                        this.direction = this.x < player.x ? 1 : -1;
+                    } else {
+                        this.direction = Math.random() > 0.5 ? 1 : -1;
+                    }
+                    this.aiTimer = 0;
+                }
+                
+                this.vx = this.direction * this.speed;
+            }
+            
+            applyPhysics() {
+                this.vy += 0.8; // gravity
+                this.x += this.vx;
+                this.y += this.vy;
+            }
+            
+            checkCollisions(platforms, groundY) {
+                // Ground collision
+                if (this.y + this.height > groundY) {
+                    this.y = groundY - this.height;
+                    this.vy = 0;
+                    this.onGround = true;
+                }
+                
+                // World boundaries
+                if (this.x < 0 || this.x + this.width > 2400) {
+                    this.direction *= -1;
+                }
+            }
+            
+            updateAnimation() {
+                this.animation.timer++;
+                if (this.animation.timer >= this.animation.speed) {
+                    this.animation.timer = 0;
+                    this.animation.frame = (this.animation.frame + 1) % 4;
+                }
+            }
+            
+            takeDamage(damage) {
+                this.health -= damage;
+                this.vx = this.direction * -3; // Knockback
+            }
+            
+            getBounds() {
+                return {
+                    x: this.x + 8, // Refined enemy hitbox
+                    y: this.y + 8,
+                    width: this.width - 16,
+                    height: this.height - 16
+                };
+            }
+            
+            render(ctx) {
+                if (this.sprite && this.sprite.complete) {
+                    ctx.drawImage(
+                        this.sprite,
+                        this.animation.frame * 64, 0,
+                        64, 128,
+                        this.x, this.y,
+                        64, 128
+                    );
+                } else {
+                    ctx.fillStyle = '#ff0000';
+                    ctx.fillRect(this.x, this.y, this.width, this.height);
+                }
+                
+                // Health bar
+                const barWidth = 60;
+                const barHeight = 6;
+                const barX = this.x + (this.width - barWidth) / 2;
+                const barY = this.y - 15;
+                
+                ctx.fillStyle = '#ff0000';
+                ctx.fillRect(barX, barY, barWidth, barHeight);
+                
+                ctx.fillStyle = '#00ff00';
+                const healthPercent = this.health / this.maxHealth;
+                ctx.fillRect(barX, barY, barWidth * healthPercent, barHeight);
+            }
+        }
+        
+        class Platform {
+            constructor(x, y, width, height) {
+                this.x = x;
+                this.y = y;
+                this.width = width;
+                this.height = height;
+            }
+            
+            render(ctx) {
+                ctx.fillRect(this.x, this.y, this.width, this.height);
+            }
+        }
+        
+        class Pickup {
+            constructor(x, y, type, sprite) {
+                this.x = x;
+                this.y = y;
+                this.width = 64;
+                this.height = 64;
+                this.type = type;
+                this.sprite = sprite;
+                this.collected = false;
+                this.bounceOffset = 0;
+                this.bounceTimer = 0;
+            }
+            
+            update() {
+                this.bounceTimer += 0.1;
+                this.bounceOffset = Math.sin(this.bounceTimer) * 5;
+            }
+            
+            collect(player) {
+                if (this.collected) return;
+                
+                this.collected = true;
+                if (this.type === 'burger') {
+                    player.heal(3);
+                } else if (this.type === 'spinach') {
+                    player.activateSpinach();
+                }
+            }
+            
+            getBounds() {
+                return {
+                    x: this.x + 8, // More generous pickup bounds
+                    y: this.y + this.bounceOffset + 8,
+                    width: this.width - 16,
+                    height: this.height - 16
+                };
+            }
+            
+            render(ctx) {
+                if (this.collected) return;
+                
+                const renderY = this.y + this.bounceOffset;
+                
+                if (this.sprite && this.sprite.complete) {
+                    ctx.drawImage(this.sprite, this.x, renderY, this.width, this.height);
+                } else {
+                    ctx.fillStyle = this.type === 'burger' ? '#8B4513' : '#00ff00';
+                    ctx.fillRect(this.x, renderY, this.width, this.height);
+                }
+            }
+        }
+        
+        // Initialize game on window load
+        window.addEventListener('load', () => {
+            new Game();
+        });
+    </script>
+</body>
+</html>
