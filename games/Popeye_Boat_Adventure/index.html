@@ -1,0 +1,695 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Popeye's Spectacular Boat Adventure</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: linear-gradient(180deg, #87CEEB 0%, #4682B4 50%, #2F4F4F 100%);
+            font-family: 'Courier New', monospace;
+            overflow: hidden;
+            cursor: none;
+        }
+        
+        canvas {
+            display: block;
+            image-rendering: pixelated;
+            image-rendering: crisp-edges;
+        }
+        
+        .ui {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            color: #FFFFFF;
+            font-weight: bold;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.8);
+            z-index: 100;
+        }
+        
+        .controls {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            color: #FFFFFF;
+            font-size: 14px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.8);
+            z-index: 100;
+        }
+        
+        .score {
+            font-size: 24px;
+            margin-bottom: 10px;
+        }
+        
+        .speed-meter {
+            width: 200px;
+            height: 20px;
+            border: 2px solid #FFFFFF;
+            border-radius: 10px;
+            background: rgba(0,0,0,0.3);
+            margin-top: 10px;
+            overflow: hidden;
+        }
+        
+        .speed-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #32CD32, #FFD700, #FF6347);
+            transition: width 0.1s ease;
+            border-radius: 8px;
+        }
+    </style>
+</head>
+<body>
+    <div class="ui">
+        <div class="score">SCORE: <span id="score">0</span></div>
+        <div>HEALTH: <span id="health">100</span>%</div>
+        <div class="speed-meter">
+            <div class="speed-fill" id="speedFill" style="width: 0%"></div>
+        </div>
+        <div style="margin-top: 10px; font-size: 12px;">SPEED BOOST</div>
+    </div>
+    
+    <div class="controls">
+        <div><strong>CONTROLS:</strong></div>
+        <div>A/D or ←/→ Move  |  W/SPACE Jump  |  S/ENTER Punch</div>
+        <div style="margin-top: 5px; font-size: 12px;">Punch crates far right for big bonuses!</div>
+    </div>
+    
+    <canvas id="gameCanvas"></canvas>
+
+    <script>
+        // Game state and constants
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        // Fleischer Studios inspired palette
+        const COLORS = {
+            sky: ['#87CEEB', '#4682B4', '#2F4F4F'],
+            sea: ['#006994', '#4682B4', '#87CEEB'],
+            popeye: '#FFE4C4',
+            spinach: '#228B22',
+            crate: '#8B4513',
+            explosion: ['#FF6347', '#FFD700', '#FF4500', '#32CD32'],
+            boat: '#8B4513',
+            white: '#FFFFFF'
+        };
+        
+        // Game dimensions
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+        
+        // Player object - 50% bigger
+        const player = {
+            x: 200,
+            y: canvas.height - 300,
+            width: 192, // 50% bigger (was 128)
+            height: 192, // 50% bigger (was 128)
+            velY: 0,
+            onGround: true,
+            animFrame: 0,
+            animTimer: 0,
+            state: 'walk', // walk, jump, punch
+            facing: 1, // 1 for right, -1 for left
+            punchTimer: 0,
+            health: 100
+        };
+        
+        // Boat object - 50% bigger
+        const boat = {
+            x: 50,
+            y: canvas.height - 225,
+            width: 675, // 50% bigger (was 450)
+            height: 225, // 50% bigger (was 150)
+            moveDirection: 1, // 1 for right, -1 for left
+            boostTimer: 0
+        };
+        
+        // Game objects arrays
+        const particles = [];
+        const crates = [];
+        const explosions = [];
+        
+        // Game variables
+        let score = 0;
+        let keys = {};
+        let cameraX = 0;
+        let waveOffset = 0;
+        let crateSpawnTimer = 0;
+        let crateSpawnX = 0; // For left-to-right pattern
+        
+        // Sprite loading
+        const sprites = {
+            walkSheet: new Image(),
+            jumpSheet: new Image(),
+            punchSheet: new Image(),
+            boatSprite: new Image(),
+            loaded: 0,
+            total: 4
+        };
+        
+        // Load sprite sheets
+        sprites.walkSheet.src = 'pop_walk_sheet.png';
+        sprites.jumpSheet.src = 'pop_jump_sheet.png';
+        sprites.punchSheet.src = 'pop_punch_sheet.png';
+        sprites.boatSprite.src = 'boat.png';
+        
+        sprites.walkSheet.onload = sprites.jumpSheet.onload = 
+        sprites.punchSheet.onload = sprites.boatSprite.onload = () => {
+            sprites.loaded++;
+        };
+        
+        // Input handling - Updated controls
+        document.addEventListener('keydown', (e) => {
+            const key = e.key.toLowerCase();
+            keys[key] = true;
+            
+            // Jump controls: W or Space
+            if (key === 'w' || key === ' ') {
+                e.preventDefault();
+                if (player.onGround) {
+                    player.velY = -15;
+                    player.onGround = false;
+                    player.state = 'jump';
+                    player.animFrame = 0;
+                }
+            }
+            
+            // Punch controls: S or Enter
+            if (key === 's' || key === 'enter') {
+                if (player.state !== 'punch') {
+                    player.state = 'punch';
+                    player.animFrame = 0;
+                    player.punchTimer = 30;
+                }
+            }
+        });
+        
+        document.addEventListener('keyup', (e) => {
+            keys[e.key.toLowerCase()] = false;
+        });
+        
+        // Particle class for spectacular effects
+        class Particle {
+            constructor(x, y, type = 'explosion') {
+                this.x = x;
+                this.y = y;
+                this.velX = (Math.random() - 0.5) * 10;
+                this.velY = Math.random() * -8 - 2;
+                this.life = 60;
+                this.maxLife = 60;
+                this.size = Math.random() * 8 + 4;
+                this.type = type;
+                this.color = this.getColor();
+                this.gravity = 0.2;
+                this.bounce = 0.3;
+            }
+            
+            getColor() {
+                switch(this.type) {
+                    case 'spinach':
+                        return COLORS.spinach;
+                    case 'wood':
+                        return COLORS.crate;
+                    case 'explosion':
+                        return COLORS.explosion[Math.floor(Math.random() * COLORS.explosion.length)];
+                    default:
+                        return COLORS.explosion[0];
+                }
+            }
+            
+            update() {
+                this.x += this.velX;
+                this.y += this.velY;
+                this.velY += this.gravity;
+                
+                // Bounce off sea level
+                if (this.y > canvas.height - 100) {
+                    this.y = canvas.height - 100;
+                    this.velY *= -this.bounce;
+                    this.velX *= 0.8;
+                }
+                
+                this.life--;
+                return this.life > 0;
+            }
+            
+            draw() {
+                const alpha = this.life / this.maxLife;
+                const size = this.size * alpha;
+                
+                ctx.save();
+                ctx.globalAlpha = alpha;
+                ctx.fillStyle = this.color;
+                ctx.beginPath();
+                ctx.arc(this.x - cameraX, this.y, size, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // Add glow effect
+                ctx.shadowBlur = 20;
+                ctx.shadowColor = this.color;
+                ctx.beginPath();
+                ctx.arc(this.x - cameraX, this.y, size * 0.5, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+            }
+        }
+        
+        // Crate class - Updated with bonus system
+        class Crate {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
+                this.width = 60;
+                this.height = 60;
+                this.velY = 2;
+                this.rotation = 0;
+                this.rotSpeed = 0.1;
+                this.hit = false;
+                
+                // Calculate bonus based on position (further right = more bonus)
+                const screenPos = (x - cameraX) / canvas.width;
+                this.bonusMultiplier = Math.max(1, Math.floor(screenPos * 5)); // 1x to 5x bonus
+            }
+            
+            update() {
+                this.y += this.velY;
+                this.rotation += this.rotSpeed;
+                
+                // Remove if off screen
+                return this.y < canvas.height + 100;
+            }
+            
+            draw() {
+                ctx.save();
+                ctx.translate(this.x - cameraX, this.y);
+                ctx.rotate(this.rotation);
+                
+                // Draw crate with Fleischer style
+                ctx.fillStyle = COLORS.crate;
+                ctx.fillRect(-this.width/2, -this.height/2, this.width, this.height);
+                
+                // Add wood grain effect
+                ctx.strokeStyle = '#654321';
+                ctx.lineWidth = 3;
+                for (let i = -20; i < 20; i += 10) {
+                    ctx.beginPath();
+                    ctx.moveTo(-this.width/2, i);
+                    ctx.lineTo(this.width/2, i);
+                    ctx.stroke();
+                }
+                
+                // Add metal bands
+                ctx.strokeStyle = '#2F4F4F';
+                ctx.lineWidth = 4;
+                ctx.strokeRect(-this.width/2, -this.height/2, this.width, this.height);
+                
+                // Show bonus multiplier if > 1
+                if (this.bonusMultiplier > 1) {
+                    ctx.fillStyle = '#FFD700';
+                    ctx.font = 'bold 16px Arial';
+                    ctx.textAlign = 'center';
+                    ctx.fillText(`${this.bonusMultiplier}X`, 0, -this.height/2 - 10);
+                }
+                
+                ctx.restore();
+            }
+            
+            checkCollision(px, py, pr) {
+                const dx = this.x - px;
+                const dy = this.y - py;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                return distance < (pr + this.width/3); // More forgiving collision
+            }
+        }
+        
+        // Explosion effect
+        class Explosion {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
+                this.particles = [];
+                this.life = 30;
+                
+                // Create explosion particles
+                for (let i = 0; i < 20; i++) {
+                    this.particles.push(new Particle(x, y, 'explosion'));
+                }
+                
+                // Add spinach particles
+                for (let i = 0; i < 5; i++) {
+                    this.particles.push(new Particle(x, y, 'spinach'));
+                }
+                
+                // Add wood particles
+                for (let i = 0; i < 10; i++) {
+                    this.particles.push(new Particle(x, y, 'wood'));
+                }
+            }
+            
+            update() {
+                this.particles = this.particles.filter(p => p.update());
+                this.life--;
+                return this.particles.length > 0;
+            }
+            
+            draw() {
+                this.particles.forEach(p => p.draw());
+            }
+        }
+        
+        // Sprite animation system with actual sprite sheets - Fixed Y flip
+        function drawPopeye() {
+            // Don't draw until sprites are loaded
+            if (sprites.loaded < sprites.total) return;
+            
+            const x = player.x - cameraX;
+            const y = player.y;
+            
+            ctx.save();
+            
+            // Select appropriate sprite sheet and frame
+            let currentSheet;
+            let maxFrames;
+            
+            switch(player.state) {
+                case 'walk':
+                    currentSheet = sprites.walkSheet;
+                    maxFrames = 11;
+                    break;
+                case 'jump':
+                    currentSheet = sprites.jumpSheet;
+                    maxFrames = 6;
+                    break;
+                case 'punch':
+                    currentSheet = sprites.punchSheet;
+                    maxFrames = 6;
+                    break;
+                default:
+                    currentSheet = sprites.walkSheet;
+                    maxFrames = 11;
+            }
+            
+            // Calculate source rectangle for current frame
+            const frameWidth = 128; // Each frame is 128px wide
+            const frameHeight = 128; // Each frame is 128px tall
+            const srcX = (player.animFrame % maxFrames) * frameWidth;
+            const srcY = 0;
+            
+            // Horizontal flip sprite since spritesheet faces left
+            if (player.facing === 1) {
+                // Facing right (flip horizontally from original left-facing sprite)
+                ctx.scale(-1, 1);
+                ctx.drawImage(
+                    currentSheet,
+                    srcX, srcY, frameWidth, frameHeight,
+                    -x - player.width, y, player.width, player.height
+                );
+            } else {
+                // Facing left (original sprite direction)
+                ctx.drawImage(
+                    currentSheet,
+                    srcX, srcY, frameWidth, frameHeight,
+                    x, y, player.width, player.height
+                );
+            }
+            
+            ctx.restore();
+        }
+        
+        // Draw boat with sprite
+        function drawBoat() {
+            // Don't draw until sprites are loaded
+            if (sprites.loaded < sprites.total) return;
+            
+            const x = boat.x - cameraX;
+            const y = boat.y;
+            
+            ctx.save();
+            
+            // Draw boat sprite
+            ctx.drawImage(sprites.boatSprite, x, y, boat.width, boat.height);
+            
+            // Add speed boost effect
+            if (boat.boostTimer > 0) {
+                ctx.globalAlpha = 0.7;
+                ctx.fillStyle = '#FFD700';
+                ctx.shadowBlur = 20;
+                ctx.shadowColor = '#FFD700';
+                ctx.fillRect(x - 10, y - 10, boat.width + 20, boat.height + 20);
+            }
+            
+            ctx.restore();
+        }
+        
+        // Draw animated sea
+        function drawSea() {
+            const seaLevel = canvas.height - 100;
+            
+            ctx.save();
+            
+            // Sea gradient
+            const gradient = ctx.createLinearGradient(0, seaLevel, 0, canvas.height);
+            gradient.addColorStop(0, COLORS.sea[0]);
+            gradient.addColorStop(0.5, COLORS.sea[1]);
+            gradient.addColorStop(1, COLORS.sea[2]);
+            
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, seaLevel, canvas.width, canvas.height - seaLevel);
+            
+            // Animated waves
+            ctx.strokeStyle = COLORS.white;
+            ctx.lineWidth = 3;
+            ctx.globalAlpha = 0.6;
+            
+            for (let i = 0; i < 5; i++) {
+                ctx.beginPath();
+                const y = seaLevel + i * 10;
+                for (let x = -cameraX % 100; x < canvas.width + 100; x += 20) {
+                    const waveY = y + Math.sin((x + cameraX + waveOffset + i * 50) * 0.01) * (5 - i);
+                    if (x === -cameraX % 100) {
+                        ctx.moveTo(x, waveY);
+                    } else {
+                        ctx.lineTo(x, waveY);
+                    }
+                }
+                ctx.stroke();
+            }
+            
+            ctx.restore();
+        }
+        
+        // Update game logic
+        function update() {
+            // Update wave animation - faster when boosting
+            const waveSpeed = boat.boostTimer > 0 ? 6 : 2;
+            waveOffset += waveSpeed;
+            
+            // Simple boat movement - left to right and back - FIXED!
+            const moveSpeed = 2;
+            boat.x += boat.moveDirection * moveSpeed;
+            
+            // Bounce off screen edges
+            if (boat.x <= 50) {
+                boat.x = 50;
+                boat.moveDirection = 1;
+            }
+            if (boat.x >= canvas.width - boat.width - 50) {
+                boat.x = canvas.width - boat.width - 50;
+                boat.moveDirection = -1;
+            }
+            
+            // Update camera to follow boat with offset
+            cameraX = boat.x - canvas.width * 0.3;
+            
+            // Update boost timer
+            if (boat.boostTimer > 0) {
+                boat.boostTimer--;
+            }
+            
+            // Update camera to follow boat loosely
+            cameraX = boat.x - 200;
+            
+            // Player movement - Updated for bigger sprites
+            if ((keys['a'] || keys['arrowleft']) && player.state !== 'punch') {
+                player.x -= 4.5; // Adjusted for bigger sprites
+                player.facing = -1;
+                if (player.onGround && !keys['d'] && !keys['arrowright']) player.state = 'walk';
+            }
+            if ((keys['d'] || keys['arrowright']) && player.state !== 'punch') {
+                player.x += 4.5; // Adjusted for bigger sprites
+                player.facing = 1;
+                if (player.onGround && !keys['a'] && !keys['arrowleft']) player.state = 'walk';
+            }
+            
+            // Stop walk animation if no movement keys pressed
+            if (player.onGround && player.state === 'walk' && 
+                !keys['a'] && !keys['arrowleft'] && 
+                !keys['d'] && !keys['arrowright']) {
+                player.animFrame = 0; // Idle frame
+            }
+            
+            // Keep player on boat
+            if (player.x < boat.x) player.x = boat.x;
+            if (player.x > boat.x + boat.width - player.width) player.x = boat.x + boat.width - player.width;
+            
+            // Player physics - adjusted for bigger sprites
+            if (!player.onGround) {
+                player.velY += 0.8; // gravity
+                player.y += player.velY;
+                
+                // Land on boat
+                if (player.y >= boat.y - player.height) {
+                    player.y = boat.y - player.height;
+                    player.velY = 0;
+                    player.onGround = true;
+                    if (player.state === 'jump') {
+                        player.state = 'walk';
+                    }
+                }
+            }
+            
+            // Update player animation
+            player.animTimer++;
+            if (player.animTimer >= 6) { // 10fps animation
+                player.animTimer = 0;
+                player.animFrame++;
+                
+                // Reset animation based on state
+                if (player.state === 'walk' && player.animFrame >= 11) player.animFrame = 0;
+                if (player.state === 'jump' && player.animFrame >= 6) player.animFrame = 5;
+                if (player.state === 'punch' && player.animFrame >= 6) {
+                    player.state = 'walk';
+                    player.animFrame = 0;
+                }
+            }
+            
+            // Update punch timer
+            if (player.punchTimer > 0) {
+                player.punchTimer--;
+            }
+            
+            // Spawn crates in left-to-right pattern
+            crateSpawnTimer++;
+            if (crateSpawnTimer >= 90) { // Every 1.5 seconds
+                crateSpawnTimer = 0;
+                
+                // Progressive spawn pattern from left to right
+                const screenWidth = canvas.width;
+                const leftEdge = cameraX + screenWidth * 0.2; // Start 20% from left edge
+                const rightEdge = cameraX + screenWidth * 1.2; // End 20% past right edge
+                const patternWidth = rightEdge - leftEdge;
+                
+                // Create multiple spawn points across the pattern
+                const spawnX = leftEdge + (crateSpawnX % patternWidth);
+                crates.push(new Crate(spawnX, -100));
+                
+                // Advance spawn position for next crate
+                crateSpawnX += patternWidth / 6; // 6 positions across screen width
+            }
+            
+            // Update crates
+            for (let i = crates.length - 1; i >= 0; i--) {
+                if (!crates[i].update()) {
+                    crates.splice(i, 1);
+                    continue;
+                }
+                
+                // Check collision with punch - Adjusted for bigger sprites
+                if (player.state === 'punch' && player.punchTimer > 20) {
+                    const punchX = player.x + (player.facing === 1 ? player.width + 60 : -60);
+                    const punchY = player.y + player.height/2;
+                    const punchRadius = 120; // Bigger punch radius for bigger sprites
+                    
+                    if (crates[i].checkCollision(punchX, punchY, punchRadius)) {
+                        // Create explosion
+                        explosions.push(new Explosion(crates[i].x, crates[i].y));
+                        
+                        // Calculate bonus points and boost based on multiplier
+                        const basePoints = 100;
+                        const bonusPoints = basePoints * crates[i].bonusMultiplier;
+                        const baseBoost = 120; // 2 seconds
+                        const bonusBoost = baseBoost * crates[i].bonusMultiplier;
+                        
+                        // Add to score and boost
+                        score += bonusPoints;
+                        boat.boostTimer = Math.min(600, boat.boostTimer + bonusBoost); // Max 10 seconds
+                        player.health = Math.min(100, player.health + (5 * crates[i].bonusMultiplier));
+                        
+                        crates.splice(i, 1);
+                    }
+                }
+            }
+            
+            // Update explosions
+            for (let i = explosions.length - 1; i >= 0; i--) {
+                if (!explosions[i].update()) {
+                    explosions.splice(i, 1);
+                }
+            }
+            
+            // Update particles
+            for (let i = particles.length - 1; i >= 0; i--) {
+                if (!particles[i].update()) {
+                    particles.splice(i, 1);
+                }
+            }
+            
+            // Update UI
+            document.getElementById('score').textContent = score;
+            document.getElementById('health').textContent = player.health;
+            const speedPercent = (boat.boostTimer / 180) * 100;
+            document.getElementById('speedFill').style.width = speedPercent + '%';
+        }
+        
+        // Render everything
+        function render() {
+            // Clear canvas with sky gradient
+            const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+            gradient.addColorStop(0, COLORS.sky[0]);
+            gradient.addColorStop(0.5, COLORS.sky[1]);
+            gradient.addColorStop(1, COLORS.sky[2]);
+            
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Draw sea
+            drawSea();
+            
+            // Draw boat
+            drawBoat();
+            
+            // Draw Popeye
+            drawPopeye();
+            
+            // Draw crates
+            crates.forEach(crate => crate.draw());
+            
+            // Draw explosions
+            explosions.forEach(explosion => explosion.draw());
+            
+            // Draw particles
+            particles.forEach(particle => particle.draw());
+        }
+        
+        // Game loop
+        function gameLoop() {
+            update();
+            render();
+            requestAnimationFrame(gameLoop);
+        }
+        
+        // Handle window resize
+        window.addEventListener('resize', () => {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        });
+        
+        // Start the game
+        gameLoop();
+    </script>
+</body>
+</html>
