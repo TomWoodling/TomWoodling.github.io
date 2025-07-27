@@ -1,0 +1,545 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PixiJS 2D Platformer Graphics Showcase</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            background: linear-gradient(135deg, #1e3c72, #2a5298);
+            font-family: Arial, sans-serif;
+            color: white;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        #gameContainer {
+            border: 3px solid #fff;
+            border-radius: 10px;
+            box-shadow: 0 0 30px rgba(255,255,255,0.3);
+        }
+        .info {
+            margin: 20px 0;
+            text-align: center;
+            max-width: 800px;
+        }
+        .controls {
+            background: rgba(255,255,255,0.1);
+            padding: 15px;
+            border-radius: 10px;
+            margin: 10px 0;
+        }
+        .feature-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 10px;
+            margin-top: 15px;
+        }
+        .feature {
+            background: rgba(255,255,255,0.1);
+            padding: 10px;
+            border-radius: 5px;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <div class="info">
+        <h1>PixiJS 2D Platformer Graphics Showcase</h1>
+        <div class="controls">
+            <strong>Controls:</strong> Arrow Keys or WASD to move, SPACE to jump
+            <br><small>Forgiving gameplay - focus on the visual effects!</small>
+        </div>
+    </div>
+    
+    <div id="gameContainer"></div>
+    
+    <div class="info">
+        <h3>Featured PixiJS Techniques:</h3>
+        <div class="feature-list">
+            <div class="feature">🎨 Sprite Batching & Textures</div>
+            <div class="feature">✨ Particle Systems</div>
+            <div class="feature">🌟 Animated Sprites</div>
+            <div class="feature">🎭 Filters & Effects</div>
+            <div class="feature">💫 Tweening & Easing</div>
+            <div class="feature">🌈 Dynamic Lighting</div>
+            <div class="feature">📱 Smooth Animations</div>
+            <div class="feature">🎪 Screen Effects</div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pixi.js/7.4.2/pixi.min.js"></script>
+    <script>
+        // Game setup
+        const app = new PIXI.Application({
+            width: 800,
+            height: 600,
+            backgroundColor: 0x1a1a2e,
+            antialias: true
+        });
+        
+        document.getElementById('gameContainer').appendChild(app.view);
+
+        // Game state
+        const gameState = {
+            player: null,
+            platforms: [],
+            collectibles: [],
+            particles: [],
+            keys: {},
+            score: 0,
+            cameraOffset: { x: 0, y: 0 }
+        };
+
+        // Create graphics programmatically since we can't load external images
+        function createPlayerTexture() {
+            const graphics = new PIXI.Graphics();
+            // Main body
+            graphics.beginFill(0x4ECDC4);
+            graphics.drawRect(0, 0, 30, 40);
+            // Eyes
+            graphics.beginFill(0xFFFFFF);
+            graphics.drawCircle(8, 12, 3);
+            graphics.drawCircle(22, 12, 3);
+            // Mouth
+            graphics.beginFill(0x45B7AF);
+            graphics.drawRect(5, 25, 20, 8);
+            return app.renderer.generateTexture(graphics);
+        }
+
+        function createPlatformTexture(width, height, color) {
+            const graphics = new PIXI.Graphics();
+            // Main platform
+            graphics.beginFill(color);
+            graphics.drawRect(0, 0, width, height);
+            // Shadow/depth effect with proper colors
+            let shadowColor;
+            switch(color) {
+                case 0x16537e: shadowColor = 0x0f3a5f; break;
+                case 0x7209b7: shadowColor = 0x5a0791; break;
+                case 0x2d5aa0: shadowColor = 0x1e3d6f; break;
+                default: shadowColor = 0x333333; break;
+            }
+            graphics.beginFill(shadowColor);
+            graphics.drawRect(0, height-3, width, 3);
+            return app.renderer.generateTexture(graphics);
+        }
+
+        function createCollectibleTexture() {
+            const graphics = new PIXI.Graphics();
+            // Create a diamond/gem shape instead of star
+            graphics.beginFill(0xFFD700);
+            graphics.moveTo(15, 5);   // top
+            graphics.lineTo(25, 15);  // right
+            graphics.lineTo(15, 25);  // bottom
+            graphics.lineTo(5, 15);   // left
+            graphics.lineTo(15, 5);   // back to top
+            graphics.endFill();
+            // Add inner shine
+            graphics.beginFill(0xFFFACD);
+            graphics.moveTo(15, 8);
+            graphics.lineTo(20, 15);
+            graphics.lineTo(15, 22);
+            graphics.lineTo(10, 15);
+            graphics.lineTo(15, 8);
+            graphics.endFill();
+            return app.renderer.generateTexture(graphics);
+        }
+
+        // Particle system
+        class ParticleSystem {
+            constructor(x, y, color, count = 10) {
+                this.particles = [];
+                for (let i = 0; i < count; i++) {
+                    const particle = new PIXI.Graphics();
+                    particle.beginFill(color);
+                    particle.drawCircle(0, 0, Math.random() * 3 + 1);
+                    particle.x = x + (Math.random() - 0.5) * 20;
+                    particle.y = y + (Math.random() - 0.5) * 20;
+                    particle.vx = (Math.random() - 0.5) * 8;
+                    particle.vy = Math.random() * -5 - 2;
+                    particle.life = 1.0;
+                    particle.decay = Math.random() * 0.02 + 0.01;
+                    this.particles.push(particle);
+                    app.stage.addChild(particle);
+                }
+            }
+
+            update() {
+                for (let i = this.particles.length - 1; i >= 0; i--) {
+                    const p = this.particles[i];
+                    p.x += p.vx;
+                    p.y += p.vy;
+                    p.vy += 0.2; // gravity
+                    p.life -= p.decay;
+                    p.alpha = p.life;
+                    p.scale.set(p.life);
+
+                    if (p.life <= 0) {
+                        app.stage.removeChild(p);
+                        this.particles.splice(i, 1);
+                    }
+                }
+            }
+
+            isComplete() {
+                return this.particles.length === 0;
+            }
+        }
+
+        // Player class with enhanced graphics
+        class Player {
+            constructor(x, y) {
+                this.sprite = new PIXI.Sprite(createPlayerTexture());
+                this.sprite.x = x;
+                this.sprite.y = y;
+                this.sprite.anchor.set(0.5, 1);
+                
+                // Simple tint effect instead of glow filter
+                this.sprite.tint = 0x4ECDC4;
+                
+                this.vx = 0;
+                this.vy = 0;
+                this.onGround = false;
+                this.jumpPower = -12; // More forgiving jump
+                this.speed = 4; // Comfortable movement speed
+                
+                app.stage.addChild(this.sprite);
+            }
+
+            update() {
+                // Enhanced movement with acceleration
+                if (gameState.keys['ArrowLeft'] || gameState.keys['a'] || gameState.keys['A']) {
+                    this.vx = Math.max(this.vx - 0.5, -this.speed);
+                    this.sprite.scale.x = -1;
+                    this.createWalkParticles();
+                }
+                if (gameState.keys['ArrowRight'] || gameState.keys['d'] || gameState.keys['D']) {
+                    this.vx = Math.min(this.vx + 0.5, this.speed);
+                    this.sprite.scale.x = 1;
+                    this.createWalkParticles();
+                }
+                
+                // Friction
+                this.vx *= 0.85;
+                
+                // Jump with coyote time (more forgiving)
+                if ((gameState.keys['ArrowUp'] || gameState.keys['w'] || gameState.keys['W'] || gameState.keys[' ']) && this.onGround) {
+                    this.vy = this.jumpPower;
+                    this.onGround = false;
+                    this.createJumpParticles();
+                }
+                
+                // Gravity
+                this.vy += 0.5;
+                this.vy = Math.min(this.vy, 15); // Terminal velocity
+                
+                // Update position
+                this.sprite.x += this.vx;
+                this.sprite.y += this.vy;
+                
+                // Bounce animation
+                this.sprite.rotation = Math.sin(Date.now() * 0.01) * 0.1;
+                
+                // Screen wrapping (more forgiving)
+                if (this.sprite.x < -50) this.sprite.x = 850;
+                if (this.sprite.x > 850) this.sprite.x = -50;
+                if (this.sprite.y > 650) {
+                    this.sprite.y = 50; // Respawn at top instead of game over
+                    this.createRespawnEffect();
+                }
+            }
+
+            createWalkParticles() {
+                if (this.onGround && Math.random() < 0.1) {
+                    gameState.particles.push(new ParticleSystem(
+                        this.sprite.x, this.sprite.y + 5, 0x888888, 3
+                    ));
+                }
+            }
+
+            createJumpParticles() {
+                gameState.particles.push(new ParticleSystem(
+                    this.sprite.x, this.sprite.y + 5, 0x4ECDC4, 8
+                ));
+            }
+
+            createRespawnEffect() {
+                gameState.particles.push(new ParticleSystem(
+                    this.sprite.x, this.sprite.y, 0xFFFFFF, 15
+                ));
+            }
+        }
+
+        // Enhanced Platform class
+        class Platform {
+            constructor(x, y, width, height, color = 0x16537e) {
+                this.sprite = new PIXI.Sprite(createPlatformTexture(width, height, color));
+                this.sprite.x = x;
+                this.sprite.y = y;
+                this.width = width;
+                this.height = height;
+                
+                // Simple tint variation instead of glow filter
+                this.sprite.tint = color;
+                
+                app.stage.addChild(this.sprite);
+            }
+        }
+
+        // Animated Collectible class
+        class Collectible {
+            constructor(x, y) {
+                this.sprite = new PIXI.Sprite(createCollectibleTexture());
+                this.sprite.x = x;
+                this.sprite.y = y;
+                this.sprite.anchor.set(0.5);
+                this.collected = false;
+                this.bobOffset = Math.random() * Math.PI * 2;
+                this.originalY = y;
+                
+                // Bright tint instead of glow filter
+                this.sprite.tint = 0xFFD700;
+                
+                app.stage.addChild(this.sprite);
+            }
+
+            update() {
+                if (!this.collected) {
+                    // Floating animation
+                    this.sprite.y = this.originalY + Math.sin(Date.now() * 0.005 + this.bobOffset) * 10;
+                    this.sprite.rotation += 0.05;
+                    
+                    // Pulsing scale
+                    const pulse = 1 + Math.sin(Date.now() * 0.01 + this.bobOffset) * 0.1;
+                    this.sprite.scale.set(pulse);
+                    
+                    // Color cycling effect with tint
+                    const hue = (Date.now() * 0.003 + this.bobOffset) % 6.28;
+                    const r = Math.sin(hue) * 0.5 + 0.5;
+                    const g = Math.sin(hue + 2.09) * 0.5 + 0.5;
+                    const b = Math.sin(hue + 4.19) * 0.5 + 0.5;
+                    this.sprite.tint = PIXI.utils.rgb2hex([r, g, b]);
+                }
+            }
+
+            collect() {
+                if (!this.collected) {
+                    this.collected = true;
+                    gameState.score++;
+                    
+                    // Collection particle effect
+                    gameState.particles.push(new ParticleSystem(
+                        this.sprite.x, this.sprite.y, 0xFFD700, 12
+                    ));
+                    
+                    // Smooth fade out
+                    const fadeOut = setInterval(() => {
+                        this.sprite.alpha -= 0.1;
+                        this.sprite.scale.x += 0.1;
+                        this.sprite.scale.y += 0.1;
+                        if (this.sprite.alpha <= 0) {
+                            app.stage.removeChild(this.sprite);
+                            clearInterval(fadeOut);
+                        }
+                    }, 50);
+                }
+            }
+        }
+
+        // Initialize game
+        function init() {
+            // Create player
+            gameState.player = new Player(100, 300);
+
+            // Create platforms with varied colors and effects
+            const platformConfigs = [
+                { x: 0, y: 550, w: 200, h: 50, color: 0x16537e },
+                { x: 250, y: 450, w: 150, h: 20, color: 0x7209b7 },
+                { x: 450, y: 350, w: 100, h: 20, color: 0x2d5aa0 },
+                { x: 600, y: 250, w: 120, h: 20, color: 0x16537e },
+                { x: 350, y: 200, w: 80, h: 20, color: 0x7209b7 },
+                { x: 150, y: 150, w: 100, h: 20, color: 0x2d5aa0 },
+                { x: 500, y: 100, w: 150, h: 20, color: 0x16537e },
+                { x: 700, y: 400, w: 100, h: 20, color: 0x7209b7 }
+            ];
+
+            platformConfigs.forEach(config => {
+                gameState.platforms.push(new Platform(config.x, config.y, config.w, config.h, config.color));
+            });
+
+            // Create collectibles
+            const collectiblePositions = [
+                { x: 100, y: 500 }, { x: 325, y: 400 }, { x: 500, y: 300 },
+                { x: 660, y: 200 }, { x: 390, y: 150 }, { x: 200, y: 100 },
+                { x: 575, y: 50 }, { x: 750, y: 350 }
+            ];
+
+            collectiblePositions.forEach(pos => {
+                gameState.collectibles.push(new Collectible(pos.x, pos.y));
+            });
+
+            // Add background effects
+            const stars = createStarField();
+        }
+
+        // Create animated star field background
+        function createStarField() {
+            const stars = [];
+            for (let i = 0; i < 50; i++) {
+                const star = new PIXI.Graphics();
+                star.beginFill(0xFFFFFF);
+                star.drawCircle(0, 0, Math.random() * 2 + 0.5);
+                star.x = Math.random() * 800;
+                star.y = Math.random() * 600;
+                star.alpha = Math.random() * 0.8 + 0.2;
+                star.twinkleSpeed = Math.random() * 0.02 + 0.005;
+                star.twinkleOffset = Math.random() * Math.PI * 2;
+                app.stage.addChildAt(star, 0); // Add to background
+                stars.push(star);
+            }
+            return stars;
+        }
+
+        // Collision detection (more forgiving hitboxes)
+        function checkCollisions() {
+            gameState.player.onGround = false;
+
+            // Platform collisions
+            gameState.platforms.forEach(platform => {
+                const px = gameState.player.sprite.x;
+                const py = gameState.player.sprite.y;
+                const pw = 25; // Slightly smaller hitbox for forgiveness
+                const ph = 35;
+
+                if (px + pw/2 > platform.sprite.x && px - pw/2 < platform.sprite.x + platform.width &&
+                    py > platform.sprite.y && py - ph < platform.sprite.y + platform.height) {
+                    
+                    if (gameState.player.vy > 0) { // Falling
+                        gameState.player.sprite.y = platform.sprite.y;
+                        gameState.player.vy = 0;
+                        gameState.player.onGround = true;
+                    }
+                }
+            });
+
+            // Collectible collisions (generous hitbox)
+            gameState.collectibles.forEach(collectible => {
+                if (!collectible.collected) {
+                    const dx = gameState.player.sprite.x - collectible.sprite.x;
+                    const dy = gameState.player.sprite.y - collectible.sprite.y;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    
+                    if (distance < 40) { // Generous collection radius
+                        collectible.collect();
+                    }
+                }
+            });
+        }
+
+        // Input handling
+        window.addEventListener('keydown', (e) => {
+            gameState.keys[e.key] = true;
+            e.preventDefault();
+        });
+
+        window.addEventListener('keyup', (e) => {
+            gameState.keys[e.key] = false;
+            e.preventDefault();
+        });
+
+        // Score display
+        const scoreText = new PIXI.Text('Score: 0', {
+            fontFamily: 'Arial',
+            fontSize: 24,
+            fill: 0xFFFFFF,
+            dropShadow: true,
+            dropShadowColor: 0x000000,
+            dropShadowBlur: 4,
+            dropShadowAngle: Math.PI / 6,
+            dropShadowDistance: 2,
+        });
+        scoreText.x = 10;
+        scoreText.y = 10;
+        app.stage.addChild(scoreText);
+
+        // Game loop
+        app.ticker.add(() => {
+            gameState.player.update();
+            checkCollisions();
+            
+            // Update collectibles
+            gameState.collectibles.forEach(collectible => collectible.update());
+            
+            // Update particles
+            for (let i = gameState.particles.length - 1; i >= 0; i--) {
+                gameState.particles[i].update();
+                if (gameState.particles[i].isComplete()) {
+                    gameState.particles.splice(i, 1);
+                }
+            }
+            
+            // Update score
+            scoreText.text = `Score: ${gameState.score}/${gameState.collectibles.length}`;
+            
+            // Victory condition with celebration
+            if (gameState.score === gameState.collectibles.length && gameState.collectibles.length > 0) {
+                // Create victory fireworks
+                if (Math.random() < 0.3) {
+                    gameState.particles.push(new ParticleSystem(
+                        Math.random() * 800, Math.random() * 200, 
+                        [0xFF0000, 0x00FF00, 0x0000FF, 0xFFFF00, 0xFF00FF][Math.floor(Math.random() * 5)], 
+                        20
+                    ));
+                }
+                scoreText.text = `🎉 VICTORY! All ${gameState.score} stars collected! 🎉`;
+            }
+        });
+
+        // Initialize the game
+        const stars = init();
+        
+        // Set up twinkling animation for stars
+        stars.forEach(star => {
+            app.ticker.add(() => {
+                star.alpha = 0.3 + Math.sin(Date.now() * star.twinkleSpeed + star.twinkleOffset) * 0.3;
+            });
+        });
+
+        // Game loop
+        app.ticker.add(() => {
+            gameState.player.update();
+            checkCollisions();
+            
+            // Update collectibles
+            gameState.collectibles.forEach(collectible => collectible.update());
+            
+            // Update particles
+            for (let i = gameState.particles.length - 1; i >= 0; i--) {
+                gameState.particles[i].update();
+                if (gameState.particles[i].isComplete()) {
+                    gameState.particles.splice(i, 1);
+                }
+            }
+            
+            // Update score
+            scoreText.text = `Score: ${gameState.score}/${gameState.collectibles.length}`;
+            
+            // Victory condition with celebration
+            if (gameState.score === gameState.collectibles.length && gameState.collectibles.length > 0) {
+                // Create victory fireworks
+                if (Math.random() < 0.3) {
+                    gameState.particles.push(new ParticleSystem(
+                        Math.random() * 800, Math.random() * 200, 
+                        [0xFF0000, 0x00FF00, 0x0000FF, 0xFFFF00, 0xFF00FF][Math.floor(Math.random() * 5)], 
+                        20
+                    ));
+                }
+                scoreText.text = `🎉 VICTORY! All ${gameState.score} stars collected! 🎉`;
+            }
+        });
+    </script>
+</body>
+</html>
