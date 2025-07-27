@@ -1,0 +1,5 @@
+{
+  "title": "PixiJS Demo",
+  "description": "A simple platform collector game using PixiJS from https://pixijs.com/ - it really helps it feel more gamey somehow.",
+  "cover": "pixi_js_demo.png"
+}
