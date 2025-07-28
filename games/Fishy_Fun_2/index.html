@@ -1,0 +1,465 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fish Swimming Demo</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background: #001122;
+            font-family: Arial, sans-serif;
+        }
+        
+        #gameContainer {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+        }
+        
+        .instructions {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            color: white;
+            z-index: 1000;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 15px;
+            border-radius: 10px;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <div id="gameContainer">
+        <div class="instructions">
+            <div><strong>🐠 Fish Swimming Demo</strong></div>
+            <div>Use WASD or Arrow Keys to swim</div>
+            <div>Mouse to look around</div>
+        </div>
+    </div>
+
+    <!-- Three.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    
+    <!-- PixiJS -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pixi.js/8.0.0/pixi.min.js"></script>
+
+    <script>
+        // Game variables
+        let threeRenderer, pixiRenderer;
+        let scene, camera, stage;
+        let fish, oceanFloor;
+        let fishPosition = { x: 0, y: 0, z: 0 };
+        let fishVelocity = { x: 0, y: 0, z: 0 };
+        let mouseX = 0, mouseY = 0;
+        let keys = {};
+        
+        // Constants
+        const FISH_SPEED = 0.05;
+        const CAMERA_DISTANCE = 8;
+        const OCEAN_SIZE = 100;
+        
+        // Initialize the demo
+        async function init() {
+            const WIDTH = window.innerWidth;
+            const HEIGHT = window.innerHeight;
+            
+            // Step 1: Initialize Three.js Renderer and Scene
+            threeRenderer = new THREE.WebGLRenderer({
+                antialias: true,
+                stencil: true, // so masks work in pixijs
+                alpha: true
+            });
+            threeRenderer.setSize(WIDTH, HEIGHT);
+            threeRenderer.setClearColor(0x001122, 1);
+            document.getElementById('gameContainer').appendChild(threeRenderer.domElement);
+            
+            scene = new THREE.Scene();
+            camera = new THREE.PerspectiveCamera(75, WIDTH / HEIGHT, 0.1, 1000);
+            camera.position.set(0, 2, CAMERA_DISTANCE);
+            
+            // Add lighting
+            const ambientLight = new THREE.AmbientLight(0x404040, 0.6);
+            scene.add(ambientLight);
+            
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            directionalLight.position.set(10, 10, 5);
+            scene.add(directionalLight);
+            
+            // Create ocean environment
+            createOceanEnvironment();
+            
+            // Create the fish
+            createFish();
+            
+            // Step 2: Initialize PixiJS Renderer and Stage
+            pixiRenderer = new PIXI.WebGLRenderer();
+            await pixiRenderer.init({
+                context: threeRenderer.getContext(),
+                width: WIDTH,
+                height: HEIGHT,
+                clearBeforeRender: false, // Prevent PixiJS from clearing the Three.js render
+                backgroundAlpha: 0,
+                antialias: false, // Disable to reduce state conflicts
+                powerPreference: 'high-performance'
+            });
+            
+            stage = new PIXI.Container();
+            
+            // Create UI elements
+            createUI();
+            
+            // Set up event listeners
+            setupControls();
+            
+            // Start the game loop
+            animate();
+        }
+        
+        function createOceanEnvironment() {
+            // Create ocean floor
+            const floorGeometry = new THREE.PlaneGeometry(OCEAN_SIZE, OCEAN_SIZE, 32, 32);
+            const floorMaterial = new THREE.MeshLambertMaterial({ 
+                color: 0x4a5d23,
+                wireframe: false
+            });
+            
+            // Add some height variation to make it more interesting
+            const vertices = floorGeometry.attributes.position.array;
+            for (let i = 0; i < vertices.length; i += 3) {
+                vertices[i + 2] = Math.random() * 2 - 1; // Random height variation
+            }
+            floorGeometry.attributes.position.needsUpdate = true;
+            floorGeometry.computeVertexNormals();
+            
+            oceanFloor = new THREE.Mesh(floorGeometry, floorMaterial);
+            oceanFloor.rotation.x = -Math.PI / 2;
+            oceanFloor.position.y = -10;
+            scene.add(oceanFloor);
+            
+            // Add some coral/seaweed
+            for (let i = 0; i < 20; i++) {
+                const coralGeometry = new THREE.ConeGeometry(0.5, Math.random() * 3 + 1, 6);
+                const coralMaterial = new THREE.MeshLambertMaterial({ 
+                    color: new THREE.Color().setHSL(Math.random() * 0.3 + 0.1, 0.7, 0.5)
+                });
+                const coral = new THREE.Mesh(coralGeometry, coralMaterial);
+                coral.position.set(
+                    (Math.random() - 0.5) * OCEAN_SIZE * 0.8,
+                    -9 + coralGeometry.parameters.height / 2,
+                    (Math.random() - 0.5) * OCEAN_SIZE * 0.8
+                );
+                scene.add(coral);
+            }
+            
+            // Add some bubbles
+            const bubbleGeometry = new THREE.SphereGeometry(0.1, 8, 8);
+            const bubbleMaterial = new THREE.MeshBasicMaterial({ 
+                color: 0xaaddff, 
+                transparent: true, 
+                opacity: 0.6 
+            });
+            
+            for (let i = 0; i < 30; i++) {
+                const bubble = new THREE.Mesh(bubbleGeometry, bubbleMaterial);
+                bubble.position.set(
+                    (Math.random() - 0.5) * OCEAN_SIZE,
+                    Math.random() * 20 - 5,
+                    (Math.random() - 0.5) * OCEAN_SIZE
+                );
+                bubble.userData = { 
+                    floatSpeed: Math.random() * 0.02 + 0.01,
+                    startY: bubble.position.y
+                };
+                scene.add(bubble);
+            }
+        }
+        
+        function createFish() {
+            // Create a simple fish using basic geometries
+            const fishGroup = new THREE.Group();
+            
+            // Fish body (ellipsoid)
+            const bodyGeometry = new THREE.SphereGeometry(1, 12, 8);
+            bodyGeometry.scale(1.5, 0.8, 0.6);
+            const bodyMaterial = new THREE.MeshLambertMaterial({ color: 0xff6b35 });
+            const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
+            fishGroup.add(body);
+            
+            // Fish tail
+            const tailGeometry = new THREE.ConeGeometry(0.8, 1.5, 6);
+            const tailMaterial = new THREE.MeshLambertMaterial({ color: 0xe55100 });
+            const tail = new THREE.Mesh(tailGeometry, tailMaterial);
+            tail.position.set(-2, 0, 0);
+            tail.rotation.z = Math.PI / 2;
+            fishGroup.add(tail);
+            
+            // Fish fins
+            const finGeometry = new THREE.ConeGeometry(0.3, 0.8, 4);
+            const finMaterial = new THREE.MeshLambertMaterial({ color: 0xd84315 });
+            
+            const topFin = new THREE.Mesh(finGeometry, finMaterial);
+            topFin.position.set(0, 0.8, 0);
+            topFin.rotation.x = Math.PI;
+            fishGroup.add(topFin);
+            
+            const leftFin = new THREE.Mesh(finGeometry, finMaterial);
+            leftFin.position.set(0.5, -0.3, 0.6);
+            leftFin.rotation.z = -Math.PI / 4;
+            fishGroup.add(leftFin);
+            
+            const rightFin = new THREE.Mesh(finGeometry, finMaterial);
+            rightFin.position.set(0.5, -0.3, -0.6);
+            rightFin.rotation.z = Math.PI / 4;
+            fishGroup.add(rightFin);
+            
+            // Fish eyes
+            const eyeGeometry = new THREE.SphereGeometry(0.15, 8, 8);
+            const eyeMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff });
+            const pupilMaterial = new THREE.MeshBasicMaterial({ color: 0x000000 });
+            
+            const leftEye = new THREE.Mesh(eyeGeometry, eyeMaterial);
+            leftEye.position.set(1, 0.3, 0.4);
+            fishGroup.add(leftEye);
+            
+            const rightEye = new THREE.Mesh(eyeGeometry, eyeMaterial);
+            rightEye.position.set(1, 0.3, -0.4);
+            fishGroup.add(rightEye);
+            
+            const leftPupil = new THREE.Mesh(new THREE.SphereGeometry(0.08, 6, 6), pupilMaterial);
+            leftPupil.position.set(1.1, 0.3, 0.4);
+            fishGroup.add(leftPupil);
+            
+            const rightPupil = new THREE.Mesh(new THREE.SphereGeometry(0.08, 6, 6), pupilMaterial);
+            rightPupil.position.set(1.1, 0.3, -0.4);
+            fishGroup.add(rightPupil);
+            
+            fish = fishGroup;
+            fish.position.set(0, 0, 0);
+            // Rotate the entire fish model 90 degrees clockwise so it faces forward by default
+            fish.rotation.y = Math.PI / 2;
+            scene.add(fish);
+        }
+        
+        function createUI() {
+            // Create a simple compass/minimap
+            const compass = new PIXI.Graphics();
+            compass.circle(0, 0, 40);
+            compass.fill({ color: 0x000033, alpha: 0.8 });
+            compass.circle(0, 0, 35);
+            compass.stroke({ color: 0x4488ff, width: 2 });
+            
+            // Add compass arrow
+            compass.moveTo(0, -25);
+            compass.lineTo(0, 25);
+            compass.stroke({ color: 0xff4444, width: 3 });
+            compass.moveTo(-15, 0);
+            compass.lineTo(15, 0);
+            compass.stroke({ color: 0x44ff44, width: 2 });
+            
+            compass.position.set(window.innerWidth - 80, 80);
+            stage.addChild(compass);
+            
+            // Add depth indicator
+            const depthBg = new PIXI.Graphics();
+            depthBg.roundRect(0, 0, 120, 30, 5);
+            depthBg.fill({ color: 0x000033, alpha: 0.8 });
+            depthBg.stroke({ color: 0x4488ff, width: 1 });
+            depthBg.position.set(20, window.innerHeight - 60);
+            stage.addChild(depthBg);
+            
+            const depthText = new PIXI.Text('Depth: 0m', {
+                fontFamily: 'Arial',
+                fontSize: 14,
+                fill: 0xffffff
+            });
+            depthText.position.set(25, window.innerHeight - 55);
+            stage.addChild(depthText);
+            
+            // Store UI elements for updates
+            window.compassUI = compass;
+            window.depthUI = depthText;
+        }
+        
+        function setupControls() {
+            // Keyboard controls
+            document.addEventListener('keydown', (event) => {
+                keys[event.code] = true;
+            });
+            
+            document.addEventListener('keyup', (event) => {
+                keys[event.code] = false;
+            });
+            
+            // Mouse controls for camera
+            document.addEventListener('mousemove', (event) => {
+                mouseX = (event.clientX / window.innerWidth) * 2 - 1;
+                mouseY = -(event.clientY / window.innerHeight) * 2 + 1;
+            });
+            
+            // Handle window resize
+            window.addEventListener('resize', onWindowResize);
+        }
+        
+        function updateFish() {
+            // Reset velocity with more damping
+            fishVelocity.x *= 0.8;
+            fishVelocity.y *= 0.8;
+            fishVelocity.z *= 0.8;
+            
+            // Handle input
+            if (keys['KeyW'] || keys['ArrowUp']) {
+                fishVelocity.z -= FISH_SPEED;
+            }
+            if (keys['KeyS'] || keys['ArrowDown']) {
+                fishVelocity.z += FISH_SPEED;
+            }
+            if (keys['KeyA'] || keys['ArrowLeft']) {
+                fishVelocity.x -= FISH_SPEED;
+            }
+            if (keys['KeyD'] || keys['ArrowRight']) {
+                fishVelocity.x += FISH_SPEED;
+            }
+            if (keys['Space']) {
+                fishVelocity.y += FISH_SPEED;
+            }
+            if (keys['KeyC']) {
+                fishVelocity.y -= FISH_SPEED;
+            }
+            
+            // Update position
+            fishPosition.x += fishVelocity.x;
+            fishPosition.y += fishVelocity.y;
+            fishPosition.z += fishVelocity.z;
+            
+            // Constrain to ocean bounds
+            fishPosition.x = Math.max(-OCEAN_SIZE/2, Math.min(OCEAN_SIZE/2, fishPosition.x));
+            fishPosition.y = Math.max(-8, Math.min(15, fishPosition.y));
+            fishPosition.z = Math.max(-OCEAN_SIZE/2, Math.min(OCEAN_SIZE/2, fishPosition.z));
+            
+            // Apply position to fish
+            fish.position.set(fishPosition.x, fishPosition.y, fishPosition.z);
+            
+            // Fix fish orientation - add base rotation to account for model orientation
+            if (Math.abs(fishVelocity.x) > 0.01 || Math.abs(fishVelocity.z) > 0.01) {
+                const targetRotation = Math.atan2(-fishVelocity.x, -fishVelocity.z) + Math.PI / 2;
+                fish.rotation.y = targetRotation;
+            }
+            
+            // Tilt fish based on vertical movement
+            fish.rotation.x = -fishVelocity.y * 0.5;
+            
+            // Animate tail
+            const time = Date.now() * 0.005;
+            fish.children[1].rotation.y = Math.sin(time * 5) * 0.3; // tail animation
+        }
+        
+        function updateCamera() {
+            // Follow fish with smooth camera
+            const targetPos = new THREE.Vector3(
+                fishPosition.x - CAMERA_DISTANCE * Math.sin(fish.rotation.y),
+                fishPosition.y + 2,
+                fishPosition.z - CAMERA_DISTANCE * Math.cos(fish.rotation.y)
+            );
+            
+            camera.position.lerp(targetPos, 0.05);
+            
+            // Clamp camera Y position to prevent going below ocean floor
+            camera.position.y = Math.max(-5, camera.position.y);
+            camera.position.y = Math.min(25, camera.position.y);
+            
+            camera.lookAt(fish.position);
+            
+            // Add slight mouse influence (reduced and clamped)
+            const mouseInfluenceX = mouseX * 1.5;
+            const mouseInfluenceY = Math.max(-3, Math.min(3, mouseY * 1.5));
+            
+            camera.position.x += mouseInfluenceX;
+            camera.position.y += mouseInfluenceY;
+            
+            // Ensure camera doesn't go below floor after mouse influence
+            camera.position.y = Math.max(-5, camera.position.y);
+        }
+        
+        function updateEnvironment() {
+            // Animate bubbles
+            scene.children.forEach(child => {
+                if (child.userData && child.userData.floatSpeed) {
+                    child.position.y += child.userData.floatSpeed;
+                    child.position.x += Math.sin(Date.now() * 0.001 + child.position.z) * 0.01;
+                    
+                    if (child.position.y > 20) {
+                        child.position.y = -10;
+                        child.position.x = (Math.random() - 0.5) * OCEAN_SIZE;
+                        child.position.z = (Math.random() - 0.5) * OCEAN_SIZE;
+                    }
+                }
+            });
+        }
+        
+        function updateUI() {
+            // Update compass
+            if (window.compassUI) {
+                window.compassUI.rotation = -fish.rotation.y;
+            }
+            
+            // Update depth indicator
+            if (window.depthUI) {
+                const depth = Math.max(0, -fishPosition.y + 8);
+                window.depthUI.text = `Depth: ${depth.toFixed(1)}m`;
+            }
+        }
+        
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            // Update game logic
+            updateFish();
+            updateCamera();
+            updateEnvironment();
+            updateUI();
+            
+            // Get WebGL context for manual state management
+            const gl = threeRenderer.getContext();
+            
+            // Render Three.js scene first
+            threeRenderer.resetState();
+            threeRenderer.render(scene, camera);
+            
+            // Clear some WebGL state before PixiJS render
+            gl.useProgram(null);
+            gl.bindBuffer(gl.ARRAY_BUFFER, null);
+            gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
+            
+            // Render PixiJS UI overlay
+            pixiRenderer.render({ container: stage, clear: false });
+        }
+        
+        function onWindowResize() {
+            const WIDTH = window.innerWidth;
+            const HEIGHT = window.innerHeight;
+            
+            camera.aspect = WIDTH / HEIGHT;
+            camera.updateProjectionMatrix();
+            
+            threeRenderer.setSize(WIDTH, HEIGHT);
+            pixiRenderer.resize(WIDTH, HEIGHT);
+            
+            // Update UI positions
+            if (window.compassUI) {
+                window.compassUI.position.set(WIDTH - 80, 80);
+            }
+            if (window.depthUI) {
+                window.depthUI.position.set(25, HEIGHT - 55);
+                window.depthUI.parent.position.set(20, HEIGHT - 60);
+            }
+        }
+        
+        // Start the game
+        init().catch(console.error);
+    </script>
+</body>
+</html>
