@@ -1,0 +1,560 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dog Park Adventure</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: linear-gradient(135deg, #87CEEB, #98FB98);
+            overflow: hidden;
+            font-family: 'Arial', sans-serif;
+        }
+        
+        #gameContainer {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+        }
+        
+        #ui {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            z-index: 100;
+            color: white;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.8);
+            font-size: 18px;
+        }
+        
+        #instructions {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            z-index: 100;
+            color: white;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.8);
+            font-size: 14px;
+        }
+        
+        .score-popup {
+            position: absolute;
+            pointer-events: none;
+            font-weight: bold;
+            font-size: 20px;
+            color: #FFD700;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.8);
+            z-index: 50;
+        }
+    </style>
+</head>
+<body>
+    <div id="gameContainer">
+        <div id="ui">
+            <div>🦴 Bones: <span id="boneCount">0</span></div>
+            <div>🐦 Birds Chased: <span id="birdCount">0</span></div>
+            <div>🐿️ Squirrels Found: <span id="squirrelCount">0</span></div>
+        </div>
+        <div id="instructions">
+            Use WASD or Arrow Keys to move your dog around the park!<br>
+            Find bones, chase birds, and discover squirrels hiding in bushes!
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pixi.js/8.11.0/pixi.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    
+    <script>
+        class DogParkGame {
+            constructor() {
+                this.scores = { bones: 0, birds: 0, squirrels: 0 };
+                this.gameObjects = [];
+                this.dog = null;
+                this.keys = {};
+                this.particleSystems = [];
+                
+                this.init();
+            }
+            
+            async init() {
+                // Create PIXI Application with new v8 syntax
+                this.pixiApp = new PIXI.Application();
+                await this.pixiApp.init({
+                    width: window.innerWidth,
+                    height: window.innerHeight,
+                    backgroundColor: 0x87CEEB,
+                    antialias: true
+                });
+                
+                document.getElementById('gameContainer').appendChild(this.pixiApp.canvas);
+                
+                // Create Three.js scene for 3D elements
+                this.setupThreeJS();
+                
+                // Create game world
+                this.createPark();
+                this.createDog();
+                this.createInteractables();
+                
+                // Setup input
+                this.setupInput();
+                
+                // Start game loop
+                this.gameLoop();
+            }
+            
+            setupThreeJS() {
+                this.scene = new THREE.Scene();
+                this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+                this.threeRenderer = new THREE.WebGLRenderer({ alpha: true });
+                this.threeRenderer.setSize(window.innerWidth, window.innerHeight);
+                this.threeRenderer.domElement.style.position = 'absolute';
+                this.threeRenderer.domElement.style.top = '0';
+                this.threeRenderer.domElement.style.pointerEvents = 'none';
+                this.threeRenderer.domElement.style.zIndex = '10';
+                document.getElementById('gameContainer').appendChild(this.threeRenderer.domElement);
+                
+                this.camera.position.set(0, 15, 20);
+                this.camera.lookAt(0, 0, 0);
+                
+                // Add lighting
+                const ambientLight = new THREE.AmbientLight(0x404040, 0.6);
+                this.scene.add(ambientLight);
+                
+                const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+                directionalLight.position.set(10, 10, 5);
+                this.scene.add(directionalLight);
+            }
+            
+            createPark() {
+                // Create grass background with PIXI
+                const grassTexture = this.createGrassTexture();
+                const grassSprite = new PIXI.Sprite(grassTexture);
+                grassSprite.width = window.innerWidth;
+                grassSprite.height = window.innerHeight;
+                this.pixiApp.stage.addChild(grassSprite);
+                
+                // Create trees with Three.js
+                this.createTrees();
+                
+                // Add some decorative flowers with PIXI
+                this.createFlowers();
+            }
+            
+            createGrassTexture() {
+                const canvas = document.createElement('canvas');
+                canvas.width = 256;
+                canvas.height = 256;
+                const ctx = canvas.getContext('2d');
+                
+                // Create grass pattern
+                const gradient = ctx.createLinearGradient(0, 0, 0, 256);
+                gradient.addColorStop(0, '#7CB342');
+                gradient.addColorStop(1, '#558B2F');
+                ctx.fillStyle = gradient;
+                ctx.fillRect(0, 0, 256, 256);
+                
+                // Add grass texture
+                for (let i = 0; i < 200; i++) {
+                    ctx.strokeStyle = `rgba(${100 + Math.random() * 50}, ${150 + Math.random() * 50}, ${50 + Math.random() * 30}, 0.3)`;
+                    ctx.lineWidth = Math.random() * 2;
+                    const x = Math.random() * 256;
+                    const y = Math.random() * 256;
+                    ctx.beginPath();
+                    ctx.moveTo(x, y);
+                    ctx.lineTo(x + Math.random() * 10 - 5, y - Math.random() * 15);
+                    ctx.stroke();
+                }
+                
+                return PIXI.Texture.from(canvas);
+            }
+            
+            createTrees() {
+                for (let i = 0; i < 8; i++) {
+                    const tree = new THREE.Group();
+                    
+                    // Tree trunk
+                    const trunkGeometry = new THREE.CylinderGeometry(0.3, 0.4, 3, 8);
+                    const trunkMaterial = new THREE.MeshLambertMaterial({ color: 0x8B4513 });
+                    const trunk = new THREE.Mesh(trunkGeometry, trunkMaterial);
+                    trunk.position.y = 1.5;
+                    
+                    // Tree foliage
+                    const foliageGeometry = new THREE.SphereGeometry(2, 8, 6);
+                    const foliageMaterial = new THREE.MeshLambertMaterial({ color: 0x228B22 });
+                    const foliage = new THREE.Mesh(foliageGeometry, foliageMaterial);
+                    foliage.position.y = 4;
+                    foliage.scale.y = 0.8;
+                    
+                    tree.add(trunk);
+                    tree.add(foliage);
+                    
+                    // Position trees around the edges
+                    const angle = (i / 8) * Math.PI * 2;
+                    const radius = 12 + Math.random() * 5;
+                    tree.position.x = Math.cos(angle) * radius;
+                    tree.position.z = Math.sin(angle) * radius;
+                    
+                    this.scene.add(tree);
+                }
+            }
+            
+            createFlowers() {
+                for (let i = 0; i < 15; i++) {
+                    const flower = new PIXI.Graphics();
+                    const colors = [0xFF69B4, 0xFF1493, 0xFFB6C1, 0xFFA07A, 0xFFD700];
+                    const color = colors[Math.floor(Math.random() * colors.length)];
+                    
+                    flower.beginFill(color);
+                    flower.drawCircle(0, 0, 8);
+                    flower.beginFill(0xFFFFFF);
+                    flower.drawCircle(0, 0, 4);
+                    
+                    flower.x = Math.random() * window.innerWidth;
+                    flower.y = Math.random() * window.innerHeight;
+                    
+                    this.pixiApp.stage.addChild(flower);
+                }
+            }
+            
+            createDog() {
+                console.log("Creating dog..."); // Debug log
+                this.dog = new PIXI.Graphics();
+                
+                // Dog body (brown oval)
+                this.dog.rect(-25, -15, 50, 30);
+                this.dog.fill(0x8B4513);
+                
+                // Dog head
+                this.dog.circle(-20, 0, 12);
+                this.dog.fill(0xA0522D);
+                
+                // Dog ears
+                this.dog.ellipse(-28, -8, 8, 4);
+                this.dog.fill(0x654321);
+                this.dog.ellipse(-28, 8, 8, 4);
+                this.dog.fill(0x654321);
+                
+                // Dog tail
+                this.dog.ellipse(22, -5, 12, 6);
+                this.dog.fill(0x8B4513);
+                
+                // Dog eyes
+                this.dog.circle(-25, -3, 2);
+                this.dog.fill(0x000000);
+                this.dog.circle(-25, 3, 2);
+                this.dog.fill(0x000000);
+                
+                // Dog nose
+                this.dog.circle(-32, 0, 1.5);
+                this.dog.fill(0x000000);
+                
+                this.dog.x = window.innerWidth / 2;
+                this.dog.y = window.innerHeight / 2;
+                this.dog.scale.x = 1; // Start facing right
+                
+                console.log("Dog created at:", this.dog.x, this.dog.y); // Debug log
+                this.pixiApp.stage.addChild(this.dog);
+                console.log("Dog added to stage"); // Debug log
+            }
+            
+            createInteractables() {
+                // Create bones
+                for (let i = 0; i < 5; i++) {
+                    this.createBone();
+                }
+                
+                // Create birds
+                for (let i = 0; i < 3; i++) {
+                    this.createBird();
+                }
+                
+                // Create bushes with hidden squirrels
+                for (let i = 0; i < 4; i++) {
+                    this.createBush();
+                }
+            }
+            
+            createBone() {
+                const bone = new PIXI.Graphics();
+                
+                // Bone shape using new v8 API
+                bone.roundRect(-15, -3, 30, 6, 3);
+                bone.fill(0xFFFACD);
+                bone.circle(-15, 0, 6);
+                bone.fill(0xFFFACD);
+                bone.circle(15, 0, 6);
+                bone.fill(0xFFFACD);
+                bone.circle(-15, -6, 3);
+                bone.fill(0xFFFACD);
+                bone.circle(-15, 6, 3);
+                bone.fill(0xFFFACD);
+                bone.circle(15, -6, 3);
+                bone.fill(0xFFFACD);
+                bone.circle(15, 6, 3);
+                bone.fill(0xFFFACD);
+                
+                bone.x = Math.random() * (window.innerWidth - 100) + 50;
+                bone.y = Math.random() * (window.innerHeight - 100) + 50;
+                bone.type = 'bone';
+                
+                this.gameObjects.push(bone);
+                this.pixiApp.stage.addChild(bone);
+            }
+            
+            createBird() {
+                const bird = new PIXI.Graphics();
+                
+                // Bird body
+                bird.ellipse(0, 0, 8, 6);
+                bird.fill(0xFF6347);
+                
+                // Wing
+                bird.ellipse(-6, 0, 6, 4);
+                bird.fill(0xFF4500);
+                
+                // Beak - using moveTo/lineTo for triangle
+                bird.moveTo(10, 0);
+                bird.lineTo(15, -2);
+                bird.lineTo(15, 2);
+                bird.lineTo(10, 0);
+                bird.fill(0xFFA500);
+                
+                bird.x = Math.random() * (window.innerWidth - 100) + 50;
+                bird.y = Math.random() * (window.innerHeight - 100) + 50;
+                bird.type = 'bird';
+                bird.vx = (Math.random() - 0.5) * 2;
+                bird.vy = (Math.random() - 0.5) * 2;
+                bird.fled = false;
+                
+                this.gameObjects.push(bird);
+                this.pixiApp.stage.addChild(bird);
+            }
+            
+            createBush() {
+                const bush = new PIXI.Graphics();
+                
+                // Main bush body
+                bush.circle(0, 0, 20);
+                bush.fill(0x228B22);
+                
+                // Additional bush parts for more natural look
+                bush.circle(-5, -5, 12);
+                bush.fill(0x32CD32);
+                bush.circle(8, 3, 15);
+                bush.fill(0x32CD32);
+                
+                bush.x = Math.random() * (window.innerWidth - 100) + 50;
+                bush.y = Math.random() * (window.innerHeight - 100) + 50;
+                bush.type = 'bush';
+                bush.hasSquirrel = true;
+                bush.searched = false;
+                
+                this.gameObjects.push(bush);
+                this.pixiApp.stage.addChild(bush);
+            }
+            
+            setupInput() {
+                window.addEventListener('keydown', (e) => {
+                    this.keys[e.code] = true;
+                });
+                
+                window.addEventListener('keyup', (e) => {
+                    this.keys[e.code] = false;
+                });
+            }
+            
+            updateDogMovement() {
+                const speed = 3;
+                let moved = false;
+                
+                if (this.keys['KeyW'] || this.keys['ArrowUp']) {
+                    this.dog.y -= speed;
+                    moved = true;
+                }
+                if (this.keys['KeyS'] || this.keys['ArrowDown']) {
+                    this.dog.y += speed;
+                    moved = true;
+                }
+                if (this.keys['KeyA'] || this.keys['ArrowLeft']) {
+                    this.dog.x -= speed;
+                    this.dog.scale.x = 1; // Face left (normal orientation)
+                    moved = true;
+                }
+                if (this.keys['KeyD'] || this.keys['ArrowRight']) {
+                    this.dog.x += speed;
+                    this.dog.scale.x = -1; // Face right (flipped)
+                    moved = true;
+                }
+                
+                // Keep dog in bounds
+                this.dog.x = Math.max(50, Math.min(window.innerWidth - 50, this.dog.x));
+                this.dog.y = Math.max(50, Math.min(window.innerHeight - 50, this.dog.y));
+                
+                // Add walking animation
+                if (moved) {
+                    this.dog.rotation = Math.sin(Date.now() * 0.01) * 0.1;
+                } else {
+                    this.dog.rotation = 0;
+                }
+            }
+            
+            updateBirds() {
+                this.gameObjects.forEach(obj => {
+                    if (obj.type === 'bird' && !obj.fled) {
+                        // Bird movement
+                        obj.x += obj.vx;
+                        obj.y += obj.vy;
+                        
+                        // Bounce off edges
+                        if (obj.x < 30 || obj.x > window.innerWidth - 30) obj.vx *= -1;
+                        if (obj.y < 30 || obj.y > window.innerHeight - 30) obj.vy *= -1;
+                        
+                        // Check if dog is nearby
+                        const dist = Math.sqrt((obj.x - this.dog.x) ** 2 + (obj.y - this.dog.y) ** 2);
+                        if (dist < 60) {
+                            // Bird flies away
+                            obj.vx = (obj.x - this.dog.x) / dist * 5;
+                            obj.vy = (obj.y - this.dog.y) / dist * 5;
+                            obj.fled = true;
+                            
+                            this.scores.birds++;
+                            document.getElementById('birdCount').textContent = this.scores.birds;
+                            this.showScorePopup(obj.x, obj.y, '+1 Bird!', 0xFFD700);
+                            
+                            // Remove bird after flying away
+                            setTimeout(() => {
+                                this.pixiApp.stage.removeChild(obj);
+                                const index = this.gameObjects.indexOf(obj);
+                                if (index > -1) this.gameObjects.splice(index, 1);
+                                
+                                // Spawn new bird
+                                setTimeout(() => this.createBird(), 3000);
+                            }, 2000);
+                        }
+                    }
+                });
+            }
+            
+            checkCollisions() {
+                this.gameObjects.forEach((obj, index) => {
+                    const dist = Math.sqrt((obj.x - this.dog.x) ** 2 + (obj.y - this.dog.y) ** 2);
+                    
+                    if (obj.type === 'bone' && dist < 40) {
+                        // Collect bone
+                        this.scores.bones++;
+                        document.getElementById('boneCount').textContent = this.scores.bones;
+                        this.showScorePopup(obj.x, obj.y, '+1 Bone!', 0xFFD700);
+                        this.createParticleEffect(obj.x, obj.y, 0xFFD700);
+                        
+                        this.pixiApp.stage.removeChild(obj);
+                        this.gameObjects.splice(index, 1);
+                        
+                        // Spawn new bone
+                        setTimeout(() => this.createBone(), 2000);
+                        
+                    } else if (obj.type === 'bush' && dist < 45 && !obj.searched) {
+                        // Search bush for squirrel
+                        obj.searched = true;
+                        if (obj.hasSquirrel) {
+                            this.scores.squirrels++;
+                            document.getElementById('squirrelCount').textContent = this.scores.squirrels;
+                            this.showScorePopup(obj.x, obj.y, '🐿️ Squirrel!', 0xFF6347);
+                            this.createParticleEffect(obj.x, obj.y, 0xFF6347);
+                            
+                            // Make bush look searched
+                            obj.alpha = 0.7;
+                        }
+                    }
+                });
+            }
+            
+            showScorePopup(x, y, text, color) {
+                const popup = document.createElement('div');
+                popup.className = 'score-popup';
+                popup.textContent = text;
+                popup.style.left = x + 'px';
+                popup.style.top = y + 'px';
+                popup.style.color = `#${color.toString(16).padStart(6, '0')}`;
+                
+                document.getElementById('gameContainer').appendChild(popup);
+                
+                // Animate popup
+                let opacity = 1;
+                let yOffset = 0;
+                const animatePopup = () => {
+                    opacity -= 0.02;
+                    yOffset -= 2;
+                    popup.style.opacity = opacity;
+                    popup.style.transform = `translateY(${yOffset}px)`;
+                    
+                    if (opacity > 0) {
+                        requestAnimationFrame(animatePopup);
+                    } else {
+                        popup.remove();
+                    }
+                };
+                animatePopup();
+            }
+            
+            createParticleEffect(x, y, color) {
+                for (let i = 0; i < 10; i++) {
+                    const particle = new PIXI.Graphics();
+                    particle.circle(0, 0, Math.random() * 3 + 1);
+                    particle.fill(color);
+                    particle.x = x;
+                    particle.y = y;
+                    
+                    const angle = Math.random() * Math.PI * 2;
+                    const speed = Math.random() * 3 + 1;
+                    particle.vx = Math.cos(angle) * speed;
+                    particle.vy = Math.sin(angle) * speed;
+                    particle.life = 1;
+                    
+                    this.pixiApp.stage.addChild(particle);
+                    this.particleSystems.push(particle);
+                }
+            }
+            
+            updateParticles() {
+                this.particleSystems.forEach((particle, index) => {
+                    particle.x += particle.vx;
+                    particle.y += particle.vy;
+                    particle.vy += 0.1; // Gravity
+                    particle.life -= 0.02;
+                    particle.alpha = particle.life;
+                    
+                    if (particle.life <= 0) {
+                        this.pixiApp.stage.removeChild(particle);
+                        this.particleSystems.splice(index, 1);
+                    }
+                });
+            }
+            
+            gameLoop() {
+                this.updateDogMovement();
+                this.updateBirds();
+                this.checkCollisions();
+                this.updateParticles();
+                
+                // Render Three.js scene
+                this.threeRenderer.render(this.scene, this.camera);
+                
+                requestAnimationFrame(() => this.gameLoop());
+            }
+        }
+        
+        // Start the game when page loads
+        window.addEventListener('load', async () => {
+            new DogParkGame();
+        });
+        
+        // Handle window resize
+        window.addEventListener('resize', () => {
+            location.reload(); // Simple solution for demo
+        });
+    </script>
+</body>
+</html>
