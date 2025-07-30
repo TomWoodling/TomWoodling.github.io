@@ -1,0 +1,726 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gnarly Surf Parallax Game</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pixi.js/8.11.0/pixi.js"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: #0a1a2a;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            font-family: 'Arial', sans-serif;
+            overflow: hidden;
+        }
+        #gameContainer {
+            border: 3px solid #1e3a5f;
+            border-radius: 10px;
+            box-shadow: 0 0 20px rgba(30, 58, 95, 0.5);
+        }
+        #instructions {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            color: #ffffff;
+            font-size: 14px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 10px;
+            border-radius: 5px;
+            z-index: 1000;
+        }
+        #score {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            color: #00FFFF;
+            font-size: 18px;
+            font-weight: bold;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 10px;
+            border-radius: 5px;
+            z-index: 1000;
+        }
+    </style>
+</head>
+<body>
+    <div id="gameContainer"></div>
+    <div id="instructions">
+        A/D - Move Left/Right<br>
+        W/S - Dodge Up/Down<br>
+        SPACE - Jump Big Waves!<br>
+        Stay gnarly, dude! 🏄‍♂️
+    </div>
+    <div id="score">
+        Speed: <span id="speedCounter">2.0</span><br>
+        Score: <span id="scoreCounter">0</span>
+    </div>
+
+    <script>
+        class GnarlySurfGame {
+            constructor() {
+                this.app = new PIXI.Application();
+                this.gameContainer = document.getElementById('gameContainer');
+                
+                this.surfer = null;
+                this.tilingSprites = {};
+                this.obstacles = [];
+                this.bigWaves = [];
+                this.messages = [];
+                this.keys = { 
+                    left: false, 
+                    right: false, 
+                    up: false, 
+                    down: false, 
+                    space: false 
+                };
+                this.scrollSpeed = 2;
+                this.surferTargetX = 0;
+                this.surferTargetY = 0;
+                this.surferVelocityY = 0;
+                this.isJumping = false;
+                this.shakeIntensity = 0;
+                this.time = 0;
+                this.score = 0;
+                this.baselineY = 0; // Will be set based on screen height
+                
+                this.init();
+            }
+
+            async init() {
+                await this.app.init({
+                    width: 1000,
+                    height: 600,
+                    backgroundColor: 0x1e3a5f
+                });
+                
+                this.gameContainer.appendChild(this.app.canvas);
+                this.baselineY = this.app.screen.height * 0.73;
+                await this.setupScene();
+                this.createSurfer();
+                this.setupInput();
+                this.app.ticker.add((ticker) => this.gameLoop(ticker.deltaTime));
+                this.spawnObstacles();
+                this.spawnBigWaves();
+            }
+
+            async setupScene() {
+                const { width, height } = this.app.screen;
+
+                // Sky gradient background
+                const skyGradient = new PIXI.Graphics();
+                skyGradient.rect(0, 0, width, height * 0.7).fill(0x87CEEB);
+                skyGradient.rect(0, height * 0.5, width, height * 0.2).fill({ color: 0x4682B4, alpha: 0.8 });
+                this.app.stage.addChild(skyGradient);
+
+                // Cloud layer
+                const cloudTexture = await this.createCloudTexture();
+                this.tilingSprites.clouds = new PIXI.TilingSprite({
+                    texture: cloudTexture,
+                    width: width,
+                    height: 80
+                });
+                this.tilingSprites.clouds.y = 60;
+                this.tilingSprites.clouds.alpha = 0.7;
+                this.tilingSprites.clouds.scrollSpeed = 0.3;
+                this.app.stage.addChild(this.tilingSprites.clouds);
+
+                // Distant palm islands
+                const islandTexture = await this.createIslandTexture();
+                this.tilingSprites.islands = new PIXI.TilingSprite({
+                    texture: islandTexture,
+                    width: width,
+                    height: 100
+                });
+                this.tilingSprites.islands.y = height * 0.45;
+                this.tilingSprites.islands.scrollSpeed = 0.5;
+                this.app.stage.addChild(this.tilingSprites.islands);
+
+                // Background water
+                const bgWaterTexture = await this.createWaterTexture(0x4682B4, 0x5F9EA0);
+                this.tilingSprites.bgWater = new PIXI.TilingSprite({
+                    texture: bgWaterTexture,
+                    width: width,
+                    height: 120
+                });
+                this.tilingSprites.bgWater.y = height * 0.55;
+                this.tilingSprites.bgWater.scrollSpeed = 0.8;
+                this.app.stage.addChild(this.tilingSprites.bgWater);
+
+                // Midground container
+                this.midgroundContainer = new PIXI.Container();
+                this.app.stage.addChild(this.midgroundContainer);
+
+                // Surf line (blue guideline)
+                const surfLine = new PIXI.Graphics();
+                surfLine.rect(0, this.baselineY, width, 3).fill({ color: 0x00FFFF, alpha: 0.8 });
+                this.app.stage.addChild(surfLine);
+
+                // Foreground waves
+                const fgWaveTexture = await this.createWaveTexture(0x1E90FF, 0x00BFFF);
+                this.tilingSprites.fgWaves = new PIXI.TilingSprite({
+                    texture: fgWaveTexture,
+                    width: width,
+                    height: 100
+                });
+                this.tilingSprites.fgWaves.y = height * 0.75;
+                this.tilingSprites.fgWaves.scrollSpeed = 1.5;
+                this.app.stage.addChild(this.tilingSprites.fgWaves);
+
+                // Water foam/spray
+                const foamTexture = await this.createFoamTexture();
+                this.tilingSprites.foam = new PIXI.TilingSprite({
+                    texture: foamTexture,
+                    width: width,
+                    height: 40
+                });
+                this.tilingSprites.foam.y = height * 0.85;
+                this.tilingSprites.foam.alpha = 0.8;
+                this.tilingSprites.foam.scrollSpeed = 2.0;
+                this.app.stage.addChild(this.tilingSprites.foam);
+
+                // Message container for feedback text
+                this.messageContainer = new PIXI.Container();
+                this.app.stage.addChild(this.messageContainer);
+            }
+
+            async createCloudTexture() {
+                const graphics = new PIXI.Graphics();
+                const width = 400;
+                const height = 80;
+
+                graphics.rect(0, 0, width, height).fill(0x87CEEB);
+
+                for (let i = 0; i < 6; i++) {
+                    const x = i * 70 + 20;
+                    const y = 40;
+                    
+                    graphics.circle(x, y, 18).fill({ color: 0xFFFFFF, alpha: 0.9 });
+                    graphics.circle(x + 20, y, 15).fill({ color: 0xFFFFFF, alpha: 0.8 });
+                    graphics.circle(x + 35, y, 12).fill({ color: 0xFFFFFF, alpha: 0.7 });
+                    graphics.circle(x + 15, y - 10, 10).fill({ color: 0xFFFFFF, alpha: 0.8 });
+                }
+
+                return this.app.renderer.generateTexture(graphics);
+            }
+
+            async createIslandTexture() {
+                const graphics = new PIXI.Graphics();
+                const width = 500;
+                const height = 100;
+
+                graphics.rect(0, 0, width, height).fill(0x4682B4);
+
+                // Palm tree islands
+                for (let i = 0; i < 3; i++) {
+                    const x = i * 170 + 80;
+                    const baseY = height - 10;
+                    
+                    // Island
+                    graphics.ellipse(x, baseY, 40, 15).fill({ color: 0xF4A460, alpha: 0.8 });
+                    
+                    // Palm tree trunk
+                    graphics.rect(x - 2, baseY - 30, 4, 25).fill(0x8B4513);
+                    
+                    // Palm fronds
+                    for (let j = 0; j < 5; j++) {
+                        const angle = (j / 5) * Math.PI * 2;
+                        const frondX = x + Math.cos(angle) * 15;
+                        const frondY = baseY - 30 + Math.sin(angle) * 8;
+                        graphics.ellipse(frondX, frondY, 12, 4).fill({ color: 0x228B22, alpha: 0.7 });
+                    }
+                }
+
+                return this.app.renderer.generateTexture(graphics);
+            }
+
+            async createWaterTexture(color1, color2) {
+                const graphics = new PIXI.Graphics();
+                const width = 300;
+                const height = 120;
+
+                graphics.rect(0, 0, width, height).fill(color1);
+
+                for (let x = 0; x < width; x += 30) {
+                    const waveHeight = Math.sin(x * 0.02) * 15 + height * 0.3;
+                    graphics.rect(x, waveHeight, 30, height - waveHeight).fill({ color: color2, alpha: 0.6 });
+                    
+                    for (let i = 0; i < 3; i++) {
+                        const capX = x + i * 10 + 5;
+                        const capY = waveHeight + Math.sin(capX * 0.1) * 5;
+                        graphics.circle(capX, capY, 3).fill({ color: 0xFFFFFF, alpha: 0.4 });
+                    }
+                }
+
+                return this.app.renderer.generateTexture(graphics);
+            }
+
+            async createWaveTexture(color1, color2) {
+                const graphics = new PIXI.Graphics();
+                const width = 200;
+                const height = 100;
+
+                graphics.rect(0, 0, width, height).fill(color1);
+
+                for (let x = 0; x < width; x += 25) {
+                    const waveTop = Math.sin(x * 0.03) * 20 + 30;
+                    const waveBottom = waveTop + 40;
+                    
+                    graphics.rect(x, waveTop, 25, waveBottom - waveTop).fill({ color: color2, alpha: 0.8 });
+                    graphics.rect(x + 5, waveTop - 3, 15, 6).fill({ color: 0xFFFFFF, alpha: 0.6 });
+                }
+
+                return this.app.renderer.generateTexture(graphics);
+            }
+
+            async createFoamTexture() {
+                const graphics = new PIXI.Graphics();
+                const width = 150;
+                const height = 40;
+
+                graphics.rect(0, 0, width, height).fill({ color: 0x1E90FF, alpha: 0.3 });
+
+                for (let i = 0; i < 20; i++) {
+                    const x = Math.random() * width;
+                    const y = Math.random() * height;
+                    const size = Math.random() * 4 + 1;
+                    
+                    graphics.circle(x, y, size).fill({ color: 0xFFFFFF, alpha: Math.random() * 0.8 + 0.2 });
+                }
+
+                return this.app.renderer.generateTexture(graphics);
+            }
+
+            createSurfer() {
+                this.surfer = new PIXI.Graphics();
+                
+                // Surfboard shadow
+                this.surfer.ellipse(2, 5, 35, 8).fill({ color: 0x000000, alpha: 0.3 });
+                
+                // Surfboard
+                this.surfer.ellipse(0, 0, 35, 8).fill(0xFF6B35);
+                this.surfer.ellipse(0, 0, 30, 6).fill(0xFFFFFF);
+                
+                // Surfboard fins
+                this.surfer.poly([-25, 2, -30, 8, -20, 5]).fill(0x333333);
+                this.surfer.poly([25, 2, 30, 8, 20, 5]).fill(0x333333);
+                
+                // Surfer dude
+                // Head
+                this.surfer.circle(0, -15, 6).fill(0xFFDBAE);
+                
+                // Hair (blonde)
+                this.surfer.circle(-2, -20, 4).fill(0xFFD700);
+                this.surfer.circle(2, -20, 4).fill(0xFFD700);
+                this.surfer.circle(0, -22, 4).fill(0xFFD700);
+                
+                // Body
+                this.surfer.rect(-4, -12, 8, 12).fill(0xFF6B35);
+                
+                // Arms (in surfing position)
+                this.surfer.ellipse(-8, -8, 3, 8).fill(0xFFDBAE);
+                this.surfer.ellipse(8, -8, 3, 8).fill(0xFFDBAE);
+                
+                // Legs (bent for balance)
+                this.surfer.ellipse(-3, 2, 2, 6).fill(0x4169E1);
+                this.surfer.ellipse(3, 2, 2, 6).fill(0x4169E1);
+                
+                this.surfer.x = this.app.screen.width / 2;
+                this.surfer.y = this.baselineY;
+                this.surferTargetX = this.surfer.x;
+                this.surferTargetY = this.surfer.y;
+                
+                this.midgroundContainer.addChild(this.surfer);
+            }
+
+            setupInput() {
+                const handleKeyDown = (e) => {
+                    switch(e.code) {
+                        case 'ArrowLeft':
+                        case 'KeyA':
+                            this.keys.left = true;
+                            e.preventDefault();
+                            break;
+                        case 'ArrowRight':
+                        case 'KeyD':
+                            this.keys.right = true;
+                            e.preventDefault();
+                            break;
+                        case 'ArrowUp':
+                        case 'KeyW':
+                            this.keys.up = true;
+                            e.preventDefault();
+                            break;
+                        case 'ArrowDown':
+                        case 'KeyS':
+                            this.keys.down = true;
+                            e.preventDefault();
+                            break;
+                        case 'Space':
+                            if (!this.isJumping) {
+                                this.keys.space = true;
+                                this.isJumping = true;
+                                this.surferVelocityY = -15;
+                            }
+                            e.preventDefault();
+                            break;
+                    }
+                };
+
+                const handleKeyUp = (e) => {
+                    switch(e.code) {
+                        case 'ArrowLeft':
+                        case 'KeyA':
+                            this.keys.left = false;
+                            break;
+                        case 'ArrowRight':
+                        case 'KeyD':
+                            this.keys.right = false;
+                            break;
+                        case 'ArrowUp':
+                        case 'KeyW':
+                            this.keys.up = false;
+                            break;
+                        case 'ArrowDown':
+                        case 'KeyS':
+                            this.keys.down = false;
+                            break;
+                        case 'Space':
+                            this.keys.space = false;
+                            break;
+                    }
+                };
+
+                document.addEventListener('keydown', handleKeyDown);
+                document.addEventListener('keyup', handleKeyUp);
+            }
+
+            spawnObstacles() {
+                setInterval(() => {
+                    if (Math.random() < 0.5) {
+                        this.createObstacle();
+                    }
+                }, 1500);
+            }
+
+            spawnBigWaves() {
+                setInterval(() => {
+                    if (Math.random() < 0.3) {
+                        this.createBigWave();
+                    }
+                }, 3000);
+            }
+
+            createObstacle() {
+                const obstacle = new PIXI.Graphics();
+                const isAbove = Math.random() < 0.5;
+                const size = 10 + Math.random() * 6;
+                
+                if (isAbove) {
+                    // Jellyfish or seagull above the line
+                    obstacle.circle(0, 0, size).fill({ color: 0xFF69B4, alpha: 0.8 });
+                    obstacle.circle(-size * 0.3, -size * 0.2, size * 0.4).fill({ color: 0xFF1493, alpha: 0.6 });
+                    obstacle.circle(size * 0.3, -size * 0.2, size * 0.4).fill({ color: 0xFF1493, alpha: 0.6 });
+                    
+                    // Tentacles
+                    for (let i = 0; i < 4; i++) {
+                        const x = (i - 1.5) * size * 0.3;
+                        obstacle.rect(x, size * 0.5, 2, size * 0.8).fill({ color: 0xFF69B4, alpha: 0.6 });
+                    }
+                } else {
+                    // Shark fin or coral below the line
+                    obstacle.poly([
+                        0, -size,
+                        -size * 0.8, size * 0.5,
+                        size * 0.8, size * 0.5
+                    ]).fill(0x2F2F2F);
+                    obstacle.poly([
+                        0, -size * 0.7,
+                        -size * 0.5, size * 0.3,
+                        size * 0.5, size * 0.3
+                    ]).fill(0x555555);
+                }
+                
+                obstacle.x = this.app.screen.width + 50;
+                obstacle.y = isAbove ? this.baselineY - 40 - Math.random() * 30 : this.baselineY + 40 + Math.random() * 30;
+                obstacle.isAbove = isAbove;
+                
+                this.midgroundContainer.addChild(obstacle);
+                this.obstacles.push(obstacle);
+            }
+
+            createBigWave() {
+                const wave = new PIXI.Graphics();
+                const height = 80 + Math.random() * 40;
+                
+                // Big threatening wave
+                wave.poly([
+                    -30, 0,
+                    -20, -height,
+                    0, -height * 1.2,
+                    20, -height,
+                    30, 0,
+                    30, 20,
+                    -30, 20
+                ]).fill({ color: 0x1E90FF, alpha: 0.9 });
+                
+                // Wave foam
+                wave.poly([
+                    -25, -height * 0.8,
+                    -15, -height * 0.9,
+                    5, -height * 1.1,
+                    15, -height * 0.9,
+                    25, -height * 0.8,
+                    20, -height * 0.7,
+                    -20, -height * 0.7
+                ]).fill({ color: 0xFFFFFF, alpha: 0.8 });
+                
+                wave.x = this.app.screen.width + 50;
+                wave.y = this.baselineY + 20;
+                
+                this.midgroundContainer.addChild(wave);
+                this.bigWaves.push(wave);
+            }
+
+            showMessage(text) {
+                const message = new PIXI.Text({
+                    text: text,
+                    style: {
+                        fontSize: 32,
+                        fill: 0xFFFF00,
+                        fontWeight: 'bold',
+                        stroke: 0x000000,
+                        strokeThickness: 3
+                    }
+                });
+                
+                message.x = this.surfer.x;
+                message.y = this.surfer.y - 60;
+                message.anchor.set(0.5);
+                message.alpha = 1;
+                message.life = 60; // frames
+                
+                this.messageContainer.addChild(message);
+                this.messages.push(message);
+            }
+
+            gameLoop(delta) {
+                this.time += delta;
+                
+                // Handle horizontal input
+                if (this.keys.left) {
+                    this.surferTargetX -= 4;
+                }
+                if (this.keys.right) {
+                    this.surferTargetX += 4;
+                }
+                
+                // Handle vertical dodging
+                if (this.keys.up && !this.isJumping) {
+                    this.surferTargetY = this.baselineY - 30;
+                }
+                else if (this.keys.down && !this.isJumping) {
+                    this.surferTargetY = this.baselineY + 30;
+                }
+                else if (!this.isJumping) {
+                    this.surferTargetY = this.baselineY;
+                }
+                
+                // Handle jumping physics
+                if (this.isJumping) {
+                    this.surferVelocityY += 0.8; // gravity
+                    this.surfer.y += this.surferVelocityY;
+                    
+                    if (this.surfer.y >= this.surferTargetY) {
+                        this.surfer.y = this.surferTargetY;
+                        this.isJumping = false;
+                        this.surferVelocityY = 0;
+                    }
+                }
+                
+                // Smooth movement
+                this.surfer.x += (this.surferTargetX - this.surfer.x) * 0.15;
+                if (!this.isJumping) {
+                    this.surfer.y += (this.surferTargetY - this.surfer.y) * 0.2;
+                }
+                
+                // Boundary checking with catch-up
+                const centerX = this.app.screen.width / 2;
+                const maxDistance = 180;
+                
+                if (this.surfer.x < centerX - maxDistance) {
+                    this.surferTargetX = centerX - maxDistance + 30;
+                    this.triggerShake(8);
+                } else if (this.surfer.x > centerX + maxDistance) {
+                    this.surferTargetX = centerX + maxDistance - 30;
+                    this.triggerShake(8);
+                }
+                
+                // Apply screen shake
+                this.updateScreenShake();
+                
+                // Update parallax layers
+                Object.values(this.tilingSprites).forEach(sprite => {
+                    if (sprite.tilePosition) {
+                        sprite.tilePosition.x -= this.scrollSpeed * sprite.scrollSpeed;
+                    }
+                });
+                
+                // Wave animations
+                if (this.tilingSprites.bgWater) {
+                    this.tilingSprites.bgWater.tilePosition.y = Math.sin(this.time * 0.03) * 4;
+                }
+                if (this.tilingSprites.fgWaves) {
+                    this.tilingSprites.fgWaves.tilePosition.y = Math.sin(this.time * 0.05) * 6;
+                }
+                if (this.tilingSprites.foam) {
+                    this.tilingSprites.foam.tilePosition.y = Math.sin(this.time * 0.08) * 3;
+                }
+                
+                // Animate surfer
+                const baseRotation = Math.sin(this.time * 0.1) * 0.05 + (this.surfer.x - centerX) * 0.0002;
+                if (this.isJumping) {
+                    this.surfer.rotation = baseRotation + Math.sin(this.time * 0.3) * 0.2;
+                } else {
+                    this.surfer.rotation = baseRotation;
+                }
+                
+                // Update obstacles and check collisions
+                this.updateObstacles();
+                
+                // Update big waves
+                this.updateBigWaves();
+                
+                // Update messages
+                this.updateMessages();
+                
+                // Progressive difficulty
+                this.scrollSpeed = Math.min(6, 2 + this.time * 0.0005);
+                this.score += Math.floor(this.scrollSpeed);
+                
+                // Update UI
+                document.getElementById('speedCounter').textContent = this.scrollSpeed.toFixed(1);
+                document.getElementById('scoreCounter').textContent = this.score;
+            }
+
+            updateObstacles() {
+                for (let i = this.obstacles.length - 1; i >= 0; i--) {
+                    const obstacle = this.obstacles[i];
+                    obstacle.x -= this.scrollSpeed * 1.3;
+                    
+                    // Check collision
+                    const dx = obstacle.x - this.surfer.x;
+                    const dy = obstacle.y - this.surfer.y;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    
+                    if (distance < 25) {
+                        // Check if player is properly dodging
+                        const isDodging = (obstacle.isAbove && this.keys.down) || (!obstacle.isAbove && this.keys.up);
+                        
+                        if (isDodging) {
+                            // Successful dodge!
+                            const messages = ['GNARLY!', 'TUBULAR!', 'RADICAL!', 'AWESOME!', 'SICK!'];
+                            this.showMessage(messages[Math.floor(Math.random() * messages.length)]);
+                            this.score += 50;
+                        } else {
+                            // Hit obstacle
+                            this.triggerShake(15);
+                            this.showMessage('WIPEOUT!');
+                            this.surferTargetX += dx > 0 ? -30 : 30;
+                        }
+                        
+                        // Remove obstacle after collision
+                        this.midgroundContainer.removeChild(obstacle);
+                        this.obstacles.splice(i, 1);
+                        continue;
+                    }
+                    
+                    // Remove off-screen obstacles
+                    if (obstacle.x < -100) {
+                        this.midgroundContainer.removeChild(obstacle);
+                        this.obstacles.splice(i, 1);
+                    }
+                }
+            }
+
+            updateBigWaves() {
+                for (let i = this.bigWaves.length - 1; i >= 0; i--) {
+                    const wave = this.bigWaves[i];
+                    wave.x -= this.scrollSpeed * 1.1;
+                    
+                    // Animate wave
+                    wave.y = this.baselineY + 20 + Math.sin(this.time * 0.1 + wave.x * 0.01) * 5;
+                    
+                    // Check collision
+                    const dx = wave.x - this.surfer.x;
+                    const dy = wave.y - this.surfer.y;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    
+                    if (distance < 40) {
+                        if (this.isJumping && this.surfer.y < this.baselineY - 20) {
+                            // Successfully jumped the wave!
+                            this.showMessage('COWABUNGA!');
+                            this.score += 100;
+                        } else {
+                            // Got caught by the wave
+                            this.triggerShake(20);
+                            this.showMessage('MASSIVE WIPEOUT!');
+                            this.surferTargetX += dx > 0 ? -40 : 40;
+                        }
+                        
+                        // Remove wave after collision
+                        this.midgroundContainer.removeChild(wave);
+                        this.bigWaves.splice(i, 1);
+                        continue;
+                    }
+                    
+                    // Remove off-screen waves
+                    if (wave.x < -100) {
+                        this.midgroundContainer.removeChild(wave);
+                        this.bigWaves.splice(i, 1);
+                    }
+                }
+            }
+
+            updateMessages() {
+                for (let i = this.messages.length - 1; i >= 0; i--) {
+                    const message = this.messages[i];
+                    message.life--;
+                    message.alpha = message.life / 60;
+                    message.y -= 1; // Float upwards
+                    
+                    if (message.life <= 0) {
+                        this.messageContainer.removeChild(message);
+                        this.messages.splice(i, 1);
+                    }
+                }
+            }
+
+            updateScreenShake() {
+                if (this.shakeIntensity > 0) {
+                    this.app.stage.x = (Math.random() - 0.5) * this.shakeIntensity;
+                    this.app.stage.y = (Math.random() - 0.5) * this.shakeIntensity;
+                    this.shakeIntensity *= 0.85;
+                    
+                    if (this.shakeIntensity < 0.1) {
+                        this.shakeIntensity = 0;
+                        this.app.stage.x = 0;
+                        this.app.stage.y = 0;
+                    }
+                }
+            }
+
+            triggerShake(intensity) {
+                this.shakeIntensity = Math.max(this.shakeIntensity, intensity);
+            }
+        }
+
+        // Start the gnarly surf game!
+        new GnarlySurfGame();
+    </script>
+</body>
+</html>
