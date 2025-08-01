@@ -1,0 +1,623 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lunar Explorer</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: #000;
+            font-family: 'Courier New', monospace;
+            overflow: hidden;
+        }
+        
+        #gameContainer {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+        }
+        
+        #hud {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            color: #00ff00;
+            background: rgba(0,0,0,0.8);
+            padding: 15px;
+            border: 2px solid #00ff00;
+            border-radius: 10px;
+            z-index: 100;
+            font-size: 14px;
+            line-height: 1.6;
+            text-shadow: 0 0 10px #00ff00;
+        }
+        
+        #score {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            color: #00ff00;
+            background: rgba(0,0,0,0.8);
+            padding: 15px;
+            border: 2px solid #00ff00;
+            border-radius: 10px;
+            z-index: 100;
+            font-size: 18px;
+            font-weight: bold;
+            text-shadow: 0 0 10px #00ff00;
+        }
+        
+        #collectMessage {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #ffff00;
+            font-size: 24px;
+            font-weight: bold;
+            text-shadow: 0 0 20px #ffff00;
+            opacity: 0;
+            transition: opacity 0.5s;
+            z-index: 200;
+            pointer-events: none;
+        }
+        
+        canvas {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <div id="gameContainer">
+        <div id="hud">
+            <strong>🌙 LUNAR EXPLORER</strong><br>
+            <strong>WASD</strong> - Drive Rover<br>
+            <strong>Space</strong> - Brake<br>
+            <strong>R</strong> - Reset Position<br><br>
+            <strong>Collect Structures:</strong><br>
+            📦 Warehouse: +100<br>
+            🏠 Habitat: +200<br>
+            🔬 Laboratory: +300<br>
+            🏛️ Culture: +400<br>
+            <em>Size bonus: 2x/3x</em>
+        </div>
+        
+        <div id="score">
+            Score: <span id="scoreValue">0</span><br>
+            Speed: <span id="speed">0</span> m/s
+        </div>
+        
+        <div id="collectMessage"></div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        // Game variables
+        let scene, camera, renderer, roverContainer, roverMesh, wheels = [];
+        let roverSpeed = 0, roverRotation = 0;
+        let maxSpeed = 0.4, acceleration = 0.015, friction = 0.96;
+        let turnSpeed = 0.03;
+        let bounceHeight = 0, bounceVelocity = 0;
+        let visualBounce = 0, visualBounceVelocity = 0;
+        let score = 0;
+        let structures = [];
+        let terrain;
+        let headlightCone, ambientLight, directionalLight;
+        let dayNightCycle = 0;
+        
+        // Input handling
+        const keys = {};
+        
+        // Structure types
+        const structureTypes = [
+            { name: 'Warehouse', points: 100, color: 0x8B4513, emoji: '📦', geometry: 'box' },
+            { name: 'Habitat', points: 200, color: 0x4169E1, emoji: '🏠', geometry: 'hemisphere' },
+            { name: 'Laboratory', points: 300, color: 0x32CD32, emoji: '🔬', geometry: 'torus' },
+            { name: 'Culture', points: 400, color: 0xFF69B4, emoji: '🏛️', geometry: 'pyramid' }
+        ];
+        
+        // Initialize the game
+        function init() {
+            // Create scene
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x000000);
+            
+            // Create camera
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            
+            // Create renderer
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            document.getElementById('gameContainer').appendChild(renderer.domElement);
+            
+            // Create dynamic lighting system
+            ambientLight = new THREE.AmbientLight(0x404040, 0.3);
+            scene.add(ambientLight);
+            
+            directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            directionalLight.position.set(100, 100, 50);
+            directionalLight.castShadow = true;
+            directionalLight.shadow.mapSize.width = 2048;
+            directionalLight.shadow.mapSize.height = 2048;
+            directionalLight.shadow.camera.left = -100;
+            directionalLight.shadow.camera.right = 100;
+            directionalLight.shadow.camera.top = 100;
+            directionalLight.shadow.camera.bottom = -100;
+            scene.add(directionalLight);
+            
+            // Create starfield
+            createStarfield();
+            
+            // Create moon terrain
+            createTerrain();
+            
+            // Create rover
+            createRover();
+            
+            // Generate initial structures
+            generateStructures();
+            
+            // Set initial camera position
+            camera.position.set(0, 20, 30);
+            
+            // Start game loop
+            animate();
+        }
+        
+        function createStarfield() {
+            const starGeometry = new THREE.BufferGeometry();
+            const starMaterial = new THREE.PointsMaterial({
+                color: 0xffffff,
+                size: 2,
+                sizeAttenuation: false
+            });
+            
+            const starVertices = [];
+            for (let i = 0; i < 1000; i++) {
+                const x = (Math.random() - 0.5) * 2000;
+                const y = Math.random() * 1000 + 200;
+                const z = (Math.random() - 0.5) * 2000;
+                starVertices.push(x, y, z);
+            }
+            
+            starGeometry.setAttribute('position', new THREE.Float32BufferAttribute(starVertices, 3));
+            const stars = new THREE.Points(starGeometry, starMaterial);
+            scene.add(stars);
+        }
+        
+        function createTerrain() {
+            // Create bumpy terrain using PlaneGeometry with noise
+            const terrainGeometry = new THREE.PlaneGeometry(1000, 1000, 100, 100);
+            const vertices = terrainGeometry.attributes.position.array;
+            
+            // Add noise to create bumps
+            for (let i = 0; i < vertices.length; i += 3) {
+                const x = vertices[i];
+                const z = vertices[i + 1]; // Note: in PlaneGeometry, Y becomes Z when rotated
+                // Create bumpy surface with perlin-like noise
+                vertices[i + 2] = Math.sin(x * 0.01) * Math.cos(z * 0.01) * 3 + 
+                                  Math.sin(x * 0.05) * Math.cos(z * 0.05) * 1.5 +
+                                  (Math.random() - 0.5) * 0.5;
+            }
+            
+            terrainGeometry.attributes.position.needsUpdate = true;
+            terrainGeometry.computeVertexNormals();
+            
+            const terrainMaterial = new THREE.MeshLambertMaterial({ 
+                color: 0x999999,
+                side: THREE.DoubleSide // Ensure both sides are visible
+            });
+            
+            terrain = new THREE.Mesh(terrainGeometry, terrainMaterial);
+            terrain.rotation.x = -Math.PI / 2; // Rotate to lay flat
+            terrain.position.y = 0; // Ensure it's at ground level
+            terrain.receiveShadow = true;
+            scene.add(terrain);
+        }
+        
+        function createRover() {
+            // Create rover container (handles position and rotation, camera follows this)
+            roverContainer = new THREE.Group();
+            
+            // Create rover mesh group (handles visual bouncing only)
+            roverMesh = new THREE.Group();
+            
+            // Rover body (more angular for sci-fi look)
+            const roverVertices = new Float32Array([
+                // Main body
+                -1.5, 0, 2.5,   1.5, 0, 2.5,   1.5, 1.5, 1.5,   -1.5, 1.5, 1.5,
+                -1.5, 0, -2.5,  1.5, 0, -2.5,  1.5, 1.5, -1.5,  -1.5, 1.5, -1.5,
+                // Cabin
+                -1, 1.5, 1,   1, 1.5, 1,   1, 2.5, 0,   -1, 2.5, 0,
+                -1, 1.5, -1,  1, 1.5, -1,   1, 2.5, -1,  -1, 2.5, -1
+            ]);
+            
+            const roverIndices = [
+                // Bottom
+                0, 1, 5,   0, 5, 4,
+                // Front
+                0, 3, 2,   0, 2, 1,
+                // Back  
+                4, 5, 6,   4, 6, 7,
+                // Sides
+                0, 4, 7,   0, 7, 3,
+                1, 2, 6,   1, 6, 5,
+                // Top
+                3, 7, 6,   3, 6, 2,
+                // Cabin
+                8, 9, 10,  8, 10, 11,
+                12, 13, 14, 12, 14, 15
+            ];
+            
+            const roverGeometry = new THREE.BufferGeometry();
+            roverGeometry.setAttribute('position', new THREE.BufferAttribute(roverVertices, 3));
+            roverGeometry.setIndex(roverIndices);
+            roverGeometry.computeVertexNormals();
+            
+            const roverMaterial = new THREE.MeshLambertMaterial({ color: 0xCCCCCC });
+            const bodyMesh = new THREE.Mesh(roverGeometry, roverMaterial);
+            bodyMesh.castShadow = true;
+            roverMesh.add(bodyMesh);
+            
+            // Create bigger wheels for moon rover
+            const wheelGeometry = new THREE.CylinderGeometry(0.8, 0.8, 0.5, 12);
+            const wheelMaterial = new THREE.MeshLambertMaterial({ color: 0x222222 });
+            
+            // Wheel positions
+            const wheelPositions = [
+                [-2, -0.3, 1.8],   // Front left
+                [2, -0.3, 1.8],    // Front right
+                [-2, -0.3, -1.8],  // Back left
+                [2, -0.3, -1.8]    // Back right
+            ];
+            
+            wheelPositions.forEach((pos, i) => {
+                const wheel = new THREE.Mesh(wheelGeometry, wheelMaterial);
+                wheel.position.set(pos[0], pos[1], pos[2]);
+                wheel.rotation.z = Math.PI / 2;
+                wheel.castShadow = true;
+                wheels.push(wheel);
+                roverMesh.add(wheel);
+            });
+            
+            // Add rover headlight cone and spotlights
+            const headlight1 = new THREE.SpotLight(0xffffcc, 2, 80, Math.PI / 4, 0.3);
+            headlight1.position.set(-1, 2, 3);
+            headlight1.target.position.set(-1, 0, 10);
+            headlight1.castShadow = true;
+            roverMesh.add(headlight1);
+            roverMesh.add(headlight1.target);
+            
+            const headlight2 = new THREE.SpotLight(0xffffcc, 2, 80, Math.PI / 4, 0.3);
+            headlight2.position.set(1, 2, 3);
+            headlight2.target.position.set(1, 0, 10);
+            headlight2.castShadow = true;
+            roverMesh.add(headlight2);
+            roverMesh.add(headlight2.target);
+            
+            // Create visible headlight cone effect
+            const coneGeometry = new THREE.ConeGeometry(15, 30, 8, 1, true);
+            const coneMaterial = new THREE.MeshBasicMaterial({
+                color: 0xffffcc,
+                transparent: true,
+                opacity: 0.1,
+                side: THREE.DoubleSide
+            });
+            headlightCone = new THREE.Mesh(coneGeometry, coneMaterial);
+            headlightCone.position.set(0, 1, 15);
+            headlightCone.rotation.x = Math.PI / 2;
+            roverMesh.add(headlightCone);
+            
+            // Add visual mesh to container
+            roverContainer.add(roverMesh);
+            
+            // Position rover container
+            roverContainer.position.set(0, 2, 0);
+            roverContainer.castShadow = true;
+            
+            scene.add(roverContainer);
+        }
+        
+        function generateStructures() {
+            const numStructures = 20;
+            
+            for (let i = 0; i < numStructures; i++) {
+                const type = structureTypes[Math.floor(Math.random() * structureTypes.length)];
+                const size = Math.random() < 0.3 ? (Math.random() < 0.5 ? 'large' : 'xl') : 'normal';
+                
+                const structure = createStructure(type, size);
+                
+                // Random position on terrain
+                const x = (Math.random() - 0.5) * 800;
+                const z = (Math.random() - 0.5) * 800;
+                const y = getTerrainHeight(x, z) + structure.userData.baseHeight;
+                
+                structure.position.set(x, y, z);
+                structures.push(structure);
+                scene.add(structure);
+            }
+        }
+        
+        function createStructure(type, size) {
+            let geometry;
+            const sizeMultiplier = size === 'xl' ? 3 : size === 'large' ? 2 : 1;
+            const baseSize = 4 * sizeMultiplier;
+            
+            switch (type.geometry) {
+                case 'box':
+                    geometry = new THREE.BoxGeometry(baseSize, baseSize, baseSize);
+                    break;
+                case 'hemisphere':
+                    geometry = new THREE.SphereGeometry(baseSize / 2, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2);
+                    break;
+                case 'torus':
+                    geometry = new THREE.TorusGeometry(baseSize / 2, baseSize / 4, 8, 16);
+                    break;
+                case 'pyramid':
+                    geometry = new THREE.ConeGeometry(baseSize / 2, baseSize, 4);
+                    break;
+            }
+            
+            const material = new THREE.MeshLambertMaterial({ 
+                color: type.color,
+                transparent: true,
+                opacity: 0.8
+            });
+            
+            const structure = new THREE.Mesh(geometry, material);
+            structure.castShadow = true;
+            structure.userData = {
+                type: type,
+                size: size,
+                points: type.points * sizeMultiplier,
+                collected: false,
+                baseHeight: baseSize / 2
+            };
+            
+            return structure;
+        }
+        
+        function getTerrainHeight(x, z) {
+            // Simple terrain height calculation
+            return Math.sin(x * 0.01) * Math.cos(z * 0.01) * 3 + 
+                   Math.sin(x * 0.05) * Math.cos(z * 0.05) * 1.5;
+        }
+        
+        function handleInput() {
+            if (keys['w'] || keys['W']) {
+                roverSpeed = Math.min(roverSpeed + acceleration, maxSpeed);
+            }
+            if (keys['s'] || keys['S']) {
+                roverSpeed = Math.max(roverSpeed - acceleration, -maxSpeed * 0.5);
+            }
+            
+            // Reset rotation first
+            roverRotation = 0;
+            
+            // Only turn when keys are pressed AND rover is moving
+            if ((keys['a'] || keys['A']) && Math.abs(roverSpeed) > 0.01) {
+                roverRotation = turnSpeed * 0.5 * (roverSpeed / maxSpeed);
+            }
+            if ((keys['d'] || keys['D']) && Math.abs(roverSpeed) > 0.01) {
+                roverRotation = -turnSpeed * 0.5 * (roverSpeed / maxSpeed);
+            }
+            
+            if (keys[' ']) {
+                roverSpeed *= 0.85; // Brake
+            }
+            if (keys['r'] || keys['R']) {
+                // Reset position
+                roverContainer.position.set(0, 2, 0);
+                roverContainer.rotation.y = 0;
+                roverSpeed = 0;
+                roverRotation = 0;
+                bounceHeight = 0;
+                bounceVelocity = 0;
+                visualBounce = 0;
+                visualBounceVelocity = 0;
+            }
+            
+            // Apply friction
+            roverSpeed *= friction;
+        }
+        
+        function updateRover() {
+            // Update rover container rotation (stable)
+            roverContainer.rotation.y += roverRotation;
+            
+            // Move rover container forward/backward (stable position)
+            const direction = new THREE.Vector3(0, 0, -1);
+            direction.applyQuaternion(roverContainer.quaternion);
+            roverContainer.position.add(direction.multiplyScalar(roverSpeed));
+            
+            // Get terrain height at rover position
+            const terrainHeight = getTerrainHeight(roverContainer.position.x, roverContainer.position.z);
+            const targetHeight = terrainHeight + 2;
+            
+            // Update container height smoothly (for camera stability)
+            roverContainer.position.y += (targetHeight - roverContainer.position.y) * 0.1;
+            
+            // Separate visual bouncing physics for the mesh only
+            const heightDiff = targetHeight - roverContainer.position.y;
+            visualBounceVelocity += heightDiff * 0.2; // Spring force
+            visualBounceVelocity *= 0.8; // Damping
+            visualBounce += visualBounceVelocity;
+            visualBounce *= 0.9; // Decay
+            
+            // Apply visual bounce only to the mesh, not the container
+            roverMesh.position.y = visualBounce;
+            
+            // Add movement-based bounce effect
+            if (Math.abs(roverSpeed) > 0.1) {
+                const bumpIntensity = Math.abs(heightDiff) * Math.abs(roverSpeed) * 1.5;
+                roverMesh.position.y += Math.sin(Date.now() * 0.02) * bumpIntensity * 0.2;
+                
+                // Add subtle rocking motion
+                roverMesh.rotation.x = Math.sin(Date.now() * 0.01) * roverSpeed * 0.3;
+                roverMesh.rotation.z = Math.sin(Date.now() * 0.015) * roverSpeed * 0.2;
+            } else {
+                // Return to neutral position when stopped
+                roverMesh.rotation.x *= 0.9;
+                roverMesh.rotation.z *= 0.9;
+            }
+            
+            // Update day/night cycle based on player position
+            updateDayNightCycle();
+            
+            // Animate wheels
+            wheels.forEach(wheel => {
+                wheel.rotation.x += roverSpeed * 3;
+            });
+            
+            // Update speedometer
+            const speedMs = Math.abs(roverSpeed * 50);
+            document.getElementById('speed').textContent = Math.round(speedMs);
+            
+            // Check for structure collisions
+            checkStructureCollisions();
+            
+            // Generate new structures as rover moves
+            if (Math.random() < 0.01) {
+                generateNewStructure();
+            }
+        }
+        
+        function checkStructureCollisions() {
+            structures.forEach((structure, index) => {
+                if (structure.userData.collected) return;
+                
+                const distance = roverContainer.position.distanceTo(structure.position);
+                const collisionDistance = 8; // Collision radius
+                
+                if (distance < collisionDistance) {
+                    // Collect structure
+                    score += structure.userData.points;
+                    structure.userData.collected = true;
+                    
+                    // Show collection message
+                    showCollectionMessage(structure.userData);
+                    
+                    // Remove from scene
+                    scene.remove(structure);
+                    structures.splice(index, 1);
+                    
+                    // Update score display
+                    document.getElementById('scoreValue').textContent = score;
+                }
+            });
+        }
+        
+        function showCollectionMessage(structureData) {
+            const message = document.getElementById('collectMessage');
+            const sizeText = structureData.size === 'xl' ? ' (XL)' : structureData.size === 'large' ? ' (Large)' : '';
+            message.textContent = `${structureData.type.emoji} ${structureData.type.name}${sizeText} +${structureData.points}!`;
+            message.style.opacity = '1';
+            
+            setTimeout(() => {
+                message.style.opacity = '0';
+            }, 2000);
+        }
+        
+        function generateNewStructure() {
+            if (structures.length < 30) {
+                const type = structureTypes[Math.floor(Math.random() * structureTypes.length)];
+                const size = Math.random() < 0.3 ? (Math.random() < 0.5 ? 'large' : 'xl') : 'normal';
+                
+                const structure = createStructure(type, size);
+                
+                // Position ahead of rover container
+                const direction = new THREE.Vector3(0, 0, -1);
+                direction.applyQuaternion(roverContainer.quaternion);
+                direction.multiplyScalar(100 + Math.random() * 200);
+                
+                const x = roverContainer.position.x + direction.x + (Math.random() - 0.5) * 200;
+                const z = roverContainer.position.z + direction.z + (Math.random() - 0.5) * 200;
+                const y = getTerrainHeight(x, z) + structure.userData.baseHeight;
+                
+                structure.position.set(x, y, z);
+                structures.push(structure);
+                scene.add(structure);
+            }
+        }
+        
+        function updateCamera() {
+            // Camera follows the stable container, not the bouncing mesh
+            const idealCameraPosition = new THREE.Vector3(0, 15, 20);
+            idealCameraPosition.applyQuaternion(roverContainer.quaternion);
+            idealCameraPosition.add(roverContainer.position);
+            
+            // Smooth camera movement
+            camera.position.lerp(idealCameraPosition, 0.1);
+            
+            // Look at the stable container position
+            camera.lookAt(roverContainer.position);
+        }
+        
+        function updateDayNightCycle() {
+            // Calculate day/night cycle based on player position and time
+            const playerX = roverContainer.position.x;
+            const playerZ = roverContainer.position.z;
+            const timeOffset = Date.now() * 0.0005; // Slow time progression
+            
+            // Create zones that shift over time - simulates planetary rotation
+            const zoneX = Math.sin((playerX * 0.005) + timeOffset);
+            const zoneZ = Math.cos((playerZ * 0.005) + timeOffset);
+            const combinedZone = (zoneX + zoneZ) * 0.5;
+            
+            // Map to 0-1 range (0 = night, 1 = day)
+            const lightLevel = (combinedZone + 1) * 0.5;
+            
+            // Update ambient lighting
+            ambientLight.intensity = 0.2 + (lightLevel * 0.6);
+            
+            // Update directional light
+            directionalLight.intensity = 0.3 + (lightLevel * 1.2);
+            
+            // Change background color based on day/night
+            const nightColor = new THREE.Color(0x000011);
+            const dayColor = new THREE.Color(0x001133);
+            scene.background = nightColor.lerp(dayColor, lightLevel);
+            
+            // Update headlight cone visibility (more visible at night)
+            headlightCone.material.opacity = 0.05 + ((1 - lightLevel) * 0.15);
+            
+            // Change directional light color slightly
+            const nightLightColor = new THREE.Color(0x6666ff);
+            const dayLightColor = new THREE.Color(0xffffff);
+            directionalLight.color = nightLightColor.lerp(dayLightColor, lightLevel);
+        }
+        
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            handleInput();
+            updateRover();
+            updateCamera();
+            
+            renderer.render(scene, camera);
+        }
+        
+        // Event listeners
+        window.addEventListener('keydown', (e) => {
+            keys[e.key] = true;
+        });
+        
+        window.addEventListener('keyup', (e) => {
+            keys[e.key] = false;
+        });
+        
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+        
+        // Start the game
+        init();
+    </script>
+</body>
+</html>
