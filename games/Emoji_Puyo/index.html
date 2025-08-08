@@ -1,0 +1,966 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Emoji Puyo Puyo</title>
+<style>
+  :root{
+    --bg:#0f1724;
+    --panel:#0b1220cc;
+    --accent:#ffcc00;
+    color-scheme: dark;
+  }
+  html,body{height:100%;margin:0;font-family:Inter,system-ui,Segoe UI,Roboto,"Helvetica Neue",Arial;}
+  body{background: linear-gradient(180deg,#071032 0%, #0b1530 100%);display:flex;align-items:center;justify-content:center;padding:20px;}
+  #gameWrap{width:100%;max-width:1100px;display:grid;grid-template-columns: 420px 1fr;gap:18px;align-items:start;}
+  .panel{background:var(--panel);border-radius:12px;padding:12px;color:#e6eef8;box-shadow:0 6px 24px rgba(2,6,23,0.6);}
+  #leftPanel{display:flex;flex-direction:column;gap:12px;}
+  #hud{display:flex;flex-direction:row;gap:8px;align-items:center;justify-content:space-between;}
+  .stat{background:rgba(255,255,255,0.02);padding:8px;border-radius:8px;text-align:center;flex:1;}
+  canvas{width:100%;height:auto;display:block;border-radius:8px;background:linear-gradient(#081229,#061026);}
+  #menu{display:flex;flex-direction:column;gap:8px;align-items:center;justify-content:center;padding:20px;}
+  button{background:transparent;border:1px solid rgba(255,255,255,0.08);padding:10px 16px;border-radius:10px;color:inherit;font-weight:600;cursor:pointer}
+  button.primary{background:#ffcc00;color:#071023;border:0}
+  .small{font-size:13px;color:#c6d7f3}
+  #controls{font-size:13px;line-height:1.4}
+  #footer{display:flex;justify-content:space-between;align-items:center;}
+  #touchControls{display:flex;gap:8px;margin-top:6px;justify-content:center;}
+  .tc-btn{padding:10px;border-radius:8px;background:rgba(255,255,255,0.03);min-width:48px;text-align:center;user-select:none}
+  #nextPreview{display:flex;gap:6px;align-items:center;justify-content:center;font-size:28px}
+  #canvasHolder{display:flex;flex-direction:column;align-items:center;gap:10px;}
+  @media(max-width:920px){#gameWrap{grid-template-columns:1fr;}}
+</style>
+</head>
+<body>
+<div id="gameWrap">
+  <div id="leftPanel" class="panel">
+    <div id="menu" data-visible="true">
+      <h2 style="margin:0">Emoji Puyo</h2>
+      <p class="small">Chain together 4+ matching puyos to clear — build crazy chains for big scores. Emojis are used for sprites and clearing animations.</p>
+      <div style="display:flex;gap:8px;margin-top:8px;">
+        <button id="startBtn" class="primary">Start Game</button>
+        <button id="howBtn">How to Play</button>
+      </div>
+      <div style="width:100%;margin-top:8px;">
+        <div style="display:flex;gap:8px;justify-content:space-between;">
+          <div class="small">High Score</div><div id="highScore" class="small">0</div>
+        </div>
+      </div>
+    </div>
+
+    <div id="hud" style="display:none">
+      <div class="stat">
+        <div class="small">Score</div>
+        <div id="score" style="font-size:20px">0</div>
+      </div>
+      <div class="stat">
+        <div class="small">Level</div>
+        <div id="level" style="font-size:20px">1</div>
+      </div>
+      <div class="stat">
+        <div class="small">Chains</div>
+        <div id="chain" style="font-size:20px">0</div>
+      </div>
+    </div>
+
+    <div style="display:none" id="nextBox" class="panel">
+      <div style="font-size:13px;color:#c6d7f3">Next</div>
+      <div id="nextPreview"></div>
+    </div>
+
+    <div id="controlsPanel" class="panel" style="display:none">
+      <div id="controls">
+        <strong>Controls</strong>
+        <div>Left/Right: Move &nbsp; Down: Soft drop &nbsp; Up/Space: Hard drop</div>
+        <div>Z/X: Rotate &nbsp; P: Pause</div>
+      </div>
+      <div id="touchControls">
+        <div class="tc-btn" id="tc-left">◀</div>
+        <div class="tc-btn" id="tc-rotate">⤾</div>
+        <div class="tc-btn" id="tc-right">▶</div>
+        <div class="tc-btn" id="tc-down">↓</div>
+      </div>
+    </div>
+
+    <div id="footer" style="display:none">
+      <div class="small">Version: Emoji Puyo (Demo)</div>
+      <div><button id="backToMenu">Menu</button></div>
+    </div>
+  </div>
+
+  <div id="mainPanel" class="panel">
+    <div id="canvasHolder">
+      <canvas id="gameCanvas" width="420" height="880"></canvas>
+      <div style="display:flex;gap:10px;width:100%;justify-content:space-between;align-items:center;">
+        <div id="status" class="small">Press Start</div>
+        <div><button id="pauseBtn" style="display:none">Pause</button></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+/*
+Emoji Puyo Puyo
+- 6 columns, 14 total rows (12 visible + 2 hidden)
+- Uses emoji strings for puyos and clearing animations
+- Classes: Game, Board, Pair, Renderer, Input, ChainResolver
+*/
+
+// ===== Configuration & Globals =====
+const CONFIG = {
+  cols: 6,
+  rowsVisible: 12,
+  hiddenRows: 2,
+  cellSize: 64, // base pixel size, renderer will scale
+  gravityBaseMs: 800, // base fall time per cell at level 1 for pair
+  gravityAcceleration: 0.9, // gravity speed multiplier per level
+  fps: 60,
+  clearAnimMs: 450,
+  popDelayMs: 180,
+  emojis: {
+    normal: {
+      0: "😊", // happy -> red
+      1: "😡", // angry -> blue
+      2: "🤢", // sick -> green
+      3: "😨", // fearful -> yellow
+    },
+    clear: {
+      0: "🤗",
+      1: "🤬",
+      2: "🤮",
+      3: "😱",
+    },
+    garbage: "⚪" // ojama gray (use white circle for visibility)
+  },
+  colorsCount: 4,
+  basePlacePoints: 10,
+  nextPreviewCount: 1
+};
+
+const TOTAL_ROWS = CONFIG.rowsVisible + CONFIG.hiddenRows;
+
+// mapping for localStorage
+const STORAGE_KEY = "emoji_puyo_highscore_v1";
+
+// utility
+const rand = (n) => Math.floor(Math.random()*n);
+
+// ===== Board Class =====
+class Board {
+  constructor(cols, rows) {
+    this.cols = cols;
+    this.rows = rows;
+    // grid [r][c], r=0 top-most hidden row
+    this.grid = Array.from({length: rows}, ()=>Array(cols).fill(null));
+  }
+
+  inside(r,c){
+    return r>=0 && r<this.rows && c>=0 && c<this.cols;
+  }
+
+  get(r,c){ if(!this.inside(r,c)) return null; return this.grid[r][c]; }
+  set(r,c,val){ if(this.inside(r,c)) this.grid[r][c]=val; }
+
+  isEmpty(r,c){ return this.inside(r,c) && this.grid[r][c] == null; }
+
+  // drop all floating puyos until stable (used after clear)
+  applyGravity(){
+    let moved = false;
+    for(let c=0;c<this.cols;c++){
+      let write = this.rows-1;
+      for(let r=this.rows-1;r>=0;r--){
+        if(this.grid[r][c] != null){
+          if(r !== write){
+            this.grid[write][c] = this.grid[r][c];
+            this.grid[r][c] = null;
+            moved = true;
+          }
+          write--;
+        }
+      }
+    }
+    return moved;
+  }
+
+  // check top visible boundary for game over
+  isGameOver(){
+    // if any of hidden row (0 or 1) has a puyo that's in visible zone above threshold?
+    // We'll declare game over if any cell in rows 0 or 1 is occupied after spawn/placement
+    for(let r=0;r<CONFIG.hiddenRows;r++){
+      for(let c=0;c<this.cols;c++) if(this.grid[r][c] != null) return true;
+    }
+    return false;
+  }
+
+  // find connected groups of same color (0..colorsCount-1), returns array of groups each is array of [r,c]
+  findGroups(threshold=4){
+    const visited = Array.from({length:this.rows}, ()=>Array(this.cols).fill(false));
+    const groups = [];
+    for(let r=0;r<this.rows;r++){
+      for(let c=0;c<this.cols;c++){
+        const cell = this.grid[r][c];
+        if(cell==null) continue;
+        if(cell.type !== 'normal') continue; // skip garbage/clear anim etc
+        if(visited[r][c]) continue;
+        const color = cell.color;
+        const stack = [[r,c]];
+        const group = [];
+        visited[r][c] = true;
+        while(stack.length){
+          const [rr,cc] = stack.pop();
+          group.push([rr,cc]);
+          for(const [dr,dc] of [[1,0],[-1,0],[0,1],[0,-1]]){
+            const nr=rr+dr, nc=cc+dc;
+            if(!this.inside(nr,nc) || visited[nr][nc]) continue;
+            const nb = this.grid[nr][nc];
+            if(nb && nb.type==='normal' && nb.color===color){
+              visited[nr][nc]=true;
+              stack.push([nr,nc]);
+            }
+          }
+        }
+        if(group.length >= threshold) groups.push({cells:group, color});
+      }
+    }
+    return groups;
+  }
+
+  // remove cells by coordinates
+  removeCells(cells){
+    for(const [r,c] of cells){
+      if(this.inside(r,c)) this.grid[r][c] = null;
+    }
+  }
+
+  // helper to place a normal puyo object at r,c
+  placePuyo(r,c,obj){
+    this.set(r,c,obj);
+  }
+
+  // count occupied cells
+  occupiedCount(){
+    let n=0;
+    for(let r=0;r<this.rows;r++) for(let c=0;c<this.cols;c++) if(this.grid[r][c]) n++;
+    return n;
+  }
+}
+
+// ===== Pair Class (falling pair) =====
+class Pair {
+  constructor(aColor,bColor,cols){
+    // position uses top-lefted coordinate: pivot is primary block at (r,c) and secondary relative offset
+    // We'll treat 'pivot' at spawn cell; orientation 0=up (b above a), 1=right, 2=down,3=left
+    this.pivot = {r:0, c: Math.floor(cols/2)}; // spawn around top center (hidden rows allowed)
+    this.orientation = 0; // 0 up (b above pivot)
+    this.aColor = aColor; // pivot block color (main)
+    this.bColor = bColor; // attached block color
+    this.locked = false;
+    // animation offsets for smooth fall/rotation handled in renderer
+  }
+
+  clone(){
+    const p = new Pair(this.aColor,this.bColor,6);
+    p.pivot = {...this.pivot};
+    p.orientation = this.orientation;
+    return p;
+  }
+
+  // returns coords for both blocks
+  coords(){
+    const r = this.pivot.r, c = this.pivot.c;
+    let ar = r, ac = c;
+    let br = r, bc = c;
+    switch(this.orientation){
+      case 0: br = r-1; bc = c; break; // b above
+      case 1: br = r; bc = c+1; break; // b right
+      case 2: br = r+1; bc = c; break; // b below
+      case 3: br = r; bc = c-1; break; // b left
+    }
+    return {a:[ar,ac], b:[br,bc]};
+  }
+
+  rotateCW(){
+    this.orientation = (this.orientation+1)%4;
+  }
+  rotateCCW(){
+    this.orientation = (this.orientation+3)%4;
+  }
+
+  move(dx,dy){
+    this.pivot.c += dx;
+    this.pivot.r += dy;
+  }
+}
+
+// ===== Renderer =====
+class Renderer {
+  constructor(canvas, board, game){
+    this.canvas = canvas;
+    this.ctx = canvas.getContext('2d');
+    this.board = board;
+    this.game = game;
+    this.scale = 1;
+    this.pixelRatio = window.devicePixelRatio || 1;
+    this.resize();
+    window.addEventListener('resize', ()=>this.resize());
+  }
+
+  resize(){
+    // maintain aspect ratio: cell size times cols and rowsVisible
+    const maxWidth = document.getElementById('mainPanel').clientWidth - 20;
+    const maxHeight = window.innerHeight - 160;
+    const targetWidth = CONFIG.cellSize * this.board.cols;
+    const targetHeight = CONFIG.cellSize * CONFIG.rowsVisible;
+    // scale to fit inside right panel
+    const s = Math.min(maxWidth/targetWidth, maxHeight/targetHeight, 1);
+    this.scale = s;
+    const w = Math.floor(targetWidth * s);
+    const h = Math.floor(targetHeight * s);
+    this.canvas.style.width = w + "px";
+    this.canvas.style.height = h + "px";
+    // set actual canvas pixels for crispness
+    this.canvas.width = Math.floor(w * this.pixelRatio);
+    this.canvas.height = Math.floor(h * this.pixelRatio);
+    this.ctx.setTransform(this.pixelRatio,0,0,this.pixelRatio,0,0);
+    this.ctx.imageSmoothingEnabled = true;
+    this.cellPx = targetWidth * s / this.board.cols;
+  }
+
+  clear(){
+    const ctx = this.ctx;
+    ctx.clearRect(0,0,this.canvas.width,this.canvas.height);
+    // background
+    ctx.fillStyle = 'rgba(6,14,36,0.8)';
+    ctx.fillRect(0,0,this.canvas.width/this.pixelRatio,this.canvas.height/this.pixelRatio);
+  }
+
+  drawGrid(){
+    const ctx=this.ctx;
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255,255,255,0.05)';
+    ctx.lineWidth = 1;
+    const w = this.cellPx * this.board.cols;
+    const h = this.cellPx * CONFIG.rowsVisible;
+    // border
+    ctx.strokeRect(0,0,w,h);
+    // vertical lines
+    for(let c=1;c<this.board.cols;c++){
+      const x = c*this.cellPx;
+      ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,h); ctx.stroke();
+    }
+    // horizontal lines
+    for(let r=1;r<CONFIG.rowsVisible;r++){
+      const y = r*this.cellPx;
+      ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(w,y);ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  // helper to convert board row/col to canvas XY (row 0 = top hidden; visible area starts at hiddenRows)
+  cellXY(r,c){
+    const visOffset = CONFIG.hiddenRows;
+    const x = c * this.cellPx;
+    const y = (r - visOffset) * this.cellPx;
+    return {x,y};
+  }
+
+  drawBoardState(animMap={}){
+    // animMap may contain per-cell offsets or special emoji to draw (for clearing anim)
+    const ctx=this.ctx;
+    ctx.save();
+    // clip to visible area
+    ctx.beginPath();
+    ctx.rect(0,0,this.cellPx*this.board.cols,this.cellPx*CONFIG.rowsVisible);
+    ctx.clip();
+
+    for(let r=0;r<this.board.rows;r++){
+      for(let c=0;c<this.board.cols;c++){
+        const cell = this.board.get(r,c);
+        if(!cell) continue;
+        const {x,y} = this.cellXY(r,c);
+        if(y > this.cellPx*CONFIG.rowsVisible || y+this.cellPx < 0) continue; // not visible
+        ctx.save();
+        ctx.translate(x + this.cellPx/2, y + this.cellPx/2);
+        // per-cell animation offsets
+        const key = `${r},${c}`;
+        const anim = animMap[key] || {};
+        if(anim.offsetY) ctx.translate(0, anim.offsetY);
+        // background circle
+        ctx.font = `${Math.floor(this.cellPx*0.7)}px serif`;
+        ctx.textAlign = "center"; ctx.textBaseline = "middle";
+        let emoji = "";
+        if(cell.type === 'normal'){
+          emoji = CONFIG.emojis.normal[cell.color];
+        } else if(cell.type === 'garbage'){
+          emoji = CONFIG.emojis.garbage;
+        } else if(cell.type === 'clearing'){
+          // show clearing emoji override
+          emoji = CONFIG.emojis.clear[cell.color] || CONFIG.emojis.garbage;
+        }
+        // subtle shadow for pop
+        if(anim.pop){
+          ctx.globalAlpha = 0.95;
+          ctx.translate(0,-this.cellPx*0.03);
+          ctx.font = `${Math.floor(this.cellPx*0.84)}px serif`;
+          ctx.fillText(emoji,0,0);
+        } else {
+          ctx.fillText(emoji,0,0);
+        }
+        ctx.restore();
+      }
+    }
+    ctx.restore();
+  }
+
+  drawPair(pair, pairAnim={}){
+    // draw a falling pair while not yet placed
+    const ctx=this.ctx;
+    const {a,b} = pair.coords();
+    // we allow drawing even in hidden rows if part is visible
+    const drawCell = (r,c,color,override)=>{
+      const {x,y} = this.cellXY(r,c);
+      if(y > this.cellPx*CONFIG.rowsVisible || y+this.cellPx < 0) return;
+      ctx.save();
+      ctx.translate(x + this.cellPx/2, y + this.cellPx/2);
+      // apply pairAnim offsets for pivot and other
+      const key = `${r},${c}`;
+      const anim = pairAnim[key] || {};
+      if(anim.offsetY) ctx.translate(0,anim.offsetY);
+      ctx.font = `${Math.floor(this.cellPx*0.78)}px serif`;
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      const emoji = override || CONFIG.emojis.normal[color];
+      ctx.fillText(emoji,0,0);
+      ctx.restore();
+    };
+    drawCell(a[0],a[1], pair.aColor);
+    drawCell(b[0],b[1], pair.bColor);
+  }
+
+  drawUI(){
+    // draw chain count big while active?
+    const ctx = this.ctx;
+    if(this.game.chainCount > 0){
+      ctx.save();
+      ctx.globalAlpha = 0.12;
+      ctx.fillStyle = '#fff';
+      ctx.font = `${Math.floor(this.cellPx*1.6)}px sans-serif`;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('CHAIN x' + this.game.chainCount, this.cellPx*this.board.cols/2, this.cellPx*CONFIG.rowsVisible/2);
+      ctx.restore();
+    }
+  }
+
+  render(pair, animMap={}, pairAnim={}){
+    this.clear();
+    this.drawGrid();
+    this.drawBoardState(animMap);
+    if(pair) this.drawPair(pair, pairAnim);
+    this.drawUI();
+  }
+}
+
+// ===== Input Handler =====
+class Input {
+  constructor(game){
+    this.game = game;
+    this.keys = {};
+    this.repeatTimers = {};
+    this.bind();
+    // touch
+    this.touchStart = null;
+    this.initTouch();
+  }
+
+  bind(){
+    window.addEventListener('keydown', e=>{
+      if(e.repeat) return;
+      this.keys[e.key.toLowerCase()] = true;
+      this.game.onKeyDown(e);
+    });
+    window.addEventListener('keyup', e=>{
+      delete this.keys[e.key.toLowerCase()];
+      this.game.onKeyUp(e);
+    });
+  }
+
+  initTouch(){
+    const canvas = document.getElementById('gameCanvas');
+    canvas.addEventListener('touchstart', (ev)=>{
+      ev.preventDefault();
+      if(!ev.touches || ev.touches.length==0) return;
+      this.touchStart = {x:ev.touches[0].clientX, y:ev.touches[0].clientY};
+    }, {passive:false});
+    canvas.addEventListener('touchend', (ev)=>{
+      ev.preventDefault();
+      if(!this.touchStart) return;
+      const s = this.touchStart;
+      const e = ev.changedTouches && ev.changedTouches[0] ? {x:ev.changedTouches[0].clientX, y:ev.changedTouches[0].clientY} : s;
+      const dx = e.x - s.x, dy = e.y - s.y;
+      const adx = Math.abs(dx), ady = Math.abs(dy);
+      // small tap => rotate
+      if(adx < 30 && ady < 30){
+        this.game.onTouch('tap');
+      } else {
+        if(adx > ady){
+          if(dx>0) this.game.onTouch('swipeRight'); else this.game.onTouch('swipeLeft');
+        } else {
+          if(dy>0) this.game.onTouch('swipeDown'); else this.game.onTouch('swipeUp');
+        }
+      }
+      this.touchStart = null;
+    }, {passive:false});
+    // on-screen touch buttons
+    document.getElementById('tc-left').addEventListener('click', ()=>this.game.onTouch('swipeLeft'));
+    document.getElementById('tc-right').addEventListener('click', ()=>this.game.onTouch('swipeRight'));
+    document.getElementById('tc-rotate').addEventListener('click', ()=>this.game.onTouch('tap'));
+    document.getElementById('tc-down').addEventListener('click', ()=>this.game.onTouch('swipeDown'));
+  }
+}
+
+// ===== ChainResolver =====
+class ChainResolver {
+  constructor(board){
+    this.board = board;
+  }
+
+  // find groups, return array groups {cells,color}
+  findGroups(){ return this.board.findGroups(4); }
+
+  // Execute a chain cycle: find groups, mark them clearing, remove them after delay, remove adjacent garbage, apply gravity
+  // Returns object with info for scoring and visuals
+  async runCycle(game){
+    const groups = this.findGroups();
+    if(groups.length===0) return null;
+    // compute touched colors and cells
+    let totalCleared = 0;
+    const colorsCleared = new Set();
+    const allCells = [];
+    for(const g of groups){
+      totalCleared += g.cells.length;
+      colorsCleared.add(g.color);
+      allCells.push(...g.cells);
+    }
+    // mark clearing state for animation
+    for(const [r,c] of allCells){
+      const cell = this.board.get(r,c);
+      if(cell) this.board.set(r,c,{...cell, type:'clearing'}); // set clearing type to draw clearing emoji
+    }
+    // remove adjacent garbage (ojama) immediately (they vanish when adjacent cleared)
+    const garbageRemoved = [];
+    for(const [r,c] of allCells){
+      for(const [dr,dc] of [[1,0],[-1,0],[0,1],[0,-1]]){
+        const nr=r+dr, nc=c+dc;
+        if(!this.board.inside(nr,nc)) continue;
+        const nb = this.board.get(nr,nc);
+        if(nb && nb.type==='garbage'){
+          garbageRemoved.push([nr,nc]);
+        }
+      }
+    }
+    // set garbage to clearing too for effect
+    for(const [r,c] of garbageRemoved){
+      const cell = this.board.get(r,c);
+      if(cell) this.board.set(r,c,{...cell, type:'clearing', color:0});
+      allCells.push([r,c]);
+    }
+
+    // create anim map for visuals
+    const animMap = {};
+    for(const [r,c] of allCells){
+      animMap[`${r},${c}`] = {pop:true};
+    }
+    // wait pop animation
+    await this.wait(CONFIG.popDelayMs);
+
+    // remove them
+    this.board.removeCells(allCells);
+    // apply gravity
+    let fell = this.board.applyGravity();
+    // scoring
+    return {
+      cleared: totalCleared + garbageRemoved.length,
+      colors: Array.from(colorsCleared),
+      groups: groups.length
+    };
+  }
+
+  wait(ms){ return new Promise(res=>setTimeout(res,ms)); }
+}
+
+// ===== Game Class =====
+class Game {
+  constructor(){
+    this.board = new Board(CONFIG.cols, TOTAL_ROWS);
+    this.chainResolver = new ChainResolver(this.board);
+    this.input = new Input(this);
+    this.canvas = document.getElementById('gameCanvas');
+    this.renderer = new Renderer(this.canvas, this.board, this);
+    this.score = 0;
+    this.level = 1;
+    this.linesCleared = 0;
+    this.chainCount = 0;
+    this.pair = null;
+    this.nextPairs = [];
+    this.gravityTimer = 0;
+    this.dropInterval = this.gravityMsForLevel();
+    this.isRunning = false;
+    this.isPaused = false;
+    this.gameOver = false;
+    this.animMap = {};
+    this.pairAnim = {};
+    this.lockDelayMs = 500;
+    this.lockTimer = 0;
+    this.softDropActive = false;
+    this.hardDropping = false;
+    this.lastTime = performance.now();
+    this.spawnSafe = true;
+    this.initUI();
+    this.loadHighScore();
+    this.createInitialQueue();
+    this.loop();
+  }
+
+  initUI(){
+    // menu buttons
+    document.getElementById('startBtn').addEventListener('click', ()=>this.start());
+    document.getElementById('howBtn').addEventListener('click', ()=>alert('Match 4+ same emojis orthogonally to clear. Arrow keys to move. Z/X rotate. Space/Up hard drop. P pause.'));
+    document.getElementById('backToMenu').addEventListener('click', ()=>this.showMenu());
+    document.getElementById('pauseBtn').addEventListener('click', ()=>this.togglePause());
+    // high score
+    this.updateHudUI();
+  }
+
+  createInitialQueue(){
+    this.nextPairs = [];
+    for(let i=0;i<5;i++) this.nextPairs.push(this.randomPair());
+  }
+
+  randomPair(){
+    const a = rand(CONFIG.colorsCount);
+    const b = rand(CONFIG.colorsCount);
+    return {a,b};
+  }
+
+  spawnPair(){
+    const p = this.nextPairs.shift();
+    this.nextPairs.push(this.randomPair());
+    const pair = new Pair(p.a,p.b, this.board.cols);
+    pair.pivot.r = CONFIG.hiddenRows; // spawn in top hidden row
+    pair.pivot.c = Math.floor(this.board.cols/2);
+    // attempt to place, if colliding gameover
+    const {a,b} = pair.coords();
+    if(!this.board.isEmpty(a[0],a[1]) || !this.board.isEmpty(b[0],b[1])){
+      // game over
+      this.gameOverNow();
+      return null;
+    }
+    this.pair = pair;
+    this.hardDropping = false;
+    this.softDropActive = false;
+    this.lockTimer = 0;
+    return pair;
+  }
+
+  start(){
+    // reset state
+    this.board = new Board(CONFIG.cols, TOTAL_ROWS);
+    this.chainResolver = new ChainResolver(this.board);
+    this.renderer.board = this.board;
+    this.score = 0;
+    this.level = 1;
+    this.linesCleared = 0;
+    this.chainCount = 0;
+    this.pair = null;
+    this.createInitialQueue();
+    this.spawnPair();
+    this.isRunning = true;
+    this.isPaused = false;
+    this.gameOver = false;
+    this.lastTime = performance.now();
+    document.getElementById('menu').style.display='none';
+    document.getElementById('hud').style.display='flex';
+    document.getElementById('nextBox').style.display='block';
+    document.getElementById('controlsPanel').style.display='block';
+    document.getElementById('footer').style.display='flex';
+    document.getElementById('pauseBtn').style.display='inline-block';
+    this.updateHudUI();
+    this.updateNextPreview();
+    this.setStatus('Playing');
+  }
+
+  showMenu(){
+    this.isRunning=false;
+    this.isPaused=false;
+    document.getElementById('menu').style.display='flex';
+    document.getElementById('hud').style.display='none';
+    document.getElementById('nextBox').style.display='none';
+    document.getElementById('controlsPanel').style.display='none';
+    document.getElementById('footer').style.display='none';
+    document.getElementById('pauseBtn').style.display='none';
+    this.setStatus('Menu');
+  }
+
+  updateHudUI(){
+    document.getElementById('score').innerText = this.score;
+    document.getElementById('level').innerText = this.level;
+    document.getElementById('chain').innerText = this.chainCount;
+  }
+
+  updateNextPreview(){
+    const el = document.getElementById('nextPreview');
+    el.innerHTML = '';
+    for(let i=0;i<CONFIG.nextPreviewCount;i++){
+      const p = this.nextPairs[i];
+      const a = document.createElement('div');
+      a.textContent = CONFIG.emojis.normal[p.a];
+      a.style.fontSize='32px';
+      const b = document.createElement('div');
+      b.textContent = CONFIG.emojis.normal[p.b];
+      b.style.fontSize='32px';
+      el.appendChild(a);
+      el.appendChild(b);
+    }
+  }
+
+  loadHighScore(){
+    const v = localStorage.getItem(STORAGE_KEY);
+    const n = v ? parseInt(v,10) : 0;
+    document.getElementById('highScore').innerText = n;
+  }
+
+  saveHighScore(){
+    const cur = localStorage.getItem(STORAGE_KEY) || 0;
+    if(this.score > parseInt(cur||0,10)){
+      localStorage.setItem(STORAGE_KEY, this.score);
+      document.getElementById('highScore').innerText = this.score;
+      return true;
+    }
+    return false;
+  }
+
+  setStatus(t){
+    document.getElementById('status').innerText = t;
+  }
+
+  togglePause(){
+    if(!this.isRunning) return;
+    this.isPaused = !this.isPaused;
+    this.setStatus(this.isPaused ? 'Paused' : 'Playing');
+  }
+
+  onKeyDown(e){
+    if(!this.isRunning) return;
+    if(e.key === 'p' || e.key === 'P'){ this.togglePause(); return; }
+    if(this.isPaused) return;
+    if(e.key === 'ArrowLeft'){ this.tryMovePair(-1,0); }
+    if(e.key === 'ArrowRight'){ this.tryMovePair(1,0); }
+    if(e.key === 'ArrowDown'){ this.softDropActive = true; }
+    if(e.key === ' ' || e.key === 'ArrowUp'){ this.hardDrop(); }
+    if(e.key==='z' || e.key==='Z'){ this.tryRotate('ccw'); }
+    if(e.key==='x' || e.key==='X'){ this.tryRotate('cw'); }
+  }
+
+  onKeyUp(e){
+    if(e.key === 'ArrowDown'){ this.softDropActive = false; }
+  }
+
+  onTouch(action){
+    if(this.isPaused) return;
+    if(action === 'tap'){ this.tryRotate('cw'); }
+    if(action === 'swipeLeft'){ this.tryMovePair(-1,0); }
+    if(action === 'swipeRight'){ this.tryMovePair(1,0); }
+    if(action === 'swipeDown'){ this.softDropActive = true; setTimeout(()=>this.softDropActive=false, 220); }
+    if(action === 'swipeUp'){ this.hardDrop(); }
+  }
+
+  tryMovePair(dx,dy){
+    if(!this.pair) return;
+    const clone = this.pair.clone();
+    clone.move(dx,dy);
+    if(this.pairFits(clone)) this.pair = clone;
+  }
+
+  tryRotate(dir){
+    if(!this.pair) return;
+    const clone = this.pair.clone();
+    if(dir === 'cw') clone.rotateCW(); else clone.rotateCCW();
+    // wall kick: try shifts if colliding
+    const tests = [[0,0],[0,-1],[0,1],[-1,0],[1,0]];
+    for(const t of tests){
+      clone.pivot.c += t[1];
+      clone.pivot.r += t[0];
+      if(this.pairFits(clone)){ this.pair = clone; return; }
+      clone.pivot.c -= t[1];
+      clone.pivot.r -= t[0];
+    }
+  }
+
+  pairFits(pair){
+    const {a,b} = pair.coords();
+    if(!this.board.inside(a[0],a[1]) || !this.board.inside(b[0],b[1])) return false;
+    if(!this.board.isEmpty(a[0],a[1]) && !(a[0]>=CONFIG.hiddenRows && this.board.get(a[0],a[1])==null)) return false;
+    if(!this.board.isEmpty(b[0],b[1]) && !(b[0]>=CONFIG.hiddenRows && this.board.get(b[0],b[1])==null)) return false;
+    // we check null or occupied; allow standing in hidden during spawn but we will detect game over after placement
+    if(this.board.get(a[0],a[1]) != null) return false;
+    if(this.board.get(b[0],b[1]) != null) return false;
+    return true;
+  }
+
+  hardDrop(){
+    if(!this.pair || this.pairLocked) return;
+    // drop until can't
+    while(true){
+      const clone = this.pair.clone();
+      clone.move(0,1);
+      if(this.pairFits(clone)) this.pair = clone;
+      else break;
+    }
+    // immediately lock in place
+    this.lockPairToBoard();
+  }
+
+  lockPairToBoard(){
+    if(!this.pair) return;
+    const {a,b} = this.pair.coords();
+    // place a and b as normal puyos
+    this.board.placePuyo(a[0],a[1], {type:'normal', color:this.pair.aColor});
+    this.board.placePuyo(b[0],b[1], {type:'normal', color:this.pair.bColor});
+    // scoring: base points for placing
+    this.score += CONFIG.basePlacePoints * 2;
+    this.linesCleared += 2;
+    // spawn new pair
+    this.pair = null;
+    this.updateHudUI();
+    this.updateNextPreview();
+    // resolve chains (async)
+    this.processChains();
+    // spawn next pair if not game over after chain resolves
+    if(!this.gameOver) this.spawnPair();
+  }
+
+  async processChains(){
+    this.chainCount = 0;
+    let chainMultiplier = 1;
+    while(true){
+      const res = await this.chainResolver.runCycle(this);
+      if(!res) break;
+      this.chainCount++;
+      // scoring rules
+      // base chain points mapping from your spec (1 chain:40,2:80,3:160 doubling)
+      const chainBase = 40 * Math.pow(2, this.chainCount-1);
+      let chainScore = chainBase * res.cleared;
+      // extra: color bonus (if multiple different colors cleared at same time)
+      if(res.colors.length > 1){
+        chainScore += 50 * (res.colors.length - 1) * res.cleared;
+      }
+      this.score += chainScore;
+      // add small time delay so player sees chain
+      this.updateHudUI();
+      await this.delay(200);
+    }
+    // all clear bonus
+    if(this.board.occupiedCount() === 0){
+      this.score += 1000;
+      this.setStatus('ALL CLEAR!');
+      await this.delay(600);
+    } else {
+      this.setStatus('Playing');
+    }
+    // increase level occasionally
+    if(this.chainCount >= 2) this.levelUp();
+    this.chainCount = 0;
+    this.updateHudUI();
+  }
+
+  levelUp(){
+    this.level++;
+    this.dropInterval = this.gravityMsForLevel();
+    this.setStatus('Level ' + this.level);
+    setTimeout(()=>this.setStatus('Playing'), 1200);
+  }
+
+  delay(ms){ return new Promise(res=>setTimeout(res,ms)); }
+
+  gravityMsForLevel(){
+    // reduce by factor per level with minimal clamp
+    return Math.max(120, CONFIG.gravityBaseMs * Math.pow(CONFIG.gravityAcceleration, this.level-1));
+  }
+
+  gameOverNow(){
+    this.isRunning = false;
+    this.gameOver = true;
+    const broke = this.saveHighScore();
+    this.setStatus('Game Over - Score: ' + this.score + (broke ? ' (New High!)' : ''));
+    // show menu after slight pause
+    setTimeout(()=>this.showMenu(), 1000);
+  }
+
+  // main loop
+  loop(){
+    const loopFn = (t)=>{
+      const dt = t - this.lastTime;
+      this.lastTime = t;
+      if(this.isRunning && !this.isPaused && !this.gameOver){
+        this.update(dt);
+      }
+      this.renderer.render(this.pair, this.animMap, this.pairAnim);
+      requestAnimationFrame(loopFn);
+    };
+    requestAnimationFrame(loopFn);
+  }
+
+  update(dt){
+    // handle soft drop or timed gravity
+    if(!this.pair) return;
+    const gravityMs = this.softDropActive ? Math.max(40,this.dropInterval/6) : this.dropInterval;
+    this.gravityTimer += dt;
+    if(this.gravityTimer >= gravityMs){
+      // try move down
+      const clone = this.pair.clone();
+      clone.move(0,1);
+      if(this.pairFits(clone)){
+        this.pair = clone;
+      } else {
+        // lock
+        this.lockPairToBoard();
+      }
+      this.gravityTimer = 0;
+    }
+    // update animations (simple pop fade)
+    // drop animation for pair - small bounce
+    this.pairAnim = {};
+    const {a,b} = this.pair.coords();
+    // make dx/dy offsets if in hidden -> visible (smooth appear)
+    for(const [r,c] of [a,b]){
+      const key = `${r},${c}`;
+      const yoff = 0;
+      this.pairAnim[key] = {offsetY: yoff};
+    }
+    // TODO: more advanced animations (rotation tween) could be added
+    this.pair = this.pair; // no-op
+  }
+
+}
+
+// ===== Start Game Instance =====
+const game = new Game();
+
+// basic UI wiring
+document.getElementById('pauseBtn').addEventListener('click', ()=>game.togglePause());
+document.getElementById('backToMenu').style.display='inline-block';
+
+// show/hide controls automatically
+function showMenuInitial(){
+  document.getElementById('menu').style.display='flex';
+  document.getElementById('hud').style.display='none';
+  document.getElementById('nextBox').style.display='none';
+  document.getElementById('controlsPanel').style.display='none';
+  document.getElementById('footer').style.display='none';
+}
+showMenuInitial();
+
+</script>
+</body>
+</html>
