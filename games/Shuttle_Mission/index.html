@@ -371,30 +371,45 @@
     // ---------- Physics / Update ----------
     const clock = new THREE.Clock();
 
-    function update(dt){
+    function update(dt) {
       if (!shipLoaded) return;
     
+      // Determine desired direction from crosshair in camera space
       const targetDir = getAimDirection();
     
-      let currentDir = player.velocity.lengthSq() > 0.0001
-        ? player.velocity.clone().normalize()
-        : new THREE.Vector3(-1, 0, 0).applyQuaternion(ship.quaternion);
+      // Use ship's forward axis (-X) in local space
+      const shipForward = new THREE.Vector3(-1, 0, 0).applyQuaternion(ship.quaternion);
     
-      const blendFactor = 1 - Math.exp(-3.0 * dt); // stronger damping
-      const newDir = currentDir.lerp(targetDir, blendFactor).normalize();
+      // If stabilizing, gently damp velocity
+      if (input.stabilizing) {
+        player.velocity.lerp(new THREE.Vector3(), 1 - Math.exp(-5 * dt));
+      } else {
+        // Blend current velocity direction toward ship-relative forward direction
+        const currentDir = player.velocity.length() > 0.01
+          ? player.velocity.clone().normalize()
+          : shipForward;
+        const blendFactor = 1 - Math.exp(-3 * dt);
+        const newDir = currentDir.lerp(shipForward, blendFactor).normalize();
     
-      const currSpeed = player.velocity.length();
-      const desiredSpeed = input.throttle * player.maxSpeed;
-      const newSpeed = THREE.MathUtils.damp(currSpeed, desiredSpeed, 4.0, dt);
+        // Compute desired speed
+        const desiredSpeed = input.throttle * player.maxSpeed;
+        const currSpeed = player.velocity.length();
+        const newSpeed = THREE.MathUtils.damp(currSpeed, desiredSpeed, 5, dt);
     
-      player.velocity.copy(newDir.multiplyScalar(newSpeed));
+        player.velocity.copy(newDir.multiplyScalar(newSpeed));
+      }
     
+      // Move ship according to velocity
       ship.position.addScaledVector(player.velocity, dt);
+    
+      // Apply boundary and orientation
       applySoftBoundary(ship.position);
-    
-      const targetQuat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(-1,0,0), newDir);
-      ship.quaternion.slerp(targetQuat, 1 - Math.exp(-6.0 * dt));
-    
+      const targetQuat = new THREE.Quaternion().setFromUnitVectors(
+        new THREE.Vector3(-1, 0, 0),
+        player.velocity.length() > 0.01 ? player.velocity.clone().normalize() : shipForward
+      );
+      ship.quaternion.slerp(targetQuat, 1 - Math.exp(-6 * dt));
+        
       updateCamera(dt);
       tryTractor(dt);
       tryDocking();
