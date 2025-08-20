@@ -372,46 +372,39 @@
     const clock = new THREE.Clock();
 
     function update(dt){
-      if(!shipLoaded) return;
-
-      // Determine desired movement direction from crosshair
+      if (!shipLoaded) return;
+    
       const targetDir = getAimDirection();
-
-      // Throttle and velocity/stabilizer
-      if(input.stabilizing){
-        // Smoothly reduce velocity to zero
-        player.velocity.multiplyScalar(1 - Math.min(4*dt, 0.25));
-      } else {
-        const desiredSpeed = input.throttle * player.maxSpeed;
-        const currSpeed = player.velocity.length();
-        const newSpeed = THREE.MathUtils.damp(currSpeed, Math.max(0, desiredSpeed), 2.5, dt);
-        // Blend current velocity direction toward targetDir for smooth steering
-        const dir = player.velocity.lengthSq()>0.0001 ? player.velocity.clone().normalize() : new THREE.Vector3(-1,0,0).applyQuaternion(ship.quaternion);
-        const blendedDir = dir.lerp(targetDir, 1 - Math.exp(-2.0*dt)).normalize();
-        player.velocity.copy(blendedDir.multiplyScalar(newSpeed));
-      }
-
-      // Move ship and enforce boundary
+    
+      let currentDir = player.velocity.lengthSq() > 0.0001
+        ? player.velocity.clone().normalize()
+        : new THREE.Vector3(-1, 0, 0).applyQuaternion(ship.quaternion);
+    
+      const blendFactor = 1 - Math.exp(-3.0 * dt); // stronger damping
+      const newDir = currentDir.lerp(targetDir, blendFactor).normalize();
+    
+      const currSpeed = player.velocity.length();
+      const desiredSpeed = input.throttle * player.maxSpeed;
+      const newSpeed = THREE.MathUtils.damp(currSpeed, desiredSpeed, 4.0, dt);
+    
+      player.velocity.copy(newDir.multiplyScalar(newSpeed));
+    
       ship.position.addScaledVector(player.velocity, dt);
       applySoftBoundary(ship.position);
-
-      // Orient ship to its velocity vector (nose toward -X local axis)
-      const faceDir = player.velocity.lengthSq()>0.01 ? player.velocity.clone().normalize() : targetDir;
-      const targetQuat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(-1,0,0), faceDir);
-      ship.quaternion.slerp(targetQuat, 1 - Math.exp(-6*dt));
-
-      // Update camera
+    
+      const targetQuat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(-1,0,0), newDir);
+      ship.quaternion.slerp(targetQuat, 1 - Math.exp(-6.0 * dt));
+    
       updateCamera(dt);
-
-      // Tractor beam & docking
       tryTractor(dt);
       tryDocking();
-
-      // HUD
-      const pct = Math.round(player.velocity.length()/player.maxSpeed*100);
-      speedFill.style.width = pct + '%'; speedTxt.textContent = pct + '%';
+    
+      const pct = Math.round(player.velocity.length() / player.maxSpeed * 100);
+      speedFill.style.width = pct + '%';
+      speedTxt.textContent = pct + '%';
       updateMissionUI();
     }
+
 
     function animate(){
       requestAnimationFrame(animate);
