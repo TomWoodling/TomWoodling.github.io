@@ -1,196 +1,432 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" /><meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Shuttle Starfield — Arcade Controls + Instanced Asteroids</title>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Shuttle Starfield — Arcade Controls + Spring Arm + Pointer Lock</title>
   <style>
-    html,body {height:100%;margin:0;background:#000;overflow:hidden;}
-    #container{width:100%;height:100%;position:relative;}
-    canvas{display:block;}
-    .hud{position:absolute;left:10px;top:10px;color:#fff;font-family:system-ui;pointer-events:none;}
-    .stats,.ammo{margin-top:4px;}
-    .reticle{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:28px;height:28px;pointer-events:none;mix-blend-mode:screen;}
-    .reticle-ring{width:100%;height:100%;border-radius:50%;box-shadow:0 0 12px 3px rgba(127,255,212,0.08) inset;position:absolute;}
-    .reticle-dot{width:6px;height:6px;background:#7fffd4;border-radius:50%;margin:11px auto;position:absolute;left:0;right:0;}
-    .dialog{position:absolute;left:50%;transform:translateX(-50%);bottom:60px;background:rgba(0,0,0,0.6);color:#fff;padding:10px;border-radius:8px;max-width:480px;text-align:left;}
-    .speed-bar-container{position:absolute;bottom:10px;left:50%;transform:translateX(-50%);width:200px;height:14px;background:#222;border:1px solid #555;}
-    .speed-bar-fill{width:0%;height:100%;background:#7fffd4;}
-    .speed-bar-text{position:absolute;width:100%;top:0;text-align:center;font-size:12px;color:#fff;pointer-events:none;}
+    html,body{height:100%;margin:0;background:#000;overflow:hidden}
+    #container{width:100%;height:100%;position:relative}
+    canvas{display:block}
+    /* HUD */
+    .hud{position:absolute;left:10px;top:10px;color:#fff;font-family:system-ui,Segoe UI,Roboto,Arial;pointer-events:none}
+    .stats{font-size:14px;opacity:0.95}
+    .mission{margin-top:6px;font-size:14px;color:#7fffd4}
+    .dialog{position:absolute;left:50%;transform:translateX(-50%);bottom:60px;background:rgba(0,0,0,0.6);color:#fff;padding:10px;border-radius:8px;max-width:520px;text-align:left}
+    .dialog .title{font-size:18px;margin-bottom:4px}
+
+    /* Crosshair */
+    .crosshair{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:40px;height:40px;pointer-events:none}
+    .crosshair .ring{position:absolute;inset:0;border-radius:50%;box-shadow:0 0 10px 2px rgba(127,255,212,0.12) inset}
+    .crosshair .dot{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:6px;height:6px;border-radius:50%;background:#7fffd4}
+
+    /* Speed bar */
+    .speedbar{position:absolute;bottom:10px;left:50%;transform:translateX(-50%);width:220px;height:14px;background:#111;border:1px solid #444}
+    .speedbar .fill{height:100%;width:0%;background:#7fffd4}
+    .speedbar .txt{position:absolute;left:0;right:0;top:0;text-align:center;font-size:12px;color:#fff;pointer-events:none}
+
+    /* Lock hint */
+    .lockhint{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);color:#ddd;background:rgba(0,0,0,0.5);padding:10px 14px;border-radius:10px;font-family:system-ui}
+
+    /* Tractor beam visual */
+    .tractor{position:absolute;right:10px;top:10px;color:#7fffd4;font-family:system-ui}
   </style>
 
-  <!-- Import map + shim for loader resolution -->
-  <script async src="https://unpkg.com/es-module-shims@1.6.3/dist/es-module-shims.js"></script>
+  <!-- Import map + shim for loader resolution (avoids bare specifier issues) -->
+  <script async src="https://unpkg.com/es-module-shims@1.10.0/dist/es-module-shims.js"></script>
   <script type="importmap">
   {
-    "imports":{
-      "three":"https://cdn.jsdelivr.net/npm/three@0.179.1/build/three.module.js",
-      "three/examples/jsm/":"https://cdn.jsdelivr.net/npm/three@0.179.1/examples/jsm/"
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.179.1/build/three.module.js",
+      "three/examples/jsm/": "https://cdn.jsdelivr.net/npm/three@0.179.1/examples/jsm/"
     }
   }
   </script>
 </head>
 <body>
   <div id="container"></div>
-  <div class="reticle"><div class="reticle-ring"></div><div class="reticle-dot"></div></div>
+  <div class="crosshair" id="crosshair"><div class="ring"></div><div class="dot"></div></div>
   <div class="hud">
-    <div class="stats" id="stats">Hull: 100 • Credits: 200</div>
-    <div class="ammo" id="ammo">Rockets: 20</div>
+    <div class="stats" id="stats">Hull: 100 • Credits: 0 • Cargo: 0/10</div>
+    <div class="mission" id="mission">Mission: Collect 10 metallic cuboids and deliver to station.</div>
   </div>
-  <div class="speed-bar-container"><div class="speed-bar-fill" id="speedBar"></div><div class="speed-bar-text" id="speedText">0%</div></div>
-  <div class="dialog" id="dialog" style="display:none;"></div>
+  <div class="speedbar"><div class="fill" id="speedFill"></div><div class="txt" id="speedTxt">0%</div></div>
+  <div class="tractor" id="tractor">Tractor: OFF</div>
+  <div class="dialog" id="dialog" style="display:none"></div>
+  <div class="lockhint" id="lockhint">Click to lock mouse • W/S throttle • Shift = Stabilizer • LMB = Tractor</div>
 
   <script type="module">
     import * as THREE from 'three';
     import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
     import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
 
+    // ---------- Scene / Renderer ----------
     const container = document.getElementById('container');
-    const scene = new THREE.Scene(), renderer = new THREE.WebGLRenderer({antialias:true});
-    renderer.setPixelRatio(window.devicePixelRatio);
+    const renderer = new THREE.WebGLRenderer({ antialias:true });
+    renderer.setPixelRatio(devicePixelRatio);
     renderer.setSize(innerWidth, innerHeight);
     container.appendChild(renderer.domElement);
 
-    const camera = new THREE.PerspectiveCamera(60,innerWidth/innerHeight,0.1,10000);
+    const scene = new THREE.Scene();
+    scene.fog = new THREE.FogExp2(0x000011, 0.00035);
+
+    const camera = new THREE.PerspectiveCamera(60, innerWidth/innerHeight, 0.1, 20000);
     scene.add(camera);
-    scene.fog = new THREE.FogExp2(0x000011, 0.0003);
-    scene.add(new THREE.HemisphereLight(0xffffff, 0x333333, 0.8));
-    const dir = new THREE.DirectionalLight(0xffffff, 0.6);
-    dir.position.set(5,10,7);
-    scene.add(dir);
 
-    // Starfield
-    function makeStarfield(n) {
-      const geo = new THREE.BufferGeometry(), pos = new Float32Array(n*3), col = new Float32Array(n*3);
-      for (let i=0; i<n; i++){
-        const r=1200+Math.random()*2400, t=Math.random()*Math.PI*2, f=Math.acos(Math.random()*2-1);
-        pos.set([r*Math.sin(f)*Math.cos(t), r*Math.sin(f)*Math.sin(t), r*Math.cos(f)], i*3);
-        const b=0.8+Math.random()*0.2; col.set([b,b,b], i*3);
+    const hemi = new THREE.HemisphereLight(0xffffff, 0x333344, 0.9); scene.add(hemi);
+    const dir = new THREE.DirectionalLight(0xffffff, 0.6); dir.position.set(10,15,8); scene.add(dir);
+
+    // ---------- Starfield ----------
+    function makeStarfield(count){
+      const geo = new THREE.BufferGeometry();
+      const pos = new Float32Array(count*3);
+      const col = new Float32Array(count*3);
+      for(let i=0;i<count;i++){
+        const r = 1500 + Math.random()*3000;
+        const t = Math.random()*Math.PI*2;
+        const p = Math.acos(Math.random()*2-1);
+        const x = r*Math.sin(p)*Math.cos(t);
+        const y = r*Math.sin(p)*Math.sin(t);
+        const z = r*Math.cos(p);
+        pos.set([x,y,z], i*3);
+        const b = 0.75 + Math.random()*0.25; col.set([b,b,b], i*3);
       }
-      geo.setAttribute('position',new THREE.BufferAttribute(pos,3));
-      geo.setAttribute('color',new THREE.BufferAttribute(col,3));
-      const mat = new THREE.PointsMaterial({size:1,vertexColors:true,sizeAttenuation:true});
-      const pts = new THREE.Points(geo,mat); pts.frustumCulled=false;
-      scene.add(pts);
+      geo.setAttribute('position', new THREE.BufferAttribute(pos,3));
+      geo.setAttribute('color', new THREE.BufferAttribute(col,3));
+      const mat = new THREE.PointsMaterial({ size:1, vertexColors:true, sizeAttenuation:true });
+      const pts = new THREE.Points(geo, mat); pts.frustumCulled=false; scene.add(pts);
     }
-    makeStarfield(3000);
+    makeStarfield(4000);
 
-    // Asteroid Field via InstancedMesh
-    const asteroidGeo = new THREE.IcosahedronGeometry(1,1);
-    const asteroidMat = new THREE.MeshStandardMaterial({color:0x7a6f55,roughness:1});
-    const asteroidField = new THREE.InstancedMesh(asteroidGeo, asteroidMat, 50);
-    asteroidField.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-    scene.add(asteroidField);
+    // ---------- Sector boundary (soft) ----------
+    const BOUNDARY_RADIUS = 1600;
+    function applySoftBoundary(v){ const d=v.length(); if(d>BOUNDARY_RADIUS){ v.setLength(BOUNDARY_RADIUS*0.98);} }
+
+    // ---------- Space Station (torus + cone) ----------
+    const station = new THREE.Group();
+    const torus = new THREE.Mesh(new THREE.TorusGeometry(60, 10, 18, 120), new THREE.MeshStandardMaterial({ color:0x8890aa, metalness:0.6, roughness:0.35 }));
+    const cone = new THREE.Mesh(new THREE.ConeGeometry(20, 40, 24), new THREE.MeshStandardMaterial({ color:0x223344, metalness:0.3, roughness:0.7 }));
+    cone.rotation.x = Math.PI/2; // point inward
+    station.add(torus); station.add(cone);
+    station.position.set(0,0,-200);
+    scene.add(station);
+
+    // ---------- Asteroid fields (InstancedMesh) ----------
     const dummy = new THREE.Object3D();
-    for (let i=0; i<50; i++){
-      dummy.position.set((Math.random()-0.5)*800,(Math.random()-0.5)*200,(Math.random()-0.5)*800);
-      dummy.scale.setScalar(3 + Math.random()*5);
-      dummy.updateMatrix();
-      asteroidField.setMatrixAt(i, dummy.matrix);
-    }
-    asteroidField.instanceMatrix.needsUpdate = true;
 
-    // Soft sector boundary radius
-    const BOUNDARY_RADIUS = 1200;
-    function applySoftBoundary(pos) {
-      const dist = pos.length();
-      if (dist > BOUNDARY_RADIUS) {
-        pos.setLength(BOUNDARY_RADIUS * 0.95);
+    function randomOnBox(rangeX, rangeY, rangeZ){
+      return new THREE.Vector3((Math.random()-0.5)*rangeX, (Math.random()-0.5)*rangeY, (Math.random()-0.5)*rangeZ);
+    }
+
+    // Metallic cuboids (mission 1 collectibles)
+    const cuboidGeo = new THREE.BoxGeometry(6,4,4);
+    const cuboidMat = new THREE.MeshStandardMaterial({ color:0x9da7b3, metalness:0.9, roughness:0.2 });
+    const cuboidField = new THREE.InstancedMesh(cuboidGeo, cuboidMat, 30);
+    cuboidField.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    scene.add(cuboidField);
+
+    // Green cylinders (mission 2)
+    const cylGeo = new THREE.CylinderGeometry(2,2,8,16);
+    const cylMat = new THREE.MeshStandardMaterial({ color:0x00cc66, metalness:0.2, roughness:0.8 });
+    const cylField = new THREE.InstancedMesh(cylGeo, cylMat, 40);
+    cylField.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    scene.add(cylField);
+
+    // Red rhomboids (mission 3)
+    const rhomGeo = new THREE.OctahedronGeometry(3,0);
+    const rhomMat = new THREE.MeshStandardMaterial({ color:0xdd3333, metalness:0.1, roughness:0.8 });
+    const rhomField = new THREE.InstancedMesh(rhomGeo, rhomMat, 50);
+    rhomField.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    scene.add(rhomField);
+
+    // Decorative rocky asteroids (non-collectible)
+    const rockGeo = new THREE.IcosahedronGeometry(6,1);
+    const rockMat = new THREE.MeshStandardMaterial({ color:0x6f6755, roughness:1 });
+    const rockField = new THREE.InstancedMesh(rockGeo, rockMat, 80);
+    scene.add(rockField);
+
+    function scatterField(mesh, count, area=1200, y=600, z=1200){
+      for(let i=0;i<count;i++){
+        dummy.position.copy(randomOnBox(area, y, z));
+        dummy.rotation.set(Math.random()*Math.PI, Math.random()*Math.PI, Math.random()*Math.PI);
+        const s = 0.7 + Math.random()*1.6; dummy.scale.setScalar(s);
+        dummy.updateMatrix();
+        mesh.setMatrixAt(i, dummy.matrix);
       }
+      mesh.instanceMatrix.needsUpdate = true;
     }
 
-    // Loader
+    scatterField(cuboidField, cuboidField.count);
+    scatterField(cylField, cylField.count);
+    scatterField(rhomField, rhomField.count);
+    // keep rocks farther out a bit
+    scatterField(rockField, rockField.count, 1800, 900, 1800);
+
+    // Track which instances are "active" (not yet collected)
+    const activeInstances = new WeakMap();
+    [cuboidField, cylField, rhomField, rockField].forEach(mesh => {
+      const set = new Set(); for(let i=0;i<mesh.count;i++) set.add(i); activeInstances.set(mesh, set);
+    });
+
+    // ---------- Player shuttle (GLTF) ----------
     const loader = new GLTFLoader();
-    const draco = new DRACOLoader();
-    draco.setDecoderPath('https://www.gstatic.com/draco/v1/decoders/');
-    loader.setDRACOLoader(draco);
-    let ship = new THREE.Object3D(), shipLoaded=false;
-    loader.load('https://TomWoodling.github.io/games/Shuttle_Mission/shuttle.gltf',
-      gltf => { ship = gltf.scene; ship.scale.setScalar(0.75); ship.rotation.y = Math.PI/2; scene.add(ship); shipLoaded=true; },
-      undefined, err => { console.warn(err); ship = new THREE.Mesh(new THREE.BoxGeometry(1,0.6,2), new THREE.MeshStandardMaterial({color:0x99ccff})); ship.rotation.x=Math.PI/2; ship.rotation.y=Math.PI/2; scene.add(ship); }
-    );
+    const draco = new DRACOLoader(); draco.setDecoderPath('https://www.gstatic.com/draco/v1/decoders/'); loader.setDRACOLoader(draco);
 
-    const player = {mesh:ship, velocity:new THREE.Vector3(), maxSpeed:80, throttle:0, rockets:20, credits:200};
-    const input = {throttle:0};
-    window.addEventListener('keydown', e => {
-      if (e.key==='w') input.throttle=1;
-      if (e.key==='s') input.throttle=-0.5;
-    });
-    window.addEventListener('keyup', e => {
-      if (e.key==='w' || e.key==='s') input.throttle=0;
+    let ship = new THREE.Object3D(); let shipLoaded=false;
+    loader.load('https://TomWoodling.github.io/games/Shuttle_Mission/shuttle.gltf', (gltf)=>{
+      ship = gltf.scene; ship.scale.setScalar(0.8);
+      // Model faces -X when moving forward in our scheme; rotate so nose points -X.
+      // If your model already faces -X, comment the next line.
+      ship.rotation.y = Math.PI; // 180 degrees
+      scene.add(ship); shipLoaded=true;
+    }, undefined, (e)=>{
+      console.warn('GLTF load failed, using fallback box.', e);
+      ship = new THREE.Mesh(new THREE.BoxGeometry(2,1,4), new THREE.MeshStandardMaterial({color:0x99ccff}));
+      ship.rotation.y = Math.PI; scene.add(ship); shipLoaded=true;
     });
 
-    const pointer={x:0,y:0};
-    window.addEventListener('mousemove', e=> {
-      pointer.x = (e.clientX/innerWidth)*2 -1;
-      pointer.y = -((e.clientY/innerHeight)*2 -1);
+    // ---------- Controls (Arcade: mouse steers, W/S throttle, Shift stabilizer) ----------
+    const pointer = { x:0, y:0, locked:false };
+    const crosshair = document.getElementById('crosshair');
+    const lockhint = document.getElementById('lockhint');
+
+    function clamp(v,min,max){ return Math.max(min, Math.min(max,v)); }
+
+    // Pointer Lock handlers
+    renderer.domElement.addEventListener('click', ()=>{ renderer.domElement.requestPointerLock(); });
+    document.addEventListener('pointerlockchange', ()=>{
+      pointer.locked = (document.pointerLockElement === renderer.domElement);
+      lockhint.style.display = pointer.locked ? 'none' : 'block';
     });
 
-    // UI
-    const statsEl=document.getElementById('stats'),
-          ammoEl=document.getElementById('ammo'),
-          speedFill=document.getElementById('speedBar'),
-          speedText=document.getElementById('speedText'),
-          dialogEl=document.getElementById('dialog');
-    let dialogTimer;
+    // Crosshair position is controlled by raw mouse deltas when locked
+    let chX = 0, chY = 0; // -1..1 range around center
+    window.addEventListener('mousemove', (e)=>{
+      if(pointer.locked){
+        const sens = 0.0018; // mouse sensitivity
+        chX = clamp(chX + e.movementX * sens, -0.9, 0.9);
+        chY = clamp(chY + e.movementY * sens, -0.6, 0.6); // clamp vertical more to avoid flips
+        crosshair.style.transform = `translate(calc(-50% + ${chX*120}px), calc(-50% + ${chY*80}px))`;
+      }
+    });
 
-    function showDialog(msg,dur=2000){
-      dialogEl.style.display='block';
-      dialogEl.textContent=msg;
-      clearTimeout(dialogTimer);
-      dialogTimer=setTimeout(()=>dialogEl.style.display='none',dur);
-    }
+    const input = { throttle:0, stabilizing:false, tractor:false };
+    window.addEventListener('keydown', (e)=>{
+      const k = e.key.toLowerCase();
+      if(k==='w') input.throttle = 1;
+      if(k==='s') input.throttle = -0.6;
+      if(k==='shift') input.stabilizing = true;
+    });
+    window.addEventListener('keyup', (e)=>{
+      const k = e.key.toLowerCase();
+      if(k==='w' || k==='s') input.throttle = 0;
+      if(k==='shift') input.stabilizing = false;
+    });
+    window.addEventListener('mousedown', (e)=>{ if(e.button===0){ input.tractor = true; document.getElementById('tractor').textContent='Tractor: ON'; }});
+    window.addEventListener('mouseup',   (e)=>{ if(e.button===0){ input.tractor = false; document.getElementById('tractor').textContent='Tractor: OFF'; }});
+    window.addEventListener('contextmenu', e=>e.preventDefault());
 
-    const clock=new THREE.Clock();
+    // ---------- Player state ----------
+    const player = {
+      velocity: new THREE.Vector3(),
+      maxSpeed: 90,
+      hull: 100,
+      credits: 0,
+      cargo: 0,
+      cargoGoal: 10,
+      mission: 1 // 1 cuboids, 2 cylinders (15), 3 rhomboids (20)
+    };
 
-    function getMouseDirection(){
-      const vec = new THREE.Vector3(pointer.x, pointer.y, -1).unproject(camera).sub(camera.position).normalize();
+    // ---------- Aiming + movement ----------
+    function getAimDirection(){
+      // Convert crosshair offset (chX, chY) into NDC. Center is (0,0).
+      const ndc = new THREE.Vector2(chX, -chY);
+      const vec = new THREE.Vector3(ndc.x, ndc.y, -1).unproject(camera).sub(camera.position).normalize();
       return vec;
     }
 
+    // ---------- Spring Arm Chase Camera ----------
+    const chaseGoal = new THREE.Object3D(); scene.add(chaseGoal);
+    const CAM_HEIGHT = 5, CAM_DIST = 22; // desired offset behind ship
+    const CAM_POS_DAMP = 5.0, CAM_ROT_DAMP = 4.0;
+
+    function updateCamera(dt){
+      // place goal behind ship
+      const offset = new THREE.Vector3(0, CAM_HEIGHT, CAM_DIST).applyQuaternion(ship.quaternion);
+      chaseGoal.position.copy(ship.position).add(offset);
+
+      // Smooth follow
+      camera.position.lerp(chaseGoal.position, 1 - Math.exp(-CAM_POS_DAMP*dt));
+      // Smoothly orient camera to look at ship
+      const desired = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().lookAt(camera.position, ship.position, ship.up));
+      camera.quaternion.slerp(desired, 1 - Math.exp(-CAM_ROT_DAMP*dt));
+    }
+
+    // ---------- Tractor Beam ----------
+    const tractorRay = new THREE.Raycaster();
+    const tractorLineMat = new THREE.LineBasicMaterial({ color:0x7fffd4 });
+    const tractorGeom = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]);
+    const tractorLine = new THREE.Line(tractorGeom, tractorLineMat); tractorLine.visible=false; scene.add(tractorLine);
+
+    function tryTractor(dt){
+      if(!input.tractor) { tractorLine.visible=false; return; }
+      const dir = getAimDirection();
+      tractorRay.set(ship.position, dir);
+
+      // test against instanced collectible meshes for current mission only
+      const targets = player.mission===1 ? [cuboidField] : player.mission===2 ? [cylField] : [rhomField];
+
+      // Find nearest instance within range 180
+      let best = null; let bestDist = Infinity; const range = 180;
+      for(const mesh of targets){
+        const set = activeInstances.get(mesh);
+        for(const idx of set){
+          mesh.getMatrixAt(idx, dummy.matrix); dummy.matrix.decompose(dummy.position, dummy.quaternion, dummy.scale);
+          const to = dummy.position.clone().sub(ship.position);
+          const along = to.dot(dir);
+          if(along>0){
+            const perp = to.clone().sub(dir.clone().multiplyScalar(along)).length();
+            const dist = to.length();
+            if(perp < 10 && dist < range && dist < bestDist){ best={ mesh, idx, pos:dummy.position.clone() }; bestDist=dist; }
+          }
+        }
+      }
+
+      if(best){
+        // Draw beam
+        tractorLine.visible=true;
+        tractorGeom.setFromPoints([ship.position, best.pos]);
+
+        // Pull object toward ship
+        const pull = best.pos.clone().sub(ship.position).normalize().multiplyScalar(-60*dt);
+        // Move instance by modifying its matrix
+        best.mesh.getMatrixAt(best.idx, dummy.matrix); dummy.matrix.decompose(dummy.position, dummy.quaternion, dummy.scale);
+        dummy.position.add(pull);
+        dummy.updateMatrix(); best.mesh.setMatrixAt(best.idx, dummy.matrix); best.mesh.instanceMatrix.needsUpdate=true;
+
+        // If close enough, collect
+        if(dummy.position.distanceTo(ship.position) < 18){
+          // Remove from active set (hide by scaling to zero)
+          activeInstances.get(best.mesh).delete(best.idx);
+          dummy.scale.setScalar(0.0001); dummy.updateMatrix(); best.mesh.setMatrixAt(best.idx, dummy.matrix); best.mesh.instanceMatrix.needsUpdate=true;
+          player.cargo += 1; showDialog('👩‍🔧 Engineering: Nice haul, Commander!');
+          updateMissionUI();
+        }
+      } else {
+        tractorLine.visible=false;
+      }
+    }
+
+    // ---------- Mission / Trading flow ----------
+    const missionEl = document.getElementById('mission');
+    const statsEl = document.getElementById('stats');
+    const speedFill = document.getElementById('speedFill');
+    const speedTxt = document.getElementById('speedTxt');
+    const dialogEl = document.getElementById('dialog');
+    let dialogTimer=null;
+
+    function showDialog(text, ms=3000){
+      dialogEl.style.display='block';
+      dialogEl.innerHTML = `<div class="title">👨‍🚀 Commander</div><div>${text}</div>`;
+      if(dialogTimer) clearTimeout(dialogTimer);
+      dialogTimer = setTimeout(()=>dialogEl.style.display='none', ms);
+    }
+
+    function updateMissionUI(){
+      statsEl.textContent = `Hull: ${Math.max(0,Math.round(player.hull))} • Credits: ${player.credits} • Cargo: ${player.cargo}/${player.cargoGoal}`;
+      if(player.cargo >= player.cargoGoal){
+        missionEl.textContent = `Return to station for delivery.`;
+      } else {
+        if(player.mission===1) missionEl.textContent = `Mission: Collect ${player.cargoGoal} metallic cuboids → ${player.cargo}/${player.cargoGoal}`;
+        if(player.mission===2) missionEl.textContent = `Mission: Collect ${player.cargoGoal} green cylinders → ${player.cargo}/${player.cargoGoal}`;
+        if(player.mission===3) missionEl.textContent = `Mission: Collect ${player.cargoGoal} red rhomboids → ${player.cargo}/${player.cargoGoal}`;
+      }
+    }
+
+    function tryDocking(){
+      const d = ship.position.distanceTo(station.position);
+      if(d < 120 && player.cargo >= player.cargoGoal){
+        // Sell cargo and advance mission
+        player.credits += player.cargo * 10;
+        player.cargo = 0;
+        if(player.mission===1){ player.mission=2; player.cargoGoal=15; showDialog('👩\u200d🔧 Engineering: Thanks! Next request from 👩🏽\u200d🔬 Science — 15 green cylinders.'); }
+        else if(player.mission===2){ player.mission=3; player.cargoGoal=20; showDialog('👩🏽\u200d🔬 Science: Excellent. Medical 👨🏼\u200d⚕️ needs 20 red rhomboids.'); }
+        else if(player.mission===3){
+          showDialog('👩\u200d🔧 + 👩🏽\u200d🔬 + 👨🏼\u200d⚕️: Thank you, Commander! Mission complete.');
+          setTimeout(()=>congratulations(), 2200);
+        }
+        updateMissionUI();
+      } else if(d < 120) {
+        showDialog('🛰️ Station: Docking OK — deliver cargo when ready.');
+      }
+    }
+
+    function congratulations(){
+      const overlay = document.createElement('div');
+      overlay.style.cssText = 'position:absolute;left:0;top:0;right:0;bottom:0;background:rgba(0,0,0,0.85);color:#7fffd4;font:700 28px system-ui;display:flex;align-items:center;justify-content:center;z-index:10;';
+      overlay.textContent = 'Congratulations — Sector objectives complete!';
+      document.body.appendChild(overlay);
+    }
+
+    // ---------- Physics / Update ----------
+    const clock = new THREE.Clock();
+
     function update(dt){
-      if (!shipLoaded) return;
+      if(!shipLoaded) return;
 
-      const targetDir = getMouseDirection();
-      const currDir = player.velocity.clone().normalize() || new THREE.Vector3(-1,0,0).applyQuaternion(ship.quaternion);
-      currDir.lerp(targetDir, dt * 1.5).normalize();
+      // Determine desired movement direction from crosshair
+      const targetDir = getAimDirection();
 
-      const speed = input.throttle * player.maxSpeed;
-      player.velocity = currDir.clone().multiplyScalar(speed);
+      // Throttle and velocity/stabilizer
+      if(input.stabilizing){
+        // Smoothly reduce velocity to zero
+        player.velocity.multiplyScalar(1 - Math.min(4*dt, 0.25));
+      } else {
+        const desiredSpeed = input.throttle * player.maxSpeed;
+        const currSpeed = player.velocity.length();
+        const newSpeed = THREE.MathUtils.damp(currSpeed, Math.max(0, desiredSpeed), 2.5, dt);
+        // Blend current velocity direction toward targetDir for smooth steering
+        const dir = player.velocity.lengthSq()>0.0001 ? player.velocity.clone().normalize() : new THREE.Vector3(-1,0,0).applyQuaternion(ship.quaternion);
+        const blendedDir = dir.lerp(targetDir, 1 - Math.exp(-2.0*dt)).normalize();
+        player.velocity.copy(blendedDir.multiplyScalar(newSpeed));
+      }
 
+      // Move ship and enforce boundary
       ship.position.addScaledVector(player.velocity, dt);
       applySoftBoundary(ship.position);
 
-      ship.quaternion.setFromUnitVectors(new THREE.Vector3(-1,0,0), currDir);
+      // Orient ship to its velocity vector (nose toward -X local axis)
+      const faceDir = player.velocity.lengthSq()>0.01 ? player.velocity.clone().normalize() : targetDir;
+      const targetQuat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(-1,0,0), faceDir);
+      ship.quaternion.slerp(targetQuat, 1 - Math.exp(-6*dt));
 
-      statsEl.textContent = `Credits: ${player.credits}`;
+      // Update camera
+      updateCamera(dt);
+
+      // Tractor beam & docking
+      tryTractor(dt);
+      tryDocking();
+
+      // HUD
       const pct = Math.round(player.velocity.length()/player.maxSpeed*100);
-      speedFill.style.width = pct + '%';
-      speedText.textContent = pct + '%';
-    }
-
-    function updateCamera(dt){
-      const height=5, dist=20, damping=2;
-      const desired=new THREE.Vector3(0,height,dist).applyQuaternion(ship.quaternion).add(ship.position);
-      camera.position.lerp(desired, damping*dt);
-      camera.lookAt(ship.position);
+      speedFill.style.width = pct + '%'; speedTxt.textContent = pct + '%';
+      updateMissionUI();
     }
 
     function animate(){
       requestAnimationFrame(animate);
       const dt = Math.min(0.05, clock.getDelta());
       update(dt);
-      updateCamera(dt);
       renderer.render(scene, camera);
     }
     animate();
 
-    window.addEventListener('resize', ()=>{
-      camera.aspect=innerWidth/innerHeight;
-      camera.updateProjectionMatrix();
-      renderer.setSize(innerWidth,innerHeight);
-    });
+    // ---------- Resize ----------
+    addEventListener('resize', ()=>{ camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); });
 
-    console.log('Integrated arcade controls + instanced asteroids with soft boundary.');
+    // ---------- Initial hint ----------
+    showDialog('👨\u200d🚀 Commander: Welcome to the sector. Collect resources and deliver them to the station.');
+    updateMissionUI();
   </script>
 </body>
 </html>
