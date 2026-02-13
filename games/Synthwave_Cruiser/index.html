@@ -1,0 +1,974 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SYNTHWAVE CRUISER</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Rajdhani:wght@300;500;700&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    overflow: hidden;
+    background: #0a0014;
+    font-family: 'Rajdhani', sans-serif;
+    cursor: none;
+  }
+  canvas { display: block; }
+
+  #hud {
+    position: fixed;
+    bottom: 30px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 40px;
+    align-items: flex-end;
+    pointer-events: none;
+    z-index: 10;
+  }
+
+  .hud-panel {
+    background: rgba(0, 0, 0, 0.4);
+    border: 1px solid rgba(0, 255, 255, 0.3);
+    border-radius: 8px;
+    padding: 12px 24px;
+    backdrop-filter: blur(10px);
+    text-align: center;
+  }
+
+  .hud-label {
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 11px;
+    font-weight: 300;
+    color: rgba(0, 255, 255, 0.6);
+    text-transform: uppercase;
+    letter-spacing: 3px;
+    margin-bottom: 2px;
+  }
+
+  .hud-value {
+    font-family: 'Orbitron', monospace;
+    font-size: 28px;
+    font-weight: 700;
+    color: #00ffff;
+    text-shadow: 0 0 20px rgba(0, 255, 255, 0.5), 0 0 40px rgba(0, 255, 255, 0.2);
+  }
+
+  #biome-name {
+    font-family: 'Orbitron', monospace;
+    font-size: 14px;
+    color: #ff00ff;
+    text-shadow: 0 0 20px rgba(255, 0, 255, 0.5);
+  }
+
+  #title-overlay {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+    background: radial-gradient(ellipse at center, rgba(10,0,20,0.8) 0%, rgba(10,0,20,0.98) 100%);
+    transition: opacity 1.5s ease;
+  }
+
+  #title-overlay.hidden {
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  #title-overlay h1 {
+    font-family: 'Orbitron', monospace;
+    font-size: 52px;
+    font-weight: 900;
+    color: #00ffff;
+    text-shadow: 0 0 40px rgba(0, 255, 255, 0.6), 0 0 80px rgba(0, 255, 255, 0.3), 0 0 120px rgba(255, 0, 255, 0.2);
+    letter-spacing: 12px;
+    margin-bottom: 20px;
+  }
+
+  #title-overlay p {
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 18px;
+    color: rgba(255, 0, 255, 0.7);
+    letter-spacing: 6px;
+    text-transform: uppercase;
+    animation: pulse 2s ease-in-out infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 0.5; }
+    50% { opacity: 1; }
+  }
+
+  #vignette {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    pointer-events: none;
+    z-index: 5;
+    background: radial-gradient(ellipse at center, transparent 50%, rgba(10,0,20,0.6) 100%);
+  }
+
+  #scanlines {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    pointer-events: none;
+    z-index: 6;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0,0,0,0.03) 2px,
+      rgba(0,0,0,0.03) 4px
+    );
+  }
+</style>
+</head>
+<body>
+
+<div id="title-overlay">
+  <h1>SYNTHWAVE CRUISER</h1>
+  <p>Press any key to drive</p>
+</div>
+
+<div id="vignette"></div>
+<div id="scanlines"></div>
+
+<div id="hud">
+  <div class="hud-panel">
+    <div class="hud-label">Speed</div>
+    <div class="hud-value"><span id="speed-val">0</span> <span style="font-size:14px;opacity:0.6">KPH</span></div>
+  </div>
+  <div class="hud-panel">
+    <div class="hud-label">Zone</div>
+    <div id="biome-name">COUNTRYSIDE</div>
+  </div>
+  <div class="hud-panel">
+    <div class="hud-label">Distance</div>
+    <div class="hud-value"><span id="dist-val">0.0</span> <span style="font-size:14px;opacity:0.6">KM</span></div>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.module.js"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+
+// ─── CONFIG ──────────────────────────────────────────────────
+const CONFIG = {
+  roadWidth: 12,
+  chunkLength: 60,
+  visibleChunks: 14,
+  maxSpeed: 120,
+  acceleration: 35,
+  braking: 60,
+  friction: 15,
+  steerSpeed: 2.2,
+  steerReturn: 3.0,
+  maxSteer: 0.8,
+  cameraSmoothPos: 3.0,
+  cameraSmoothLook: 5.0,
+  cameraHeight: 4.5,
+  cameraDist: 9,
+  biomeLength: 8,  // chunks per biome
+};
+
+// ─── BIOME DEFINITIONS ──────────────────────────────────────
+const BIOMES = {
+  countryside: {
+    name: 'COUNTRYSIDE',
+    groundColor: new THREE.Color(0x0a0a1a),
+    fogColor: new THREE.Color(0x050010),
+    skyColor: new THREE.Color(0x0a0014),
+    neonPrimary: new THREE.Color(0x00ff88),
+    neonSecondary: new THREE.Color(0x00ffff),
+    edgeColor: new THREE.Color(0x00ff88),
+  },
+  city: {
+    name: 'NEON CITY',
+    groundColor: new THREE.Color(0x0a0a1e),
+    fogColor: new THREE.Color(0x0a0020),
+    skyColor: new THREE.Color(0x0f0025),
+    neonPrimary: new THREE.Color(0xff00ff),
+    neonSecondary: new THREE.Color(0xff4488),
+    edgeColor: new THREE.Color(0xff00ff),
+  },
+  beach: {
+    name: 'NEON BEACH',
+    groundColor: new THREE.Color(0x0a0a18),
+    fogColor: new THREE.Color(0x000a1a),
+    skyColor: new THREE.Color(0x000a18),
+    neonPrimary: new THREE.Color(0xff8800),
+    neonSecondary: new THREE.Color(0xffaa00),
+    edgeColor: new THREE.Color(0xff6600),
+  }
+};
+
+const biomeOrder = ['countryside', 'city', 'beach'];
+
+// ─── RENDERER / SCENE / CAMERA ───────────────────────────────
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.0;
+document.body.prepend(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.FogExp2(0x050010, 0.012);
+scene.background = new THREE.Color(0x0a0014);
+
+const camera = new THREE.PerspectiveCamera(65, window.innerWidth / window.innerHeight, 0.5, 500);
+camera.position.set(0, CONFIG.cameraHeight, -CONFIG.cameraDist);
+
+// ─── NEON EDGE SHADER ────────────────────────────────────────
+const neonEdgeVertexShader = `
+  varying vec3 vWorldPosition;
+  varying vec3 vNormal;
+  varying vec3 vViewDir;
+  void main() {
+    vec4 worldPos = modelMatrix * vec4(position, 1.0);
+    vWorldPosition = worldPos.xyz;
+    vNormal = normalize(normalMatrix * normal);
+    vViewDir = normalize(cameraPosition - worldPos.xyz);
+    gl_Position = projectionMatrix * viewMatrix * worldPos;
+  }
+`;
+
+const neonEdgeFragmentShader = `
+  uniform vec3 edgeColor;
+  uniform float opacity;
+  uniform float glowIntensity;
+  uniform float time;
+  varying vec3 vWorldPosition;
+  varying vec3 vNormal;
+  varying vec3 vViewDir;
+
+  void main() {
+    float edgeFactor = 1.0 - abs(dot(vNormal, vViewDir));
+    edgeFactor = pow(edgeFactor, 1.8);
+    float pulse = 0.85 + 0.15 * sin(time * 1.5 + vWorldPosition.y * 2.0);
+    float glow = edgeFactor * glowIntensity * pulse;
+    vec3 fillColor = edgeColor * 0.05;
+    vec3 color = mix(fillColor, edgeColor, edgeFactor * 0.9);
+    color += edgeColor * glow * 0.5;
+    float alpha = max(edgeFactor * opacity, 0.06);
+    gl_FragColor = vec4(color, alpha);
+  }
+`;
+
+function makeNeonMaterial(color, intensity = 1.5) {
+  return new THREE.ShaderMaterial({
+    vertexShader: neonEdgeVertexShader,
+    fragmentShader: neonEdgeFragmentShader,
+    uniforms: {
+      edgeColor: { value: color.clone() },
+      opacity: { value: 0.9 },
+      glowIntensity: { value: intensity },
+      time: { value: 0 },
+    },
+    transparent: true,
+    side: THREE.FrontSide,
+    depthWrite: false,
+  });
+}
+
+// ─── ROAD LINE SHADER (dashed center line) ───────────────────
+const roadVertexShader = `
+  varying vec2 vUv;
+  void main() {
+    vUv = uv;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  }
+`;
+
+const roadFragmentShader = `
+  uniform float time;
+  uniform vec3 lineColor;
+  uniform float scrollOffset;
+  varying vec2 vUv;
+
+  void main() {
+    float roadAlpha = 0.0;
+
+    // center dashed line
+    float centerDist = abs(vUv.x - 0.5);
+    float centerLine = smoothstep(0.008, 0.003, centerDist);
+    float dash = step(0.5, fract((vUv.y * 20.0) + scrollOffset));
+    centerLine *= dash;
+
+    // edge lines (solid)
+    float leftEdge = smoothstep(0.03, 0.02, vUv.x);
+    float rightEdge = smoothstep(0.97, 0.98, vUv.x);
+    float edgeLines = max(leftEdge, rightEdge);
+
+    // subtle grid on road surface
+    float gridX = smoothstep(0.005, 0.0, abs(fract(vUv.x * 12.0) - 0.5) - 0.48);
+    float gridY = smoothstep(0.005, 0.0, abs(fract((vUv.y * 10.0) + scrollOffset) - 0.5) - 0.48);
+    float grid = max(gridX, gridY) * 0.08;
+
+    float allLines = max(max(centerLine, edgeLines * 0.7), grid);
+    vec3 color = lineColor * allLines;
+    color += lineColor * 0.02; // faint road fill
+    float alpha = max(allLines, 0.15);
+
+    gl_FragColor = vec4(color, alpha);
+  }
+`;
+
+// ─── GROUND GRID SHADER ─────────────────────────────────────
+const groundVertexShader = `
+  varying vec2 vUv;
+  varying vec3 vWorldPos;
+  void main() {
+    vUv = uv;
+    vec4 wp = modelMatrix * vec4(position, 1.0);
+    vWorldPos = wp.xyz;
+    gl_Position = projectionMatrix * viewMatrix * wp;
+  }
+`;
+
+const groundFragmentShader = `
+  uniform vec3 gridColor;
+  uniform float scrollOffset;
+  uniform float time;
+  varying vec2 vUv;
+  varying vec3 vWorldPos;
+
+  void main() {
+    vec2 worldUv = vWorldPos.xz * 0.08;
+    worldUv.y += scrollOffset * 0.08;
+
+    float gridX = smoothstep(0.015, 0.0, abs(fract(worldUv.x) - 0.5) - 0.48);
+    float gridY = smoothstep(0.015, 0.0, abs(fract(worldUv.y) - 0.5) - 0.48);
+    float grid = max(gridX, gridY);
+
+    float dist = length(vWorldPos.xz) * 0.005;
+    float fade = exp(-dist * dist);
+    grid *= fade;
+
+    vec3 color = gridColor * grid * 0.3;
+    float pulse = 0.8 + 0.2 * sin(time * 0.5);
+    color *= pulse;
+
+    gl_FragColor = vec4(color, grid * 0.4 * fade);
+  }
+`;
+
+// ─── SUN/HORIZON ─────────────────────────────────────────────
+function createSynthSun() {
+  const geo = new THREE.PlaneGeometry(120, 60, 1, 20);
+  const mat = new THREE.ShaderMaterial({
+    vertexShader: `
+      varying vec2 vUv;
+      void main() {
+        vUv = uv;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `,
+    fragmentShader: `
+      uniform float time;
+      varying vec2 vUv;
+      void main() {
+        vec2 uv = vUv;
+        vec2 center = vec2(0.5, 0.35);
+        float dist = length((uv - center) * vec2(1.0, 1.8));
+        float sun = smoothstep(0.35, 0.28, dist);
+
+        // horizontal stripe cutouts
+        float stripeY = uv.y * 30.0 + time * 0.3;
+        float stripe = step(0.4, fract(stripeY));
+        float lowerHalf = step(0.35, 1.0 - uv.y);
+        sun *= mix(1.0, stripe, lowerHalf * 0.8);
+
+        vec3 topColor = vec3(1.0, 0.0, 0.5);
+        vec3 bottomColor = vec3(1.0, 0.6, 0.0);
+        vec3 sunColor = mix(bottomColor, topColor, uv.y);
+
+        // horizon glow
+        float horizonGlow = exp(-pow((uv.y - 0.3) * 3.0, 2.0)) * 0.4;
+        vec3 glowColor = vec3(0.8, 0.0, 0.5);
+
+        vec3 color = sunColor * sun + glowColor * horizonGlow;
+        float alpha = max(sun, horizonGlow * 0.6);
+
+        gl_FragColor = vec4(color, alpha);
+      }
+    `,
+    uniforms: { time: { value: 0 } },
+    transparent: true,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+  });
+
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.position.set(0, 15, 350);
+  mesh.renderOrder = -1;
+  return mesh;
+}
+
+// ─── SCENERY GENERATORS ─────────────────────────────────────
+
+// Countryside: neon wireframe trees
+function createTree(neonColor) {
+  const group = new THREE.Group();
+
+  // Trunk
+  const trunkGeo = new THREE.CylinderGeometry(0.15, 0.2, 2.5, 6);
+  const trunkMat = makeNeonMaterial(new THREE.Color(0x00ff88), 1.0);
+  const trunk = new THREE.Mesh(trunkGeo, trunkMat);
+  trunk.position.y = 1.25;
+  group.add(trunk);
+
+  // Canopy (multiple cones)
+  const sizes = [
+    { r: 1.8, h: 3.0, y: 3.5 },
+    { r: 1.4, h: 2.5, y: 5.0 },
+    { r: 1.0, h: 2.0, y: 6.2 },
+  ];
+  sizes.forEach(s => {
+    const geo = new THREE.ConeGeometry(s.r, s.h, 6);
+    const mat = makeNeonMaterial(neonColor, 1.2);
+    const cone = new THREE.Mesh(geo, mat);
+    cone.position.y = s.y;
+    group.add(cone);
+  });
+
+  return group;
+}
+
+// City: neon wireframe buildings
+function createBuilding(neonColor) {
+  const group = new THREE.Group();
+  const w = 3 + Math.random() * 5;
+  const h = 6 + Math.random() * 18;
+  const d = 3 + Math.random() * 5;
+
+  const geo = new THREE.BoxGeometry(w, h, d);
+  const mat = makeNeonMaterial(neonColor, 1.3);
+  const box = new THREE.Mesh(geo, mat);
+  box.position.y = h / 2;
+  group.add(box);
+
+  // Window rows (small emissive strips)
+  const windowRows = Math.floor(h / 2.5);
+  for (let i = 0; i < windowRows; i++) {
+    const winGeo = new THREE.PlaneGeometry(w * 0.7, 0.15);
+    const winMat = new THREE.MeshBasicMaterial({
+      color: neonColor,
+      transparent: true,
+      opacity: 0.3 + Math.random() * 0.3,
+    });
+    const win = new THREE.Mesh(winGeo, winMat);
+    win.position.set(0, 2 + i * 2.5, d / 2 + 0.01);
+    group.add(win);
+
+    const winBack = win.clone();
+    winBack.position.z = -(d / 2 + 0.01);
+    group.add(winBack);
+  }
+
+  return group;
+}
+
+// Beach: neon palm trees
+function createPalmTree(neonColor) {
+  const group = new THREE.Group();
+
+  // Trunk (slightly curved via segments)
+  const curve = new THREE.CubicBezierCurve3(
+    new THREE.Vector3(0, 0, 0),
+    new THREE.Vector3(0.3, 2.5, 0),
+    new THREE.Vector3(-0.2, 5, 0),
+    new THREE.Vector3(0.1, 7, 0)
+  );
+  const tubeGeo = new THREE.TubeGeometry(curve, 12, 0.2, 6, false);
+  const trunkMat = makeNeonMaterial(neonColor, 1.0);
+  const trunk = new THREE.Mesh(tubeGeo, trunkMat);
+  group.add(trunk);
+
+  // Fronds
+  for (let i = 0; i < 6; i++) {
+    const angle = (i / 6) * Math.PI * 2;
+    const frondCurve = new THREE.QuadraticBezierCurve3(
+      new THREE.Vector3(0, 7, 0),
+      new THREE.Vector3(Math.cos(angle) * 2, 7.5, Math.sin(angle) * 2),
+      new THREE.Vector3(Math.cos(angle) * 3.5, 5.5, Math.sin(angle) * 3.5)
+    );
+    const frondGeo = new THREE.TubeGeometry(frondCurve, 8, 0.08, 4, false);
+    const frondMat = makeNeonMaterial(new THREE.Color(0x00ff44), 1.5);
+    const frond = new THREE.Mesh(frondGeo, frondMat);
+    group.add(frond);
+  }
+
+  return group;
+}
+
+// Water plane for beach
+function createWaterPlane() {
+  const geo = new THREE.PlaneGeometry(200, 60, 40, 40);
+  const mat = new THREE.ShaderMaterial({
+    vertexShader: `
+      uniform float time;
+      varying vec2 vUv;
+      varying float vWave;
+      void main() {
+        vUv = uv;
+        vec3 pos = position;
+        float wave = sin(pos.x * 0.5 + time * 0.8) * 0.3 + sin(pos.y * 0.3 + time * 0.5) * 0.2;
+        pos.z += wave;
+        vWave = wave;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+      }
+    `,
+    fragmentShader: `
+      uniform float time;
+      uniform vec3 waterColor;
+      varying vec2 vUv;
+      varying float vWave;
+      void main() {
+        float grid = smoothstep(0.02, 0.0, abs(fract(vUv.x * 20.0 + time * 0.1) - 0.5) - 0.48);
+        grid += smoothstep(0.02, 0.0, abs(fract(vUv.y * 30.0 + time * 0.05) - 0.5) - 0.48);
+        grid = min(grid, 1.0);
+        float glow = grid * 0.5 + 0.05;
+        float edgeFade = smoothstep(0.0, 0.2, vUv.x) * smoothstep(1.0, 0.8, vUv.x);
+        vec3 color = waterColor * glow * edgeFade;
+        float alpha = glow * 0.6 * edgeFade;
+        gl_FragColor = vec4(color, alpha);
+      }
+    `,
+    uniforms: {
+      time: { value: 0 },
+      waterColor: { value: new THREE.Color(0x0066ff) },
+    },
+    transparent: true,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+  });
+
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.rotation.x = -Math.PI / 2;
+  mesh.position.set(35, 0.05, 0);
+  return mesh;
+}
+
+// ─── ROAD CHUNK SYSTEM ──────────────────────────────────────
+const chunks = [];
+let totalChunksCreated = 0;
+
+function getCurrentBiomeKey(chunkIndex) {
+  const biomeIdx = Math.floor(chunkIndex / CONFIG.biomeLength) % biomeOrder.length;
+  return biomeOrder[biomeIdx];
+}
+
+function createRoadChunk(chunkIndex) {
+  const group = new THREE.Group();
+  const z = chunkIndex * CONFIG.chunkLength;
+  group.position.z = z;
+  group.userData.chunkIndex = chunkIndex;
+
+  const biomeKey = getCurrentBiomeKey(chunkIndex);
+  const biome = BIOMES[biomeKey];
+
+  // Road surface
+  const roadGeo = new THREE.PlaneGeometry(CONFIG.roadWidth, CONFIG.chunkLength);
+  const roadMat = new THREE.ShaderMaterial({
+    vertexShader: roadVertexShader,
+    fragmentShader: roadFragmentShader,
+    uniforms: {
+      time: { value: 0 },
+      lineColor: { value: biome.neonSecondary.clone() },
+      scrollOffset: { value: 0 },
+    },
+    transparent: true,
+    depthWrite: true,
+  });
+  const road = new THREE.Mesh(roadGeo, roadMat);
+  road.rotation.x = -Math.PI / 2;
+  road.position.set(0, 0.01, CONFIG.chunkLength / 2);
+  road.userData.isRoad = true;
+  group.add(road);
+
+  // Ground planes (both sides)
+  const groundWidth = 80;
+  [-1, 1].forEach(side => {
+    const gGeo = new THREE.PlaneGeometry(groundWidth, CONFIG.chunkLength);
+    const gMat = new THREE.ShaderMaterial({
+      vertexShader: groundVertexShader,
+      fragmentShader: groundFragmentShader,
+      uniforms: {
+        gridColor: { value: biome.neonPrimary.clone() },
+        scrollOffset: { value: 0 },
+        time: { value: 0 },
+      },
+      transparent: true,
+      depthWrite: false,
+    });
+    const ground = new THREE.Mesh(gGeo, gMat);
+    ground.rotation.x = -Math.PI / 2;
+    ground.position.set(side * (CONFIG.roadWidth / 2 + groundWidth / 2), 0, CONFIG.chunkLength / 2);
+    ground.userData.isGround = true;
+    group.add(ground);
+  });
+
+  // Scenery based on biome
+  const sceneryCount = biomeKey === 'city' ? 5 : 6;
+  for (let i = 0; i < sceneryCount; i++) {
+    const localZ = (i / sceneryCount) * CONFIG.chunkLength + Math.random() * 8;
+    [-1, 1].forEach(side => {
+      if (Math.random() > 0.65) return;
+      const offset = CONFIG.roadWidth / 2 + 3 + Math.random() * 20;
+      let obj;
+
+      if (biomeKey === 'countryside') {
+        obj = createTree(biome.neonPrimary);
+        const scale = 0.8 + Math.random() * 0.6;
+        obj.scale.setScalar(scale);
+      } else if (biomeKey === 'city') {
+        obj = createBuilding(biome.neonPrimary);
+        offset > 8; // buildings closer
+      } else {
+        // beach
+        if (side === 1) {
+          // water side - palm trees near road
+          obj = createPalmTree(biome.neonPrimary);
+          const scale = 0.7 + Math.random() * 0.5;
+          obj.scale.setScalar(scale);
+        } else {
+          // land side - palms
+          obj = createPalmTree(biome.neonPrimary);
+          const scale = 0.8 + Math.random() * 0.4;
+          obj.scale.setScalar(scale);
+        }
+      }
+
+      if (obj) {
+        obj.position.set(
+          side * (biomeKey === 'city' ? (CONFIG.roadWidth / 2 + 2 + Math.random() * 6) : offset),
+          0,
+          localZ
+        );
+        obj.rotation.y = Math.random() * Math.PI * 2;
+        group.add(obj);
+      }
+    });
+  }
+
+  // Beach water
+  if (biomeKey === 'beach') {
+    const water = createWaterPlane();
+    water.position.z = CONFIG.chunkLength / 2;
+    water.position.x = 40;
+    water.userData.isWater = true;
+    group.add(water);
+  }
+
+  scene.add(group);
+  return group;
+}
+
+// Initialize chunks
+for (let i = 0; i < CONFIG.visibleChunks; i++) {
+  chunks.push(createRoadChunk(i));
+  totalChunksCreated++;
+}
+
+// ─── SYNTH SUN ──────────────────────────────────────────────
+const synthSun = createSynthSun();
+scene.add(synthSun);
+
+// ─── STARS ──────────────────────────────────────────────────
+function createStars() {
+  const geo = new THREE.BufferGeometry();
+  const count = 2000;
+  const pos = new Float32Array(count * 3);
+  for (let i = 0; i < count; i++) {
+    pos[i * 3] = (Math.random() - 0.5) * 600;
+    pos[i * 3 + 1] = 20 + Math.random() * 100;
+    pos[i * 3 + 2] = (Math.random() - 0.5) * 600;
+  }
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  const mat = new THREE.PointsMaterial({
+    color: 0xffffff,
+    size: 0.3,
+    transparent: true,
+    opacity: 0.6,
+  });
+  return new THREE.Points(geo, mat);
+}
+const stars = createStars();
+scene.add(stars);
+
+// ─── PLACEHOLDER CAR ────────────────────────────────────────
+function createPlaceholderCar() {
+  const group = new THREE.Group();
+
+  // Body
+  const bodyGeo = new THREE.BoxGeometry(2, 0.8, 4.2);
+  const bodyMat = makeNeonMaterial(new THREE.Color(0x00ffff), 2.0);
+  const body = new THREE.Mesh(bodyGeo, bodyMat);
+  body.position.y = 0.7;
+  group.add(body);
+
+  // Cabin
+  const cabinGeo = new THREE.BoxGeometry(1.6, 0.7, 2.0);
+  const cabinMat = makeNeonMaterial(new THREE.Color(0x00ffff), 1.8);
+  const cabin = new THREE.Mesh(cabinGeo, cabinMat);
+  cabin.position.set(0, 1.3, -0.3);
+  group.add(cabin);
+
+  // Wheels
+  const wheelGeo = new THREE.CylinderGeometry(0.35, 0.35, 0.25, 12);
+  const wheelMat = makeNeonMaterial(new THREE.Color(0xff00ff), 2.0);
+  const wheelPositions = [
+    [-1.0, 0.35, 1.3],
+    [1.0, 0.35, 1.3],
+    [-1.0, 0.35, -1.3],
+    [1.0, 0.35, -1.3],
+  ];
+  const wheels = [];
+  wheelPositions.forEach(pos => {
+    const wheel = new THREE.Mesh(wheelGeo, wheelMat);
+    wheel.rotation.z = Math.PI / 2;
+    wheel.position.set(...pos);
+    group.add(wheel);
+    wheels.push(wheel);
+  });
+  group.userData.wheels = wheels;
+
+  // Headlight glow
+  [-0.6, 0.6].forEach(x => {
+    const light = new THREE.PointLight(0x00ffff, 1.5, 15);
+    light.position.set(x, 0.7, 2.3);
+    group.add(light);
+  });
+
+  // Tail lights
+  [-0.6, 0.6].forEach(x => {
+    const light = new THREE.PointLight(0xff0044, 0.8, 8);
+    light.position.set(x, 0.7, -2.3);
+    group.add(light);
+  });
+
+  return group;
+}
+
+const car = createPlaceholderCar();
+car.position.set(0, 0, 5);
+scene.add(car);
+
+// ─── AMBIENT LIGHT ──────────────────────────────────────────
+const ambLight = new THREE.AmbientLight(0x111122, 0.3);
+scene.add(ambLight);
+
+// ─── INPUT ──────────────────────────────────────────────────
+const keys = {};
+window.addEventListener('keydown', e => {
+  keys[e.key.toLowerCase()] = true;
+  // Start game
+  const overlay = document.getElementById('title-overlay');
+  if (!overlay.classList.contains('hidden')) {
+    overlay.classList.add('hidden');
+    gameStarted = true;
+  }
+});
+window.addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
+
+// Touch / click start
+window.addEventListener('pointerdown', () => {
+  const overlay = document.getElementById('title-overlay');
+  if (!overlay.classList.contains('hidden')) {
+    overlay.classList.add('hidden');
+    gameStarted = true;
+  }
+});
+
+// ─── GAME STATE ─────────────────────────────────────────────
+let gameStarted = false;
+let speed = 0;
+let steer = 0;
+let carX = 0;
+let distance = 0;
+let scrollOffset = 0;
+let time = 0;
+
+const cameraPos = new THREE.Vector3();
+const cameraTarget = new THREE.Vector3();
+
+// ─── RESIZE ─────────────────────────────────────────────────
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+// ─── POST PROCESSING (bloom-like glow via additive layer) ───
+// Simple screen-space glow using a second render + blend
+const bloomComposer = null; // We'll use CSS glow + material emission instead for simplicity
+
+// ─── GAME LOOP ──────────────────────────────────────────────
+const clock = new THREE.Clock();
+
+function update() {
+  const dt = Math.min(clock.getDelta(), 0.05);
+  time += dt;
+
+  if (!gameStarted) {
+    // Gentle idle camera sway
+    camera.position.set(
+      Math.sin(time * 0.3) * 2,
+      CONFIG.cameraHeight + Math.sin(time * 0.5) * 0.3,
+      car.position.z - CONFIG.cameraDist
+    );
+    camera.lookAt(car.position.x, 1.5, car.position.z + 10);
+    updateShaderUniforms(dt);
+    renderer.render(scene, camera);
+    requestAnimationFrame(update);
+    return;
+  }
+
+  // ─── Driving Physics ───
+  const throttle = keys['arrowup'] || keys['w'];
+  const brake = keys['arrowdown'] || keys['s'];
+  const steerLeft = keys['arrowleft'] || keys['a'];
+  const steerRight = keys['arrowright'] || keys['d'];
+
+  if (throttle) {
+    speed = Math.min(speed + CONFIG.acceleration * dt, CONFIG.maxSpeed);
+  } else if (brake) {
+    speed = Math.max(speed - CONFIG.braking * dt, 0);
+  } else {
+    speed = Math.max(speed - CONFIG.friction * dt, 0);
+  }
+
+  // Steering
+  if (steerLeft) {
+    steer = Math.max(steer - CONFIG.steerSpeed * dt, -CONFIG.maxSteer);
+  } else if (steerRight) {
+    steer = Math.min(steer + CONFIG.steerSpeed * dt, CONFIG.maxSteer);
+  } else {
+    // Auto-center
+    if (Math.abs(steer) < 0.05) steer = 0;
+    else steer -= Math.sign(steer) * CONFIG.steerReturn * dt;
+  }
+
+  // Apply movement
+  const speedFactor = speed / 3.6; // Convert KPH to m/s roughly
+  distance += speedFactor * dt;
+  scrollOffset += speedFactor * dt;
+  carX -= steer * (speed / CONFIG.maxSpeed) * 12 * dt;
+  carX = THREE.MathUtils.clamp(carX, -CONFIG.roadWidth / 2 + 1.2, CONFIG.roadWidth / 2 - 1.2);
+
+  // Car position
+  car.position.x = carX;
+  car.rotation.y = -steer * 0.3;
+
+  // Wheel spin
+  if (car.userData.wheels) {
+    car.userData.wheels.forEach(w => {
+      w.rotation.x += speedFactor * dt * 3;
+    });
+  }
+
+  // Car body lean
+  car.rotation.z = steer * 0.05;
+
+  // ─── Chunk management ───
+  const playerZ = car.position.z;
+  // Move all chunks backward (player stays at origin-ish)
+  chunks.forEach(chunk => {
+    chunk.position.z -= speedFactor * dt;
+  });
+  synthSun.position.z = -50 + 350; // keep sun in front
+  stars.position.z -= speedFactor * dt * 0.1; // parallax
+
+  // Recycle chunks
+  const recycleThreshold = -CONFIG.chunkLength * 2;
+  chunks.forEach((chunk, idx) => {
+    if (chunk.position.z < recycleThreshold) {
+      // Find furthest chunk
+      let maxZ = -Infinity;
+      chunks.forEach(c => { if (c.position.z > maxZ) maxZ = c.position.z; });
+
+      // Remove old chunk
+      scene.remove(chunk);
+
+      // Create new chunk
+      totalChunksCreated++;
+      const newChunk = createRoadChunk(totalChunksCreated);
+      newChunk.position.z = maxZ + CONFIG.chunkLength;
+      chunks[idx] = newChunk;
+    }
+  });
+
+  // ─── Camera ───
+  const idealPos = new THREE.Vector3(
+    carX * 0.7,
+    CONFIG.cameraHeight + (speed / CONFIG.maxSpeed) * 0.5,
+    car.position.z - CONFIG.cameraDist - (speed / CONFIG.maxSpeed) * 2
+  );
+  const idealTarget = new THREE.Vector3(
+    carX * 0.5,
+    1.2,
+    car.position.z + 15 + (speed / CONFIG.maxSpeed) * 10
+  );
+
+  cameraPos.lerp(idealPos, CONFIG.cameraSmoothPos * dt);
+  cameraTarget.lerp(idealTarget, CONFIG.cameraSmoothLook * dt);
+  camera.position.copy(cameraPos);
+  camera.lookAt(cameraTarget);
+
+  // ─── FOV based on speed ───
+  camera.fov = THREE.MathUtils.lerp(camera.fov, 65 + (speed / CONFIG.maxSpeed) * 12, dt * 2);
+  camera.updateProjectionMatrix();
+
+  // ─── Update HUD ───
+  document.getElementById('speed-val').textContent = Math.floor(speed);
+  document.getElementById('dist-val').textContent = (distance / 1000).toFixed(1);
+
+  // Biome name
+  const currentBiomeKey = getCurrentBiomeKey(totalChunksCreated - Math.floor(CONFIG.visibleChunks / 2));
+  const biomeName = BIOMES[currentBiomeKey].name;
+  const biomeEl = document.getElementById('biome-name');
+  if (biomeEl.textContent !== biomeName) {
+    biomeEl.textContent = biomeName;
+    biomeEl.style.color = '#' + BIOMES[currentBiomeKey].neonPrimary.getHexString();
+  }
+
+  // ─── Update fog/sky for biome transitions ───
+  const targetBiome = BIOMES[currentBiomeKey];
+  scene.fog.color.lerp(targetBiome.fogColor, dt * 0.5);
+  scene.background.lerp(targetBiome.skyColor, dt * 0.5);
+
+  // ─── Update shader uniforms ───
+  updateShaderUniforms(dt);
+
+  renderer.render(scene, camera);
+  requestAnimationFrame(update);
+}
+
+function updateShaderUniforms(dt) {
+  scene.traverse(obj => {
+    if (obj.material && obj.material.uniforms) {
+      if (obj.material.uniforms.time) obj.material.uniforms.time.value = time;
+      if (obj.material.uniforms.scrollOffset) obj.material.uniforms.scrollOffset.value = scrollOffset * 0.1;
+    }
+  });
+}
+
+// Start the loop
+cameraPos.set(0, CONFIG.cameraHeight, -CONFIG.cameraDist);
+cameraTarget.set(0, 1.2, 15);
+update();
+
+</script>
+</body>
+</html>
