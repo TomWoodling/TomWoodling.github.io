@@ -93,12 +93,22 @@ const audio = {
     });
   },
   switchTo(k){
-    if(!this.ready||this.current===k)return;
-    dbg('Music -> '+BIOMES[k].name);
+    if(!this.ready)return;
+    var isNew = this.current!==k;
+    if(isNew) dbg('Music -> '+BIOMES[k].name);
     biomeOrder.forEach(b=>{const t=this.tracks[b];
       if(b===k){t.target=this.masterVol;if(t.ok&&t.el.paused){t.el.currentTime=0;t.el.play().catch(e=>dbg('Play err: '+e.message,'err'));}}
       else t.target=0;});
     this.current=k;
+  },
+  // Called by retry loop — forces play attempt even if current matches
+  retryPlay(k){
+    if(!this.ready)return false;
+    var t=this.tracks[k];
+    if(!t||!t.ok)return false;
+    t.target=this.masterVol;
+    if(t.el.paused){t.el.currentTime=0;t.el.play().catch(e=>dbg('Play err: '+e.message,'err'));}
+    return true;
   },
   update(dt){
     if(!this.ready)return;const r=1/this.fadeDur;
@@ -272,18 +282,20 @@ gltfLoader.load('synth_car.glb',
     gc.position.sub(ctr);
     gc.position.y=-sb.min.y;
 
-    // Add neon wheels
+    // Swap — create wrapper first so we can add wheels to it (not to rotated gc)
+    scene.remove(car);
+    car=new THREE.Group();car.add(gc);
+
+    // Add neon wheels to wrapper (not gc) so they aren't affected by Blender rotation fix
     carWheels=[];
     var wg=new THREE.CylinderGeometry(0.32,0.32,0.22,12),wm=neonMat(new THREE.Color(0xff00ff),2);
     [[-0.85,0.32,1.2],[0.85,0.32,1.2],[-0.85,0.32,-1.2],[0.85,0.32,-1.2]].forEach(function(p){
-      var w=new THREE.Mesh(wg,wm);w.rotation.set(0,-Math.PI/2,Math.PI/2);w.position.set(p[0],p[1],p[2]);gc.add(w);carWheels.push(w);});
-    // lights
-    [-0.6,0.6].forEach(function(x){var l=new THREE.PointLight(0x00ffff,1.5,15);l.position.set(x,0.7,2.3);gc.add(l);});
-    [-0.6,0.6].forEach(function(x){var l=new THREE.PointLight(0xff0044,0.8,8);l.position.set(x,0.7,-2.3);gc.add(l);});
+      var w=new THREE.Mesh(wg,wm);w.rotation.z=Math.PI/2;w.position.set(p[0],p[1],p[2]);car.add(w);carWheels.push(w);});
+    // lights on wrapper too
+    [-0.6,0.6].forEach(function(x){var l=new THREE.PointLight(0x00ffff,1.5,15);l.position.set(x,0.7,2.3);car.add(l);});
+    [-0.6,0.6].forEach(function(x){var l=new THREE.PointLight(0xff0044,0.8,8);l.position.set(x,0.7,-2.3);car.add(l);});
 
-    // Swap
-    scene.remove(car);
-    car=new THREE.Group();car.add(gc);car.position.set(0,0,5);scene.add(car);
+    car.position.set(0,0,5);scene.add(car);
     dbg('Car swapped to GLB model!');
   },
   function(progress){
@@ -306,8 +318,7 @@ function startGame(){var o=document.getElementById('title-overlay');if(!o.classL
   var retryCount=0;
   var retryInterval=setInterval(function(){
     retryCount++;
-    var t=audio.tracks[activeBiome];
-    if(t&&t.ok){audio.switchTo(activeBiome);clearInterval(retryInterval);dbg('Music playing: '+activeBiome);}
+    if(audio.retryPlay(activeBiome)){clearInterval(retryInterval);dbg('Music started: '+activeBiome);}
     else if(retryCount>20){clearInterval(retryInterval);dbg('Music load timeout','warn');}
   },250);
 }}
