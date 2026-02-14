@@ -263,60 +263,11 @@ canvas { display: block; touch-action: none; }
   body { cursor: none; }
 }
 
-/* ═══ VOLUME CONTROL ═══ */
-#volume-control {
-  position: fixed; top: 16px; right: 16px;
-  z-index: 20;
-  display: flex; align-items: center; gap: 8px;
-  background: rgba(0,0,0,0.4);
-  border: 1px solid rgba(0,255,255,0.25);
-  border-radius: 8px;
-  padding: 8px 14px;
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  pointer-events: auto;
-}
-#volume-control span {
-  font-family: 'Rajdhani', sans-serif;
-  font-size: 11px;
-  color: rgba(0,255,255,0.5);
-  letter-spacing: 2px;
-}
-#vol-slider {
-  -webkit-appearance: none;
-  width: 70px; height: 3px;
-  background: rgba(0,255,255,0.15);
-  border-radius: 2px;
-  outline: none;
-}
-#vol-slider::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  width: 14px; height: 14px;
-  background: #00ffff;
-  border-radius: 50%;
-  box-shadow: 0 0 10px rgba(0,255,255,0.5);
-}
+/* ═══ VOLUME — desktop panel removed, mobile uses HUD slider ═══ */
+#volume-control { display: none !important; }
 
-/* ═══ DEBUG ═══ */
-#debug-log {
-  position: fixed; top: 16px; left: 16px;
-  z-index: 50;
-  font-family: 'Rajdhani', monospace;
-  font-size: 11px;
-  color: #00ff88;
-  pointer-events: none;
-  max-width: 350px;
-  line-height: 1.5;
-  text-shadow: 0 0 5px rgba(0,255,0,0.3);
-}
-#debug-log .err { color: #ff4444; }
-#debug-log .ok  { color: #00ff88; }
-#debug-log .warn { color: #ffaa00; }
-
-/* Hide debug on mobile */
-@media (max-width: 768px), (hover: none) and (pointer: coarse) {
-  #debug-log { display: none; }
-}
+/* ═══ DEBUG — hidden, logs still go to console ═══ */
+#debug-log { display: none !important; }
 
 /* ═══ SAFE AREAS (notch phones) ═══ */
 @supports (padding: env(safe-area-inset-bottom)) {
