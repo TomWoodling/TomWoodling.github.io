@@ -90,8 +90,11 @@ function makeChunk(ci, bk) {
   return g;
 }
 
-// Initial chunk generation
-for (var i = 0; i < C.visibleChunks; i++) {
-  chunks.push(makeChunk(i, activeBiome));
-  totalChunks++;
+// Called from game.js after scene exists
+function initChunks() {
+  for (var i = 0; i < C.visibleChunks; i++) {
+    chunks.push(makeChunk(i, activeBiome));
+    totalChunks++;
+  }
+  dbg('Chunks initialized: ' + C.visibleChunks);
 }

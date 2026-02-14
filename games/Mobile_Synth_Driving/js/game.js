@@ -41,6 +41,10 @@ scene.add(sun);
   })));
 })();
 
+// --- Initialize systems that need scene ---
+initChunks();
+initCarGLB();
+
 // --- Game State ---
 var gameStarted = false;
 var speed = 0;

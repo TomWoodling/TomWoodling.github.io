@@ -159,10 +159,15 @@ function handleBrakeEnd(e) {
   }
 }
 
-// -- Pointer start for desktop --
+// -- Pointer/touch start for game start --
 window.addEventListener('pointerdown', function(e) {
-  if (e.pointerType === 'mouse') startGame();
+  startGame();
 });
+// Direct touch on title overlay (z-index 100 blocks touches to layers beneath)
+document.getElementById('title-overlay').addEventListener('touchstart', function(e) {
+  e.preventDefault();
+  startGame();
+}, { passive: false });
 
 // ═══ UNIFIED POLL ═══
 // Called every frame to merge keyboard + touch into a single InputState
