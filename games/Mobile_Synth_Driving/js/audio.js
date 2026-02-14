@@ -89,4 +89,14 @@ var audio = {
 
 document.getElementById('vol-slider').addEventListener('input', function(e) {
   audio.setVol(parseFloat(e.target.value));
+  var mob = document.getElementById('vol-slider-mobile');
+  if (mob) mob.value = e.target.value;
 });
+// Mobile HUD slider
+var volMob = document.getElementById('vol-slider-mobile');
+if (volMob) {
+  volMob.addEventListener('input', function(e) {
+    audio.setVol(parseFloat(e.target.value));
+    document.getElementById('vol-slider').value = e.target.value;
+  });
+}

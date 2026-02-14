@@ -141,6 +141,26 @@ canvas { display: block; touch-action: none; }
   text-shadow: 0 0 20px rgba(255,0,255,0.5);
 }
 
+/* Mini volume in HUD — mobile only */
+#hud-vol {
+  display: none;
+  margin-top: 4px;
+  pointer-events: auto;
+}
+#hud-vol input[type="range"] {
+  -webkit-appearance: none; width: 100%; height: 2px;
+  background: rgba(0,255,255,0.2); border-radius: 1px; outline: none;
+  touch-action: none;
+}
+#hud-vol input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 14px; height: 14px;
+  background: #00ffff; border-radius: 50%;
+  box-shadow: 0 0 8px rgba(0,255,255,0.4);
+}
+@media (max-width: 768px), (hover: none) and (pointer: coarse) {
+  #hud-vol { display: block; }
+}
+
 /* ═══ MOBILE TOUCH CONTROLS ═══ */
 #touch-layer {
   position: fixed; inset: 0;
@@ -227,13 +247,14 @@ canvas { display: block; touch-action: none; }
   #touch-layer { display: block; }
   body { cursor: default; }
   #hud { bottom: clamp(24px, 5vh, 40px); }
-  #volume-control { top: auto; bottom: clamp(80px, 14vh, 120px); right: auto; left: 16px; }
+  #volume-control { top: auto; bottom: clamp(80px, 14vh, 120px); right: auto; left: 16px; display: none; }
 }
 
 /* Also show on narrow screens (phone-width even with mouse) */
 @media (max-width: 768px) {
   #touch-layer { display: block; }
   #hud { bottom: clamp(20px, 4vh, 36px); gap: 10px; }
+  #volume-control { display: none; }
 }
 
 /* Desktop-only: hide touch UI, show cursor */

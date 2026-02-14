@@ -203,7 +203,7 @@ function pollInput() {
 // ═══ PREVENT BROWSER GESTURES ═══
 // Block pull-to-refresh, pinch-zoom, double-tap zoom on mobile
 document.addEventListener('touchmove', function(e) {
-  if (e.target.closest('#vol-slider')) return; // allow slider
+  if (e.target.closest('#vol-slider') || e.target.closest('#vol-slider-mobile')) return;
   e.preventDefault();
 }, { passive: false });
 
