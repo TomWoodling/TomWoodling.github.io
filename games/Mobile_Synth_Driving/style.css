@@ -292,6 +292,11 @@ canvas { display: block; touch-action: none; }
 #debug-log .ok  { color: #00ff88; }
 #debug-log .warn { color: #ffaa00; }
 
+/* Hide debug on mobile */
+@media (max-width: 768px), (hover: none) and (pointer: coarse) {
+  #debug-log { display: none; }
+}
+
 /* ═══ SAFE AREAS (notch phones) ═══ */
 @supports (padding: env(safe-area-inset-bottom)) {
   #hud { padding-bottom: env(safe-area-inset-bottom); }
