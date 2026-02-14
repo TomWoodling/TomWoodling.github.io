@@ -263,6 +263,9 @@ gltfLoader.load('synth_car.glb',
     var scaleFactor=4.2/Math.max(sz.x,sz.y,sz.z);
     gc.scale.setScalar(scaleFactor);
 
+    // Rotate 90° anticlockwise to face forward (Blender export fix)
+    gc.rotation.y = Math.PI / 2;
+
     // Re-center
     var sb=new THREE.Box3().setFromObject(gc);
     var ctr=sb.getCenter(new THREE.Vector3());
