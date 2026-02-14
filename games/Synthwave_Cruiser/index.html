@@ -27,6 +27,10 @@
   #volume-control span { font-family: 'Rajdhani', sans-serif; font-size: 12px; color: rgba(0,255,255,0.6); letter-spacing: 2px; }
   #vol-slider { -webkit-appearance: none; width: 80px; height: 3px; background: rgba(0,255,255,0.2); border-radius: 2px; outline: none; cursor: pointer; }
   #vol-slider::-webkit-slider-thumb { -webkit-appearance: none; width: 12px; height: 12px; background: #00ffff; border-radius: 50%; box-shadow: 0 0 10px rgba(0,255,255,0.5); }
+  #debug-log { position: fixed; top: 20px; left: 20px; z-index: 50; font-family: 'Rajdhani', monospace; font-size: 12px; color: #00ff88; pointer-events: none; max-width: 400px; line-height: 1.6; text-shadow: 0 0 5px rgba(0,255,0,0.3); }
+  #debug-log .err { color: #ff4444; }
+  #debug-log .ok { color: #00ff88; }
+  #debug-log .warn { color: #ffaa00; }
 </style>
 </head>
 <body>
@@ -34,56 +38,33 @@
 <div id="vignette"></div>
 <div id="scanlines"></div>
 <div id="biome-transition"></div>
+<div id="debug-log"></div>
 <div id="volume-control"><span>VOL</span><input type="range" id="vol-slider" min="0" max="1" step="0.05" value="0.5"></div>
 <div id="hud">
   <div class="hud-panel"><div class="hud-label">Speed</div><div class="hud-value"><span id="speed-val">0</span> <span style="font-size:14px;opacity:0.6">KPH</span></div></div>
   <div class="hud-panel"><div class="hud-label">Zone</div><div id="biome-name">COUNTRYSIDE</div></div>
   <div class="hud-panel"><div class="hud-label">Distance</div><div class="hud-value"><span id="dist-val">0.0</span> <span style="font-size:14px;opacity:0.6">KM</span></div></div>
 </div>
-<script type="importmap">{"imports":{"three":"https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.module.js"}}</script>
-<script type="module">
-import * as THREE from 'three';
 
-// ═══ GLB LOADER ═══
-class GLBLoader {
-  load(url, onLoad, onProgress, onError) {
-    const l = new THREE.FileLoader(); l.setResponseType('arraybuffer');
-    l.load(url, buf => { try { onLoad(this._parse(buf)); } catch(e) { onError?.(e); } }, onProgress, onError);
-  }
-  _parse(buf) {
-    const v = new DataView(buf); if(v.getUint32(0,true)!==0x46546C67) throw 'Not GLB';
-    let off=12, json=null, bin=null;
-    while(off<buf.byteLength){ const len=v.getUint32(off,true),typ=v.getUint32(off+4,true),d=buf.slice(off+8,off+8+len);
-      if(typ===0x4E4F534A) json=JSON.parse(new TextDecoder().decode(d)); else if(typ===0x004E4942) bin=d; off+=8+len; }
-    if(!json) throw 'No JSON'; return { scene: this._build(json, bin) };
-  }
-  _build(j, bin) {
-    const bvs=j.bufferViews||[],accs=j.accessors||[];
-    const gd=(i)=>{ const a=accs[i],bv=bvs[a.bufferView],o=(bv.byteOffset||0)+(a.byteOffset||0),
-      n=a.count*({SCALAR:1,VEC2:2,VEC3:3,VEC4:4}[a.type]||1);
-      return a.componentType===5126?new Float32Array(bin,o,n):a.componentType===5123?new Uint16Array(bin,o,n):
-      a.componentType===5125?new Uint32Array(bin,o,n):new Float32Array(bin,o,n); };
-    const mats=(j.materials||[]).map(m=>{ const p=m.pbrMetallicRoughness||{},c=p.baseColorFactor||[.8,.8,.8,1];
-      return new THREE.MeshStandardMaterial({color:new THREE.Color(c[0],c[1],c[2]),metalness:p.metallicFactor??0.5,roughness:p.roughnessFactor??0.5,transparent:c[3]<1,opacity:c[3]}); });
-    const dm=new THREE.MeshStandardMaterial({color:0x00cccc});
-    const bm=(mi)=>{ const g=new THREE.Group(); j.meshes[mi].primitives.forEach(p=>{
-      const geo=new THREE.BufferGeometry();
-      if(p.attributes.POSITION!==undefined) geo.setAttribute('position',new THREE.BufferAttribute(new Float32Array(gd(p.attributes.POSITION)),3));
-      if(p.attributes.NORMAL!==undefined) geo.setAttribute('normal',new THREE.BufferAttribute(new Float32Array(gd(p.attributes.NORMAL)),3));
-      if(p.attributes.TEXCOORD_0!==undefined) geo.setAttribute('uv',new THREE.BufferAttribute(new Float32Array(gd(p.attributes.TEXCOORD_0)),2));
-      if(p.indices!==undefined){const d=gd(p.indices);geo.setIndex(new THREE.BufferAttribute(d instanceof Uint16Array?new Uint16Array(d):new Uint32Array(d),1));}
-      geo.computeBoundingSphere(); g.add(new THREE.Mesh(geo,p.material!==undefined?mats[p.material]:dm)); }); return g; };
-    const ns=j.nodes||[], bn=(ni)=>{ const nd=ns[ni], o=nd.mesh!==undefined?bm(nd.mesh):new THREE.Group();
-      if(nd.name) o.name=nd.name; if(nd.translation) o.position.fromArray(nd.translation);
-      if(nd.rotation) o.quaternion.fromArray(nd.rotation); if(nd.scale) o.scale.fromArray(nd.scale);
-      if(nd.matrix){const m=new THREE.Matrix4();m.fromArray(nd.matrix);m.decompose(o.position,o.quaternion,o.scale);}
-      if(nd.children) nd.children.forEach(c=>o.add(bn(c))); return o; };
-    const root=new THREE.Group(), sd=j.scenes?j.scenes[j.scene||0]:null;
-    if(sd&&sd.nodes) sd.nodes.forEach(i=>root.add(bn(i)));
-    else ns.forEach((_,i)=>{if(!ns.some(n=>n.children&&n.children.includes(i)))root.add(bn(i));});
-    return root;
-  }
+<script>
+// Debug logger visible on screen
+const debugEl = document.getElementById('debug-log');
+const debugLines = [];
+function dbg(msg, type='ok') {
+  console.log('[SYNTH] ' + msg);
+  debugLines.push(`<span class="${type}">${msg}</span>`);
+  if (debugLines.length > 8) debugLines.shift();
+  debugEl.innerHTML = debugLines.join('<br>');
 }
+</script>
+
+<!-- Three.js r128 via CDN (non-module for broader compat) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<!-- Official GLTFLoader from three.js examples CDN -->
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+
+<script>
+dbg('Three.js loaded: r' + THREE.REVISION);
 
 // ═══ CONFIG ═══
 const C = { roadWidth:12, chunkLength:60, visibleChunks:14, maxSpeed:120, accel:35, brake:60, friction:15,
@@ -100,18 +81,32 @@ const biomeOrder = ['countryside','city','beach'];
 // ═══ AUDIO ═══
 const audio = {
   tracks:{}, current:null, masterVol:0.5, fadeDur:3, ready:false,
-  init(){ if(this.ready)return; this.ready=true;
-    biomeOrder.forEach(k=>{ const a=new Audio(BIOMES[k].music); a.loop=true; a.volume=0; a.preload='auto';
+  init(){
+    if(this.ready)return; this.ready=true; dbg('Audio system init');
+    biomeOrder.forEach(k=>{
+      const url = BIOMES[k].music;
+      dbg('Loading audio: ' + url, 'warn');
+      const a=new Audio(url); a.loop=true; a.volume=0; a.preload='auto';
       this.tracks[k]={el:a,target:0,cur:0,ok:false};
-      a.addEventListener('canplaythrough',()=>{this.tracks[k].ok=true;});
-      a.addEventListener('error',()=>{console.log('No audio: '+BIOMES[k].music);}); }); },
-  switchTo(k){ if(!this.ready||this.current===k)return;
-    biomeOrder.forEach(b=>{const t=this.tracks[b]; if(b===k){t.target=this.masterVol;if(t.ok&&t.el.paused){t.el.currentTime=0;t.el.play().catch(()=>{});}}else t.target=0;});
-    this.current=k; },
-  update(dt){ if(!this.ready)return; const r=1/this.fadeDur;
+      a.addEventListener('canplaythrough',()=>{ this.tracks[k].ok=true; dbg('Audio ready: '+url); });
+      a.addEventListener('error',(e)=>{ dbg('Audio FAILED: '+url+' ('+( a.error ? a.error.message : 'unknown')+')', 'err'); });
+    });
+  },
+  switchTo(k){
+    if(!this.ready||this.current===k)return;
+    dbg('Music -> '+BIOMES[k].name);
+    biomeOrder.forEach(b=>{const t=this.tracks[b];
+      if(b===k){t.target=this.masterVol;if(t.ok&&t.el.paused){t.el.currentTime=0;t.el.play().catch(e=>dbg('Play err: '+e.message,'err'));}}
+      else t.target=0;});
+    this.current=k;
+  },
+  update(dt){
+    if(!this.ready)return;const r=1/this.fadeDur;
     biomeOrder.forEach(k=>{const t=this.tracks[k];if(!t.ok)return;
-      if(t.cur<t.target)t.cur=Math.min(t.cur+r*dt,t.target);else if(t.cur>t.target)t.cur=Math.max(t.cur-r*dt,0);
-      t.el.volume=t.cur; if(t.cur<=0&&!t.el.paused)t.el.pause();}); },
+      if(t.cur<t.target)t.cur=Math.min(t.cur+r*dt,t.target);
+      else if(t.cur>t.target)t.cur=Math.max(t.cur-r*dt,0);
+      t.el.volume=t.cur;if(t.cur<=0&&!t.el.paused)t.el.pause();});
+  },
   setVol(v){this.masterVol=v;if(this.current)this.tracks[this.current].target=v;}
 };
 document.getElementById('vol-slider').addEventListener('input',e=>audio.setVol(parseFloat(e.target.value)));
@@ -132,7 +127,7 @@ const nVS=`varying vec3 vWP,vN,vV;void main(){vec4 w=modelMatrix*vec4(position,1
 const nFS=`uniform vec3 edgeColor;uniform float opacity,glowIntensity,time;varying vec3 vWP,vN,vV;
 void main(){float e=1.0-abs(dot(vN,vV));e=pow(e,1.8);float p=0.85+0.15*sin(time*1.5+vWP.y*2.0);
 float g=e*glowIntensity*p;vec3 c=mix(edgeColor*0.05,edgeColor,e*0.9)+edgeColor*g*0.5;gl_FragColor=vec4(c,max(e*opacity,0.06));}`;
-function neonMat(color,int=1.5){return new THREE.ShaderMaterial({vertexShader:nVS,fragmentShader:nFS,
+function neonMat(color,int){int=int||1.5;return new THREE.ShaderMaterial({vertexShader:nVS,fragmentShader:nFS,
   uniforms:{edgeColor:{value:color.clone()},opacity:{value:0.9},glowIntensity:{value:int},time:{value:0}},
   transparent:true,side:THREE.FrontSide,depthWrite:false});}
 
@@ -168,132 +163,164 @@ function makeSun(){
 function makeTree(nc){
   const g=new THREE.Group();
   const t=new THREE.Mesh(new THREE.CylinderGeometry(0.15,0.2,2.5,6),neonMat(new THREE.Color(0x00ff88),1));t.position.y=1.25;g.add(t);
-  [{r:1.8,h:3,y:3.5},{r:1.4,h:2.5,y:5},{r:1,h:2,y:6.2}].forEach(s=>{const c=new THREE.Mesh(new THREE.ConeGeometry(s.r,s.h,6),neonMat(nc,1.2));c.position.y=s.y;g.add(c);});
+  [{r:1.8,h:3,y:3.5},{r:1.4,h:2.5,y:5},{r:1,h:2,y:6.2}].forEach(function(s){var c=new THREE.Mesh(new THREE.ConeGeometry(s.r,s.h,6),neonMat(nc,1.2));c.position.y=s.y;g.add(c);});
   return g;
 }
 function makeBuilding(nc){
-  const g=new THREE.Group(),w=3+Math.random()*5,h=6+Math.random()*18,d=3+Math.random()*5;
-  const b=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),neonMat(nc,1.3));b.position.y=h/2;g.add(b);
-  for(let i=0;i<Math.floor(h/2.5);i++){const wm=new THREE.MeshBasicMaterial({color:nc,transparent:true,opacity:0.3+Math.random()*0.3});
-    const wn=new THREE.Mesh(new THREE.PlaneGeometry(w*0.7,0.15),wm);wn.position.set(0,2+i*2.5,d/2+0.01);g.add(wn);
-    const wb=wn.clone();wb.position.z=-(d/2+0.01);g.add(wb);}
+  var g=new THREE.Group(),w=3+Math.random()*5,h=6+Math.random()*18,d=3+Math.random()*5;
+  var b=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),neonMat(nc,1.3));b.position.y=h/2;g.add(b);
+  for(var i=0;i<Math.floor(h/2.5);i++){var wm=new THREE.MeshBasicMaterial({color:nc,transparent:true,opacity:0.3+Math.random()*0.3});
+    var wn=new THREE.Mesh(new THREE.PlaneGeometry(w*0.7,0.15),wm);wn.position.set(0,2+i*2.5,d/2+0.01);g.add(wn);
+    var wb=wn.clone();wb.position.z=-(d/2+0.01);g.add(wb);}
   return g;
 }
 function makePalm(nc){
-  const g=new THREE.Group();
-  const cv=new THREE.CubicBezierCurve3(new THREE.Vector3(0,0,0),new THREE.Vector3(0.3,2.5,0),new THREE.Vector3(-0.2,5,0),new THREE.Vector3(0.1,7,0));
+  var g=new THREE.Group();
+  var cv=new THREE.CubicBezierCurve3(new THREE.Vector3(0,0,0),new THREE.Vector3(0.3,2.5,0),new THREE.Vector3(-0.2,5,0),new THREE.Vector3(0.1,7,0));
   g.add(new THREE.Mesh(new THREE.TubeGeometry(cv,12,0.2,6,false),neonMat(nc,1)));
-  for(let i=0;i<6;i++){const a=(i/6)*Math.PI*2;
-    const fc=new THREE.QuadraticBezierCurve3(new THREE.Vector3(0,7,0),new THREE.Vector3(Math.cos(a)*2,7.5,Math.sin(a)*2),new THREE.Vector3(Math.cos(a)*3.5,5.5,Math.sin(a)*3.5));
+  for(var i=0;i<6;i++){var a=(i/6)*Math.PI*2;
+    var fc=new THREE.QuadraticBezierCurve3(new THREE.Vector3(0,7,0),new THREE.Vector3(Math.cos(a)*2,7.5,Math.sin(a)*2),new THREE.Vector3(Math.cos(a)*3.5,5.5,Math.sin(a)*3.5));
     g.add(new THREE.Mesh(new THREE.TubeGeometry(fc,8,0.08,4,false),neonMat(new THREE.Color(0x00ff44),1.5)));}
   return g;
 }
 function makeWater(){
-  const m=new THREE.ShaderMaterial({
+  var m=new THREE.ShaderMaterial({
     vertexShader:`uniform float time;varying vec2 vUv;void main(){vUv=uv;vec3 p=position;p.z+=sin(p.x*0.5+time*0.8)*0.3+sin(p.y*0.3+time*0.5)*0.2;gl_Position=projectionMatrix*modelViewMatrix*vec4(p,1.0);}`,
     fragmentShader:`uniform float time;uniform vec3 waterColor;varying vec2 vUv;void main(){
       float g=min(smoothstep(0.02,0.0,abs(fract(vUv.x*20.0+time*0.1)-0.5)-0.48)+smoothstep(0.02,0.0,abs(fract(vUv.y*30.0+time*0.05)-0.5)-0.48),1.0);
       float gl2=g*0.5+0.05;float ef=smoothstep(0.0,0.2,vUv.x)*smoothstep(1.0,0.8,vUv.x);
       gl_FragColor=vec4(waterColor*gl2*ef,gl2*0.6*ef);}`,
     uniforms:{time:{value:0},waterColor:{value:new THREE.Color(0x0066ff)}},transparent:true,depthWrite:false,side:THREE.DoubleSide});
-  const mesh=new THREE.Mesh(new THREE.PlaneGeometry(200,60,40,40),m);mesh.rotation.x=-Math.PI/2;mesh.position.set(35,0.05,0);return mesh;
+  var mesh=new THREE.Mesh(new THREE.PlaneGeometry(200,60,40,40),m);mesh.rotation.x=-Math.PI/2;mesh.position.set(35,0.05,0);return mesh;
 }
 
 // ═══ CHUNKS ═══
-const chunks=[];let totalChunks=0,biomeIdx=0,biomeTimer=0,activeBiome=biomeOrder[0];
+var chunks=[],totalChunks=0,biomeIdx=0,biomeTimer=0,activeBiome=biomeOrder[0];
 
 function makeChunk(ci, bk){
-  const g=new THREE.Group(),b=BIOMES[bk];g.position.z=ci*C.chunkLength;g.userData={ci,bk};
+  var g=new THREE.Group(),b=BIOMES[bk];g.position.z=ci*C.chunkLength;g.userData={ci:ci,bk:bk};
   // road
-  const road=new THREE.Mesh(new THREE.PlaneGeometry(C.roadWidth,C.chunkLength),
+  var road=new THREE.Mesh(new THREE.PlaneGeometry(C.roadWidth,C.chunkLength),
     new THREE.ShaderMaterial({vertexShader:rVS,fragmentShader:rFS,uniforms:{time:{value:0},lineColor:{value:b.neonS.clone()},scrollOffset:{value:0}},transparent:true,depthWrite:true}));
   road.rotation.x=-Math.PI/2;road.position.set(0,0.01,C.chunkLength/2);g.add(road);
   // ground
-  [-1,1].forEach(s=>{const gm=new THREE.Mesh(new THREE.PlaneGeometry(80,C.chunkLength),
+  [-1,1].forEach(function(s){var gm=new THREE.Mesh(new THREE.PlaneGeometry(80,C.chunkLength),
     new THREE.ShaderMaterial({vertexShader:gVS,fragmentShader:gFS,uniforms:{gridColor:{value:b.neonP.clone()},scrollOffset:{value:0},time:{value:0}},transparent:true,depthWrite:false}));
     gm.rotation.x=-Math.PI/2;gm.position.set(s*(C.roadWidth/2+40),0,C.chunkLength/2);g.add(gm);});
   // scenery
-  const sc=bk==='city'?5:6;
-  for(let i=0;i<sc;i++){const lz=(i/sc)*C.chunkLength+Math.random()*8;
-    [-1,1].forEach(side=>{if(Math.random()>0.65)return;let obj;
+  var sc=bk==='city'?5:6;
+  for(var i=0;i<sc;i++){var lz=(i/sc)*C.chunkLength+Math.random()*8;
+    [-1,1].forEach(function(side){if(Math.random()>0.65)return;var obj;
       if(bk==='countryside'){obj=makeTree(b.neonP);obj.scale.setScalar(0.8+Math.random()*0.6);}
       else if(bk==='city'){obj=makeBuilding(b.neonP);}
       else{obj=makePalm(b.neonP);obj.scale.setScalar(0.7+Math.random()*0.5);}
-      const off=bk==='city'?C.roadWidth/2+2+Math.random()*6:C.roadWidth/2+3+Math.random()*20;
+      var off=bk==='city'?C.roadWidth/2+2+Math.random()*6:C.roadWidth/2+3+Math.random()*20;
       obj.position.set(side*off,0,lz);obj.rotation.y=Math.random()*Math.PI*2;g.add(obj);});}
-  if(bk==='beach'){const w=makeWater();w.position.z=C.chunkLength/2;w.position.x=40;g.add(w);}
+  if(bk==='beach'){var w=makeWater();w.position.z=C.chunkLength/2;w.position.x=40;g.add(w);}
   scene.add(g);return g;
 }
-for(let i=0;i<C.visibleChunks;i++){chunks.push(makeChunk(i,activeBiome));totalChunks++;}
+for(var i=0;i<C.visibleChunks;i++){chunks.push(makeChunk(i,activeBiome));totalChunks++;}
 
 // ═══ SUN + STARS ═══
-const sun=makeSun();scene.add(sun);
-(function(){const geo=new THREE.BufferGeometry(),p=new Float32Array(6000);for(let i=0;i<2000;i++){p[i*3]=(Math.random()-0.5)*600;p[i*3+1]=20+Math.random()*100;p[i*3+2]=(Math.random()-0.5)*600;}
+var sun=makeSun();scene.add(sun);
+(function(){var geo=new THREE.BufferGeometry(),p=new Float32Array(6000);for(var i=0;i<2000;i++){p[i*3]=(Math.random()-0.5)*600;p[i*3+1]=20+Math.random()*100;p[i*3+2]=(Math.random()-0.5)*600;}
   geo.setAttribute('position',new THREE.BufferAttribute(p,3));scene.add(new THREE.Points(geo,new THREE.PointsMaterial({color:0xffffff,size:0.3,transparent:true,opacity:0.6})));})();
 
 // ═══ CAR ═══
-let car;
+var car, carWheels=[];
 function makePlaceholderCar(){
-  const g=new THREE.Group();
-  g.add(Object.assign(new THREE.Mesh(new THREE.BoxGeometry(2,0.8,4.2),neonMat(new THREE.Color(0x00ffff),2)),{position:new THREE.Vector3(0,0.7,0)}));
-  g.add(Object.assign(new THREE.Mesh(new THREE.BoxGeometry(1.6,0.7,2),neonMat(new THREE.Color(0x00ffff),1.8)),{position:new THREE.Vector3(0,1.3,-0.3)}));
-  const wg=new THREE.CylinderGeometry(0.35,0.35,0.25,12),wm=neonMat(new THREE.Color(0xff00ff),2),wheels=[];
-  [[-1,0.35,1.3],[1,0.35,1.3],[-1,0.35,-1.3],[1,0.35,-1.3]].forEach(p=>{
-    const w=new THREE.Mesh(wg,wm);w.rotation.z=Math.PI/2;w.position.set(...p);g.add(w);wheels.push(w);});
-  g.userData.wheels=wheels;
-  [-0.6,0.6].forEach(x=>{g.add(Object.assign(new THREE.PointLight(0x00ffff,1.5,15),{position:new THREE.Vector3(x,0.7,2.3)}));});
-  [-0.6,0.6].forEach(x=>{g.add(Object.assign(new THREE.PointLight(0xff0044,0.8,8),{position:new THREE.Vector3(x,0.7,-2.3)}));});
+  var g=new THREE.Group();
+  var body=new THREE.Mesh(new THREE.BoxGeometry(2,0.8,4.2),neonMat(new THREE.Color(0x00ffff),2));body.position.y=0.7;g.add(body);
+  var cabin=new THREE.Mesh(new THREE.BoxGeometry(1.6,0.7,2),neonMat(new THREE.Color(0x00ffff),1.8));cabin.position.set(0,1.3,-0.3);g.add(cabin);
+  var wg=new THREE.CylinderGeometry(0.35,0.35,0.25,12),wm=neonMat(new THREE.Color(0xff00ff),2);
+  [[-1,0.35,1.3],[1,0.35,1.3],[-1,0.35,-1.3],[1,0.35,-1.3]].forEach(function(p){
+    var w=new THREE.Mesh(wg,wm);w.rotation.z=Math.PI/2;w.position.set(p[0],p[1],p[2]);g.add(w);carWheels.push(w);});
+  // lights
+  [-0.6,0.6].forEach(function(x){var l=new THREE.PointLight(0x00ffff,1.5,15);l.position.set(x,0.7,2.3);g.add(l);});
+  [-0.6,0.6].forEach(function(x){var l=new THREE.PointLight(0xff0044,0.8,8);l.position.set(x,0.7,-2.3);g.add(l);});
   return g;
 }
 car=makePlaceholderCar();car.position.set(0,0,5);scene.add(car);
+dbg('Placeholder car loaded');
 
-// Try GLB
-new GLBLoader().load('synth_car.glb',(gltf)=>{
-  const gc=gltf.scene;
-  const box=new THREE.Box3().setFromObject(gc),sz=box.getSize(new THREE.Vector3());
-  gc.scale.setScalar(4.2/Math.max(sz.x,sz.y,sz.z));
-  const sb=new THREE.Box3().setFromObject(gc),ctr=sb.getCenter(new THREE.Vector3());
-  gc.position.sub(ctr);gc.position.y=-sb.min.y;
-  // neon wheels
-  const wg=new THREE.CylinderGeometry(0.32,0.32,0.22,12),wm=neonMat(new THREE.Color(0xff00ff),2),wheels=[];
-  [[-0.85,0.32,1.2],[0.85,0.32,1.2],[-0.85,0.32,-1.2],[0.85,0.32,-1.2]].forEach(p=>{
-    const w=new THREE.Mesh(wg,wm);w.rotation.z=Math.PI/2;w.position.set(...p);gc.add(w);wheels.push(w);});
-  gc.userData.wheels=wheels;
-  [-0.6,0.6].forEach(x=>{gc.add(Object.assign(new THREE.PointLight(0x00ffff,1.5,15),{position:new THREE.Vector3(x,0.7,2.3)}));});
-  [-0.6,0.6].forEach(x=>{gc.add(Object.assign(new THREE.PointLight(0xff0044,0.8,8),{position:new THREE.Vector3(x,0.7,-2.3)}));});
-  scene.remove(car);car=new THREE.Group();car.add(gc);car.position.set(0,0,5);scene.add(car);
-  console.log('GLB car loaded!');
-},undefined,()=>{console.log('No synth_car.glb found, using placeholder');});
+// Try GLB with official loader
+dbg('Attempting GLB load: synth_car.glb', 'warn');
+var gltfLoader = new THREE.GLTFLoader();
+gltfLoader.load('synth_car.glb',
+  function(gltf){
+    dbg('GLB loaded successfully!');
+    var gc=gltf.scene;
+
+    // Log what we got
+    var meshCount=0;
+    gc.traverse(function(child){if(child.isMesh)meshCount++;});
+    dbg('GLB meshes: '+meshCount);
+
+    // Auto-scale to ~4.2 units
+    var box=new THREE.Box3().setFromObject(gc);
+    var sz=box.getSize(new THREE.Vector3());
+    dbg('GLB size: '+sz.x.toFixed(1)+'x'+sz.y.toFixed(1)+'x'+sz.z.toFixed(1));
+    var scaleFactor=4.2/Math.max(sz.x,sz.y,sz.z);
+    gc.scale.setScalar(scaleFactor);
+
+    // Re-center
+    var sb=new THREE.Box3().setFromObject(gc);
+    var ctr=sb.getCenter(new THREE.Vector3());
+    gc.position.sub(ctr);
+    gc.position.y=-sb.min.y;
+
+    // Add neon wheels
+    carWheels=[];
+    var wg=new THREE.CylinderGeometry(0.32,0.32,0.22,12),wm=neonMat(new THREE.Color(0xff00ff),2);
+    [[-0.85,0.32,1.2],[0.85,0.32,1.2],[-0.85,0.32,-1.2],[0.85,0.32,-1.2]].forEach(function(p){
+      var w=new THREE.Mesh(wg,wm);w.rotation.z=Math.PI/2;w.position.set(p[0],p[1],p[2]);gc.add(w);carWheels.push(w);});
+    // lights
+    [-0.6,0.6].forEach(function(x){var l=new THREE.PointLight(0x00ffff,1.5,15);l.position.set(x,0.7,2.3);gc.add(l);});
+    [-0.6,0.6].forEach(function(x){var l=new THREE.PointLight(0xff0044,0.8,8);l.position.set(x,0.7,-2.3);gc.add(l);});
+
+    // Swap
+    scene.remove(car);
+    car=new THREE.Group();car.add(gc);car.position.set(0,0,5);scene.add(car);
+    dbg('Car swapped to GLB model!');
+  },
+  function(progress){
+    if(progress.total>0) dbg('GLB loading: '+Math.round(progress.loaded/progress.total*100)+'%','warn');
+  },
+  function(err){
+    dbg('GLB load failed: '+(err.message||err),'err');
+    dbg('Using placeholder car','warn');
+  }
+);
 
 // ═══ LIGHTS ═══
 scene.add(new THREE.AmbientLight(0x111122,0.3));
-const dl=new THREE.DirectionalLight(0x4444ff,0.4);dl.position.set(-5,10,5);scene.add(dl);
+var dl=new THREE.DirectionalLight(0x4444ff,0.4);dl.position.set(-5,10,5);scene.add(dl);
 
 // ═══ INPUT ═══
-const keys={};let gameStarted=false;
-function startGame(){const o=document.getElementById('title-overlay');if(!o.classList.contains('hidden')){o.classList.add('hidden');gameStarted=true;audio.init();audio.switchTo(activeBiome);}}
-window.addEventListener('keydown',e=>{keys[e.key.toLowerCase()]=true;startGame();});
-window.addEventListener('keyup',e=>{keys[e.key.toLowerCase()]=false;});
+var keys={},gameStarted=false;
+function startGame(){var o=document.getElementById('title-overlay');if(!o.classList.contains('hidden')){o.classList.add('hidden');gameStarted=true;audio.init();audio.switchTo(activeBiome);dbg('Game started!');}}
+window.addEventListener('keydown',function(e){keys[e.key.toLowerCase()]=true;startGame();});
+window.addEventListener('keyup',function(e){keys[e.key.toLowerCase()]=false;});
 window.addEventListener('pointerdown',startGame);
 
 // ═══ STATE ═══
-let speed=0,steer=0,carX=0,distance=0,scrollOff=0,time=0,biomeTransTimer=0;
-const camPos=new THREE.Vector3(0,C.camH,-C.camDist),camTgt=new THREE.Vector3(0,1.2,15);
+var speed=0,steer=0,carX=0,distance=0,scrollOff=0,time=0,biomeTransTimer=0;
+var camPos=new THREE.Vector3(0,C.camH,-C.camDist),camTgt=new THREE.Vector3(0,1.2,15);
 
-function showBiomeTransition(bk){const el=document.getElementById('biome-transition'),b=BIOMES[bk];
+function showBiomeTransition(bk){var el=document.getElementById('biome-transition'),b=BIOMES[bk];
   el.textContent=b.name;el.style.color='#'+b.neonP.getHexString();el.classList.add('show');biomeTransTimer=2.5;}
 
-window.addEventListener('resize',()=>{camera.aspect=window.innerWidth/window.innerHeight;camera.updateProjectionMatrix();renderer.setSize(window.innerWidth,window.innerHeight);});
+window.addEventListener('resize',function(){camera.aspect=window.innerWidth/window.innerHeight;camera.updateProjectionMatrix();renderer.setSize(window.innerWidth,window.innerHeight);});
 
 // ═══ GAME LOOP ═══
-const clock=new THREE.Clock();
+var clock=new THREE.Clock();
 function update(){
-  const dt=Math.min(clock.getDelta(),0.05);time+=dt;
+  var dt=Math.min(clock.getDelta(),0.05);time+=dt;
 
   if(!gameStarted){
     camera.position.set(Math.sin(time*0.3)*2,C.camH+Math.sin(time*0.5)*0.3,car.position.z-C.camDist);
     camera.lookAt(car.position.x,1.5,car.position.z+10);
-    scene.traverse(o=>{if(o.material?.uniforms){if(o.material.uniforms.time)o.material.uniforms.time.value=time;if(o.material.uniforms.scrollOffset)o.material.uniforms.scrollOffset.value=scrollOff*0.1;}});
+    scene.traverse(function(o){if(o.material&&o.material.uniforms){if(o.material.uniforms.time)o.material.uniforms.time.value=time;if(o.material.uniforms.scrollOffset)o.material.uniforms.scrollOffset.value=scrollOff*0.1;}});
     renderer.render(scene,camera);requestAnimationFrame(update);return;
   }
 
@@ -304,31 +331,29 @@ function update(){
   audio.update(dt);
 
   // Driving
-  const thr=keys['arrowup']||keys['w'],brk=keys['arrowdown']||keys['s'],sl=keys['arrowleft']||keys['a'],sr=keys['arrowright']||keys['d'];
+  var thr=keys['arrowup']||keys['w'],brk=keys['arrowdown']||keys['s'],sl=keys['arrowleft']||keys['a'],sr=keys['arrowright']||keys['d'];
   if(thr)speed=Math.min(speed+C.accel*dt,C.maxSpeed);else if(brk)speed=Math.max(speed-C.brake*dt,0);else speed=Math.max(speed-C.friction*dt,0);
   if(sl)steer=Math.max(steer-C.steerSpeed*dt,-C.maxSteer);else if(sr)steer=Math.min(steer+C.steerSpeed*dt,C.maxSteer);
   else{if(Math.abs(steer)<0.05)steer=0;else steer-=Math.sign(steer)*C.steerReturn*dt;}
 
-  const spd=speed/3.6;distance+=spd*dt;scrollOff+=spd*dt;
+  var spd=speed/3.6;distance+=spd*dt;scrollOff+=spd*dt;
   carX-=steer*(speed/C.maxSpeed)*12*dt;
   carX=THREE.MathUtils.clamp(carX,-C.roadWidth/2+1.2,C.roadWidth/2-1.2);
   car.position.x=carX;car.rotation.y=-steer*0.3;car.rotation.z=steer*0.05;
 
   // Wheels
-  const spinWheels=(obj)=>{if(obj.userData?.wheels)obj.userData.wheels.forEach(w=>w.rotation.x+=spd*dt*3);
-    obj.children.forEach(c=>{if(c.userData?.wheels)c.userData.wheels.forEach(w=>w.rotation.x+=spd*dt*3);});};
-  spinWheels(car);
+  carWheels.forEach(function(w){w.rotation.x+=spd*dt*3;});
 
   // Chunks
-  chunks.forEach(c=>{c.position.z-=spd*dt;});
+  chunks.forEach(function(c){c.position.z-=spd*dt;});
   sun.position.z=-50+350;
-  chunks.forEach((ch,idx)=>{if(ch.position.z<-C.chunkLength*2){
-    let mx=-Infinity;chunks.forEach(c=>{if(c.position.z>mx)mx=c.position.z;});
-    scene.remove(ch);totalChunks++;const nc=makeChunk(totalChunks,activeBiome);nc.position.z=mx+C.chunkLength;chunks[idx]=nc;}});
+  chunks.forEach(function(ch,idx){if(ch.position.z<-C.chunkLength*2){
+    var mx=-Infinity;chunks.forEach(function(c){if(c.position.z>mx)mx=c.position.z;});
+    scene.remove(ch);totalChunks++;var nc=makeChunk(totalChunks,activeBiome);nc.position.z=mx+C.chunkLength;chunks[idx]=nc;}});
 
   // Camera
-  const ip=new THREE.Vector3(carX*0.7,C.camH+(speed/C.maxSpeed)*0.5,car.position.z-C.camDist-(speed/C.maxSpeed)*2);
-  const it=new THREE.Vector3(carX*0.5,1.2,car.position.z+15+(speed/C.maxSpeed)*10);
+  var ip=new THREE.Vector3(carX*0.7,C.camH+(speed/C.maxSpeed)*0.5,car.position.z-C.camDist-(speed/C.maxSpeed)*2);
+  var it=new THREE.Vector3(carX*0.5,1.2,car.position.z+15+(speed/C.maxSpeed)*10);
   camPos.lerp(ip,C.camSmoothPos*dt);camTgt.lerp(it,C.camSmoothLook*dt);
   camera.position.copy(camPos);camera.lookAt(camTgt);
   camera.fov=THREE.MathUtils.lerp(camera.fov,65+(speed/C.maxSpeed)*12,dt*2);camera.updateProjectionMatrix();
@@ -336,7 +361,7 @@ function update(){
   // HUD
   document.getElementById('speed-val').textContent=Math.floor(speed);
   document.getElementById('dist-val').textContent=(distance/1000).toFixed(1);
-  const be=document.getElementById('biome-name'),bn=BIOMES[activeBiome].name;
+  var be=document.getElementById('biome-name'),bn=BIOMES[activeBiome].name;
   if(be.textContent!==bn){be.textContent=bn;be.style.color='#'+BIOMES[activeBiome].neonP.getHexString();}
 
   // Fog/sky
@@ -344,11 +369,12 @@ function update(){
   scene.background.lerp(BIOMES[activeBiome].skyColor,dt*0.5);
 
   // Shader uniforms
-  scene.traverse(o=>{if(o.material?.uniforms){if(o.material.uniforms.time)o.material.uniforms.time.value=time;if(o.material.uniforms.scrollOffset)o.material.uniforms.scrollOffset.value=scrollOff*0.1;}});
+  scene.traverse(function(o){if(o.material&&o.material.uniforms){if(o.material.uniforms.time)o.material.uniforms.time.value=time;if(o.material.uniforms.scrollOffset)o.material.uniforms.scrollOffset.value=scrollOff*0.1;}});
 
   renderer.render(scene,camera);requestAnimationFrame(update);
 }
 update();
+dbg('Game loop started');
 </script>
 </body>
 </html>
