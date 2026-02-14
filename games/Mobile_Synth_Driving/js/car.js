@@ -63,8 +63,8 @@ function initCarGLB() {
       var scaleFactor = 4.2 / Math.max(sz.x, sz.y, sz.z);
       gc.scale.setScalar(scaleFactor);
 
-      // Rotation fix — 180° to face -Z (forward into screen)
-      gc.rotation.y = Math.PI;
+      // Rotation fix — model faces +Z by default, no rotation needed
+      gc.rotation.y = 0;
 
       // Re-center after scale + rotation
       var sb = new THREE.Box3().setFromObject(gc);
