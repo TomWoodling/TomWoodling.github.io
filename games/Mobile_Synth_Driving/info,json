@@ -1,1 +1,5 @@
-
+{
+  "title": "Mobile Synth Driver",
+  "description": "Drive through synthwave scenes to a soundtrack from https://mubert.com/render - play it on mobile devices!",
+  "cover": "mobi_synth_drive.png"
+}
