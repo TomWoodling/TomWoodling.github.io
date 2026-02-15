@@ -61,7 +61,7 @@ function createRoadRibbon(curve, width, segments) {
     var L = P.clone().addScaledVector(right, -half);
     var R = P.clone().addScaledVector(right, half);
 
-    positions.push(L.x, L.y + 0.01, L.z, R.x, R.y + 0.01, R.z);
+    positions.push(L.x, L.y + 0.05, L.z, R.x, R.y + 0.05, R.z);
     normals.push(0, 1, 0, 0, 1, 0);
     // U: 0 = left edge, 1 = right edge
     // V: distance along road / dash spacing
@@ -240,9 +240,11 @@ function buildRoadSegment(startPos, startDir, biomeKey, turnBias) {
       time:      { value: 0 }
     },
     transparent: true,
-    depthWrite: true
+    depthWrite: false,
+    side: THREE.DoubleSide
   });
   var roadMesh = new THREE.Mesh(roadGeo, roadMat);
+  roadMesh.renderOrder = 1;
   group.add(roadMesh);
 
   // Ground grids
