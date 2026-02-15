@@ -42,6 +42,35 @@ placeholderBody.add(cabinMesh);
 car.add(placeholderBody);
 dbg('Placeholder car built');
 
+// --- Traffic car builder (used by road.js spawnTraffic) ---
+function makeTrafficCar(color) {
+  var g = new THREE.Group();
+  var mat = neonMat(color, 1.5);
+
+  // Body
+  var body = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.6, 3.2), mat);
+  body.position.y = 0.5;
+  g.add(body);
+
+  // Cabin
+  var cabin = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.5, 1.5), mat);
+  cabin.position.set(0, 1.0, -0.2);
+  g.add(cabin);
+
+  // Wheels
+  var wGeo = new THREE.CylinderGeometry(0.28, 0.28, 0.2, 8);
+  var wMat = neonMat(new THREE.Color(0xff00ff), 1.5);
+  [[-0.8,0.28,1],[0.8,0.28,1],[-0.8,0.28,-1],[0.8,0.28,-1]].forEach(function(p) {
+    var w = new THREE.Mesh(wGeo, wMat);
+    w.rotation.z = Math.PI / 2;
+    w.position.set(p[0], p[1], p[2]);
+    g.add(w);
+  });
+
+  g.userData.isTraffic = true;
+  return g;
+}
+
 // --- GLB loading (called from game.js after scene exists) ---
 function initCarGLB() {
   dbg('Attempting GLB load: synth_car.glb', 'warn');
