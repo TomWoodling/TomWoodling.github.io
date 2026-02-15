@@ -1,0 +1,339 @@
+/* ═══ RESET & BASE ═══ */
+@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Rajdhani:wght@300;500;700&display=swap');
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body {
+  overflow: hidden;
+  background: #0a0014;
+  font-family: 'Rajdhani', sans-serif;
+  -webkit-user-select: none;
+  user-select: none;
+  touch-action: none;
+  overscroll-behavior: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+  height: 100%; width: 100%;
+  position: fixed;
+}
+canvas { display: block; touch-action: none; }
+
+/* ═══ TITLE SCREEN ═══ */
+#title-overlay {
+  position: fixed; inset: 0;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  z-index: 100;
+  background: radial-gradient(ellipse at 50% 60%, rgba(10,0,30,0.75) 0%, rgba(10,0,20,0.98) 100%);
+  transition: opacity 1.5s ease;
+}
+#title-overlay.hidden { opacity: 0; pointer-events: none; }
+#title-overlay h1 {
+  font-family: 'Orbitron', monospace;
+  font-size: clamp(28px, 8vw, 56px);
+  font-weight: 900;
+  color: #00ffff;
+  text-align: center;
+  line-height: 1.15;
+  letter-spacing: clamp(4px, 1.5vw, 14px);
+  text-shadow:
+    0 0 40px rgba(0,255,255,0.6),
+    0 0 80px rgba(0,255,255,0.3),
+    0 0 120px rgba(255,0,255,0.2);
+  margin-bottom: 20px;
+}
+#title-overlay p {
+  font-family: 'Rajdhani', sans-serif;
+  font-size: clamp(14px, 3vw, 20px);
+  color: rgba(255,0,255,0.8);
+  letter-spacing: clamp(3px, 1vw, 8px);
+  text-transform: uppercase;
+  animation: pulse 2s ease-in-out infinite;
+}
+.title-sub {
+  font-family: 'Rajdhani', sans-serif;
+  font-size: clamp(10px, 2vw, 14px);
+  color: rgba(0,255,255,0.35);
+  letter-spacing: 3px;
+  margin-top: 12px;
+  text-transform: uppercase;
+}
+.title-glow {
+  position: absolute;
+  width: 300px; height: 300px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255,0,255,0.15) 0%, transparent 70%);
+  pointer-events: none;
+  animation: glowPulse 4s ease-in-out infinite;
+}
+@keyframes pulse { 0%, 100% { opacity: 0.5; } 50% { opacity: 1; } }
+@keyframes glowPulse { 0%, 100% { transform: scale(1); opacity: 0.5; } 50% { transform: scale(1.3); opacity: 0.8; } }
+
+/* ═══ OVERLAYS ═══ */
+#vignette {
+  position: fixed; inset: 0;
+  pointer-events: none; z-index: 5;
+  background: radial-gradient(ellipse at center, transparent 50%, rgba(10,0,20,0.6) 100%);
+}
+#scanlines {
+  position: fixed; inset: 0;
+  pointer-events: none; z-index: 6;
+  background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.03) 2px, rgba(0,0,0,0.03) 4px);
+}
+#biome-transition {
+  position: fixed; top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  font-family: 'Orbitron', monospace;
+  font-size: clamp(20px, 5vw, 40px);
+  font-weight: 900;
+  letter-spacing: clamp(3px, 1vw, 10px);
+  pointer-events: none; z-index: 15;
+  opacity: 0; transition: opacity 0.8s ease;
+  text-shadow: 0 0 40px currentColor, 0 0 80px currentColor;
+  text-align: center;
+}
+#biome-transition.show { opacity: 1; }
+
+/* ═══ BOOST INDICATOR ═══ */
+#boost-indicator {
+  position: fixed;
+  top: clamp(16px, 4vh, 32px);
+  left: 50%; transform: translateX(-50%);
+  font-family: 'Orbitron', monospace;
+  font-size: clamp(14px, 3vw, 22px);
+  font-weight: 700;
+  color: #00ffff;
+  letter-spacing: clamp(3px, 1vw, 8px);
+  text-transform: uppercase;
+  text-shadow: 0 0 20px rgba(0,255,255,0.8), 0 0 40px rgba(0,255,255,0.4);
+  pointer-events: none;
+  z-index: 12;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  animation: boostPulse 0.6s ease-in-out infinite alternate;
+}
+@keyframes boostPulse {
+  0%   { text-shadow: 0 0 20px rgba(0,255,255,0.8), 0 0 40px rgba(0,255,255,0.4); }
+  100% { text-shadow: 0 0 30px rgba(0,255,255,1),   0 0 60px rgba(0,255,255,0.6), 0 0 90px rgba(255,0,255,0.3); }
+}
+
+/* ═══ BOOST SCREEN FLASH ═══ */
+#boost-indicator::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background: radial-gradient(ellipse at center, rgba(0,255,255,0.15) 0%, transparent 70%);
+  pointer-events: none;
+  opacity: 0;
+  z-index: -1;
+}
+#boost-indicator[style*="opacity: 1"]::after,
+#boost-indicator[style*="opacity:1"]::after {
+  animation: boostFlash 0.4s ease-out forwards;
+}
+@keyframes boostFlash {
+  0%   { opacity: 1; background: radial-gradient(ellipse at center, rgba(0,255,255,0.3) 0%, transparent 70%); }
+  100% { opacity: 0; }
+}
+
+/* ═══ JUNCTION HINT ═══ */
+#junction-hint {
+  position: fixed;
+  top: clamp(50px, 10vh, 80px);
+  left: 50%; transform: translateX(-50%);
+  font-family: 'Orbitron', monospace;
+  font-size: clamp(12px, 2.5vw, 18px);
+  font-weight: 700;
+  color: #ff00ff;
+  letter-spacing: clamp(2px, 0.8vw, 6px);
+  text-transform: uppercase;
+  text-shadow: 0 0 20px currentColor, 0 0 40px currentColor;
+  text-align: center;
+  pointer-events: none;
+  z-index: 12;
+  opacity: 0;
+  transition: opacity 0.4s ease;
+  white-space: nowrap;
+}
+
+/* ═══ HUD ═══ */
+#hud {
+  position: fixed;
+  bottom: env(safe-area-inset-bottom, 0px);
+  bottom: 16px;
+  left: 50%; transform: translateX(-50%);
+  display: flex; gap: clamp(12px, 3vw, 40px);
+  align-items: flex-end;
+  pointer-events: none; z-index: 10;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+.hud-panel {
+  background: rgba(0,0,0,0.5);
+  border: 1px solid rgba(0,255,255,0.25);
+  border-radius: 8px;
+  padding: clamp(6px, 1.5vw, 14px) clamp(10px, 2vw, 24px);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  text-align: center;
+}
+.hud-label {
+  font-family: 'Rajdhani', sans-serif;
+  font-size: clamp(8px, 1.5vw, 11px);
+  font-weight: 300;
+  color: rgba(0,255,255,0.6);
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  margin-bottom: 2px;
+}
+.hud-value {
+  font-family: 'Orbitron', monospace;
+  font-size: clamp(16px, 3.5vw, 30px);
+  font-weight: 700;
+  color: #00ffff;
+  text-shadow: 0 0 20px rgba(0,255,255,0.5), 0 0 40px rgba(0,255,255,0.2);
+}
+.hud-unit {
+  font-size: clamp(9px, 1.5vw, 14px);
+  opacity: 0.5;
+  margin-left: 2px;
+}
+#biome-name {
+  font-family: 'Orbitron', monospace;
+  font-size: clamp(10px, 2vw, 14px);
+  color: #ff00ff;
+  text-shadow: 0 0 20px rgba(255,0,255,0.5);
+}
+
+/* Mini volume in HUD — mobile only */
+#hud-vol {
+  display: none;
+  margin-top: 4px;
+  pointer-events: auto;
+}
+#hud-vol input[type="range"] {
+  -webkit-appearance: none; width: 100%; height: 2px;
+  background: rgba(0,255,255,0.2); border-radius: 1px; outline: none;
+  touch-action: none;
+}
+#hud-vol input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 14px; height: 14px;
+  background: #00ffff; border-radius: 50%;
+  box-shadow: 0 0 8px rgba(0,255,255,0.4);
+}
+@media (max-width: 768px), (hover: none) and (pointer: coarse) {
+  #hud-vol { display: block; }
+}
+
+/* ═══ MOBILE TOUCH CONTROLS ═══ */
+#touch-layer {
+  position: fixed; inset: 0;
+  z-index: 8;
+  pointer-events: none;        /* default: pass-through */
+  display: none;               /* hidden on desktop */
+}
+
+/* Steer zone — full screen minus brake area */
+#touch-steer-zone {
+  position: absolute;
+  inset: 0;
+  bottom: 80px;
+  pointer-events: auto;
+}
+
+/* Brake zone — bottom-right corner */
+#brake-zone {
+  position: absolute;
+  right: 16px;
+  bottom: clamp(80px, 14vh, 120px);
+  width: clamp(64px, 12vw, 90px);
+  height: clamp(64px, 12vw, 90px);
+  border-radius: 50%;
+  background: rgba(255,0,80,0.08);
+  border: 2px solid rgba(255,0,80,0.3);
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  pointer-events: auto;
+  transition: background 0.15s, border-color 0.15s, transform 0.1s;
+  gap: 2px;
+}
+#brake-zone.active {
+  background: rgba(255,0,80,0.25);
+  border-color: rgba(255,0,80,0.7);
+  transform: scale(0.92);
+}
+#brake-zone span {
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 10px;
+  color: rgba(255,0,80,0.5);
+  letter-spacing: 2px;
+  text-transform: uppercase;
+}
+.brake-icon {
+  font-size: 18px;
+  color: rgba(255,0,80,0.4);
+  line-height: 1;
+}
+#brake-zone.active .brake-icon,
+#brake-zone.active span {
+  color: rgba(255,0,80,0.9);
+}
+
+/* Steer indicator — shows swipe direction */
+#steer-indicator {
+  position: absolute;
+  bottom: clamp(26px, 5vh, 40px);
+  left: 50%;
+  transform: translateX(-50%);
+  width: clamp(120px, 35vw, 200px);
+  height: 6px;
+  background: rgba(0,255,255,0.08);
+  border-radius: 3px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+#steer-indicator.active { opacity: 1; }
+
+#steer-dot {
+  position: absolute;
+  top: 50%; left: 50%;
+  width: 16px; height: 16px;
+  border-radius: 50%;
+  background: rgba(0,255,255,0.7);
+  box-shadow: 0 0 12px rgba(0,255,255,0.5);
+  transform: translate(-50%, -50%);
+  transition: left 0.06s ease-out;
+}
+
+/* Show touch layer on touch devices */
+@media (hover: none) and (pointer: coarse) {
+  #touch-layer { display: block; }
+  body { cursor: default; }
+  #hud { bottom: clamp(24px, 5vh, 40px); }
+  #volume-control { top: auto; bottom: clamp(80px, 14vh, 120px); right: auto; left: 16px; display: none; }
+}
+
+/* Also show on narrow screens (phone-width even with mouse) */
+@media (max-width: 768px) {
+  #touch-layer { display: block; }
+  #hud { bottom: clamp(20px, 4vh, 36px); gap: 10px; }
+  #volume-control { display: none; }
+}
+
+/* Desktop-only: hide touch UI, show cursor */
+@media (hover: hover) and (pointer: fine) and (min-width: 769px) {
+  #touch-layer { display: none !important; }
+  body { cursor: none; }
+}
+
+/* ═══ VOLUME — desktop panel removed, mobile uses HUD slider ═══ */
+#volume-control { display: none !important; }
+
+/* ═══ DEBUG — hidden, logs still go to console ═══ */
+#debug-log { display: none !important; }
+
+/* ═══ SAFE AREAS (notch phones) ═══ */
+@supports (padding: env(safe-area-inset-bottom)) {
+  #hud { padding-bottom: env(safe-area-inset-bottom); }
+  #brake-zone { margin-bottom: env(safe-area-inset-bottom); }
+  #volume-control { margin-top: env(safe-area-inset-top); }
+}
