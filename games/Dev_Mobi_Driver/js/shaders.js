@@ -52,14 +52,29 @@ var rFS = [
   'uniform float time;',
   'varying vec2 vUv;',
   'void main() {',
-  '  float cl = smoothstep(0.008, 0.003, abs(vUv.x - 0.5)) * step(0.5, fract(vUv.y * 20.0));',
-  '  float el = max(smoothstep(0.03, 0.02, vUv.x), smoothstep(0.97, 0.98, vUv.x));',
+  // Center dashed line — wider and brighter
+  '  float cl = smoothstep(0.015, 0.005, abs(vUv.x - 0.5)) * step(0.5, fract(vUv.y * 20.0));',
+  // Edge lines — thicker with glow falloff
+  '  float edgeL = smoothstep(0.06, 0.015, vUv.x);',
+  '  float edgeR = smoothstep(0.94, 0.985, vUv.x);',
+  '  float el = max(edgeL, edgeR);',
+  // Soft edge glow extending inward
+  '  float glowL = smoothstep(0.15, 0.0, vUv.x) * 0.3;',
+  '  float glowR = smoothstep(0.85, 1.0, vUv.x) * 0.3;',
+  '  float edgeGlow = max(glowL, glowR);',
+  // Subtle grid overlay
   '  float g = max(',
   '    smoothstep(0.005, 0.0, abs(fract(vUv.x * 12.0) - 0.5) - 0.48),',
   '    smoothstep(0.005, 0.0, abs(fract(vUv.y * 10.0) - 0.5) - 0.48)',
-  '  ) * 0.08;',
-  '  float a = max(max(cl, el * 0.7), g);',
-  '  gl_FragColor = vec4(lineColor * (a + 0.02), max(a, 0.15));',
+  '  ) * 0.12;',
+  // Pulse on the lines
+  '  float pulse = 0.9 + 0.1 * sin(time * 2.0 + vUv.y * 30.0);',
+  // Combine — base surface tint so the road is always visible
+  '  float lines = max(max(cl, el), g) * pulse;',
+  '  float a = max(lines, edgeGlow);',
+  '  float baseTint = 0.06;',
+  '  vec3 col = lineColor * (a + baseTint) + lineColor * edgeGlow * 0.5;',
+  '  gl_FragColor = vec4(col, max(a, 0.25));',
   '}'
 ].join('\n');
 
