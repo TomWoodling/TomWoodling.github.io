@@ -1,0 +1,357 @@
+/* ═══ MONSTER CHASE ─ STYLES ═══ */
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: #0a0014;
+  overflow: hidden;
+  font-family: 'Orbitron', monospace;
+  color: #fff;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+canvas {
+  display: block;
+  position: fixed;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+}
+
+/* ═══ TITLE SCREEN ═══ */
+#title-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(ellipse at center, rgba(80,0,120,0.85) 0%, rgba(0,0,20,0.95) 100%);
+  z-index: 100;
+  transition: opacity 0.5s;
+}
+#title-overlay.hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.title-glow {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at 50% 40%, rgba(200,0,255,0.25) 0%, transparent 60%);
+  animation: titlePulse 3s ease-in-out infinite;
+}
+@keyframes titlePulse {
+  0%, 100% { opacity: 0.6; }
+  50%       { opacity: 1;   }
+}
+
+#title-overlay h1 {
+  font-size: clamp(2.8rem, 10vw, 7rem);
+  font-weight: 900;
+  letter-spacing: 0.05em;
+  text-align: center;
+  line-height: 1.05;
+  background: linear-gradient(135deg, #ff00ff, #ff4488, #ff8800);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  text-shadow: none;
+  filter: drop-shadow(0 0 30px rgba(255,0,255,0.8));
+  animation: titleFlicker 4s ease-in-out infinite;
+  z-index: 1;
+}
+@keyframes titleFlicker {
+  0%,100% { filter: drop-shadow(0 0 30px rgba(255,0,255,0.8)); }
+  50%      { filter: drop-shadow(0 0 50px rgba(255,0,255,1.0)) drop-shadow(0 0 80px rgba(255,68,136,0.6)); }
+}
+
+#start-prompt {
+  margin-top: 2rem;
+  font-size: clamp(0.9rem, 3vw, 1.4rem);
+  color: #ff00ff;
+  letter-spacing: 0.2em;
+  animation: blink 1.2s step-end infinite;
+  z-index: 1;
+}
+@keyframes blink {
+  0%,100% { opacity: 1; }
+  50%      { opacity: 0; }
+}
+
+.title-sub {
+  margin-top: 1.2rem;
+  font-family: 'Rajdhani', sans-serif;
+  font-size: clamp(0.7rem, 2.5vw, 1.0rem);
+  color: rgba(255,150,255,0.7);
+  letter-spacing: 0.1em;
+  text-align: center;
+  line-height: 1.8;
+  z-index: 1;
+}
+
+/* ═══ OVERLAYS ═══ */
+#vignette {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(ellipse at center, transparent 55%, rgba(0,0,10,0.6) 100%);
+  z-index: 2;
+}
+
+#scanlines {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0,0,0,0.06) 2px,
+    rgba(0,0,0,0.06) 4px
+  );
+  z-index: 3;
+}
+
+/* ═══ BIOME TRANSITION ═══ */
+#biome-transition {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) scale(0.8);
+  font-size: clamp(1.8rem, 6vw, 3.5rem);
+  font-weight: 900;
+  letter-spacing: 0.3em;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.4s, transform 0.4s;
+  text-shadow: 0 0 30px currentColor, 0 0 60px currentColor;
+  z-index: 50;
+  white-space: nowrap;
+}
+#biome-transition.show {
+  opacity: 1;
+  transform: translate(-50%, -50%) scale(1);
+}
+
+/* ═══ MONSTER ALERT ═══ */
+#monster-alert {
+  position: fixed;
+  top: 20%;
+  left: 50%;
+  transform: translateX(-50%) translateY(-20px);
+  font-size: clamp(1.2rem, 4vw, 2rem);
+  font-weight: 700;
+  color: #ff2200;
+  text-shadow: 0 0 20px #ff2200, 0 0 40px #ff0000;
+  letter-spacing: 0.15em;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.3s, transform 0.3s;
+  z-index: 50;
+  white-space: nowrap;
+}
+#monster-alert.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+/* ═══ MONSTER THREAT HUD ═══ */
+#monster-threat {
+  position: fixed;
+  top: 18%;
+  right: 1rem;
+  font-size: clamp(0.7rem, 2.5vw, 1.0rem);
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  opacity: 0;
+  transition: opacity 0.3s;
+  text-shadow: 0 0 10px currentColor;
+  z-index: 30;
+  text-align: right;
+}
+
+/* ═══ BOOST INDICATOR ═══ */
+#boost-indicator {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: clamp(1.4rem, 5vw, 2.2rem);
+  font-weight: 900;
+  color: #ffff00;
+  text-shadow: 0 0 20px #ffff00, 0 0 40px #ff8800;
+  letter-spacing: 0.2em;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.2s;
+  z-index: 40;
+}
+
+/* ═══ HUD ═══ */
+#hud {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  padding: 0.6rem 1rem 1rem;
+  pointer-events: none;
+  z-index: 20;
+}
+
+.hud-panel {
+  background: rgba(0, 0, 20, 0.65);
+  border: 1px solid rgba(255,0,255,0.3);
+  border-radius: 6px;
+  padding: 0.4rem 0.7rem;
+  min-width: 80px;
+  text-align: center;
+  backdrop-filter: blur(4px);
+}
+
+.hud-label {
+  font-size: 0.55rem;
+  color: rgba(255,180,255,0.6);
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  margin-bottom: 0.15rem;
+}
+
+.hud-value {
+  font-size: clamp(1.1rem, 4vw, 1.5rem);
+  font-weight: 700;
+  color: #ff00ff;
+  text-shadow: 0 0 10px #ff00ff;
+}
+
+.hud-unit {
+  font-size: 0.5rem;
+  font-weight: 400;
+  color: rgba(255,0,255,0.6);
+  margin-left: 0.2rem;
+  vertical-align: middle;
+}
+
+#biome-name {
+  font-size: clamp(0.7rem, 2.5vw, 1.0rem);
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  text-shadow: 0 0 10px currentColor;
+}
+
+#hud-vol {
+  margin-top: 0.3rem;
+  pointer-events: all;
+}
+#vol-slider-mobile {
+  width: 80px;
+  height: 3px;
+  accent-color: #ff00ff;
+  cursor: pointer;
+}
+
+/* ═══ MOBILE TOUCH LAYER ═══ */
+#touch-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  pointer-events: none;
+}
+
+#touch-steer-zone {
+  position: absolute;
+  left: 0; top: 0;
+  width: 70%; height: 80%;
+  pointer-events: all;
+}
+
+#brake-zone {
+  position: absolute;
+  right: 0; bottom: 0;
+  width: 30%; height: 28%;
+  pointer-events: all;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255,0,80,0.08);
+  border-top: 1px solid rgba(255,0,80,0.25);
+  border-left: 1px solid rgba(255,0,80,0.25);
+  border-radius: 8px 0 0 0;
+  font-size: 0.6rem;
+  letter-spacing: 0.15em;
+  color: rgba(255,80,120,0.6);
+  transition: background 0.1s;
+}
+#brake-zone.active {
+  background: rgba(255,0,80,0.25);
+}
+.brake-icon { font-size: 1.2rem; margin-bottom: 0.2rem; }
+
+#steer-indicator {
+  position: absolute;
+  bottom: 30%; left: 5%;
+  width: 50%; height: 8px;
+  background: rgba(255,0,255,0.1);
+  border-radius: 4px;
+  overflow: hidden;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+#steer-indicator.active { opacity: 1; }
+#steer-dot {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 14px;
+  height: 14px;
+  background: #ff00ff;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  box-shadow: 0 0 10px #ff00ff;
+  transition: left 0.05s;
+}
+
+/* ═══ VOLUME CONTROL (desktop) ═══ */
+#volume-control {
+  position: fixed;
+  top: 1rem; right: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.6rem;
+  letter-spacing: 0.1em;
+  color: rgba(255,0,255,0.5);
+  z-index: 20;
+}
+#vol-slider {
+  width: 70px;
+  height: 3px;
+  accent-color: #ff00ff;
+  cursor: pointer;
+}
+
+/* ═══ DEBUG LOG ═══ */
+#debug-log {
+  position: fixed;
+  bottom: 4rem;
+  left: 0.8rem;
+  font-family: monospace;
+  font-size: 0.65rem;
+  color: rgba(0,255,136,0.6);
+  pointer-events: none;
+  z-index: 99;
+  line-height: 1.4;
+}
+#debug-log .ok   { color: rgba(0,255,136,0.6); }
+#debug-log .warn { color: rgba(255,200,0,0.8); }
+#debug-log .err  { color: rgba(255,50,50,0.9); }
+
+/* Responsive tweaks */
+@media (max-width: 480px) {
+  #volume-control { display: none; }
+}
