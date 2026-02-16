@@ -77,7 +77,10 @@ var audio = {
       if (t.cur < t.target) t.cur = Math.min(t.cur + r * dt, t.target);
       else if (t.cur > t.target) t.cur = Math.max(t.cur - r * dt, 0);
       t.el.volume = t.cur;
-      if (t.cur <= 0 && !t.el.paused) t.el.pause();
+      if (t.target > 0 && t.ok && t.el.paused) {
+        t.el.play().catch(function(e) { dbg('Resume err: ' + e.message, 'err'); });
+      }
+      if (t.cur <= 0 && t.target <= 0 && !t.el.paused) t.el.pause();
     });
   },
 
