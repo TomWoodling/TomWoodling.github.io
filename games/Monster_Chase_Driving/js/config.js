@@ -45,9 +45,14 @@ var C = {
   boostFrequency:   0.12,
 
   // Monster
-  spiderFollowDist:  60,   // world units behind player
+  spiderFollowDist:  15,   // world units behind player
   godzillaFollowDist:55,
   crabSpawnInterval: 8,    // seconds between crab groups
+
+  // Collision
+  collisionSlowSpeed:  60,
+  collisionCooldown:   1.5,
+  collisionCheckDist:  4.0,
 
   // Warning markers
   warningFadeIn:  0.4,

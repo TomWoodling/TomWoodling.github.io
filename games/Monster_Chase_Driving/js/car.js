@@ -25,6 +25,30 @@ var wheelMat = neonMat(new THREE.Color(0xff00ff), 2);
   car.add(l);
 });
 
+// Underglow disc
+(function() {
+  var mat = new THREE.ShaderMaterial({
+    vertexShader: carGlowVS,
+    fragmentShader: carGlowFS,
+    uniforms: {
+      glowColor: { value: new THREE.Color(0x00ffff) },
+      time:      { value: 0 }
+    },
+    transparent: true,
+    depthWrite: false,
+    side: THREE.DoubleSide
+  });
+  var disc = new THREE.Mesh(new THREE.PlaneGeometry(6, 8), mat);
+  disc.rotation.x = -Math.PI / 2;
+  disc.position.y = 0.05;
+  car.add(disc);
+})();
+
+// Underglow PointLight
+var carUnderLight = new THREE.PointLight(0x00ffff, 1.0, 12);
+carUnderLight.position.set(0, 0.3, 0);
+car.add(carUnderLight);
+
 var placeholderBody = new THREE.Group();
 placeholderBody.name = 'placeholderBody';
 var bodyMesh = new THREE.Mesh(new THREE.BoxGeometry(2, 0.8, 4.2), neonMat(new THREE.Color(0x00ffff), 2));

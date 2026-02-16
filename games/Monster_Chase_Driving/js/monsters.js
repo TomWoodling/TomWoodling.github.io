@@ -11,6 +11,7 @@ var spider = (function() {
   var legs  = [];          // 8 leg groups, each with segments
   var frontLegs = [];      // indices 0 & 1 = front pair
   var legPhase = 0;
+  var webs = [];           // active web hazards on road
 
   // Attack sequence: L, R, LR
   var ATTACKS = ['left', 'right', 'both'];
@@ -25,6 +26,29 @@ var spider = (function() {
     pos:          new THREE.Vector3(),
     baseY:        3.5,
   };
+
+  function spawnWeb(carTransform, side) {
+    if (side === 0) { spawnWeb(carTransform, -1); spawnWeb(carTransform, 1); return; }
+    var mat = new THREE.ShaderMaterial({
+      vertexShader: webVS, fragmentShader: webFS,
+      uniforms: {
+        time:     { value: 0 },
+        webColor: { value: new THREE.Color(0x88ff88) },
+        alpha:    { value: 1.0 }
+      },
+      transparent: true, depthWrite: false, side: THREE.DoubleSide
+    });
+    var size = C.roadWidth * 0.45;
+    var mesh = new THREE.Mesh(new THREE.PlaneGeometry(size, size), mat);
+    var offset = side * (C.roadWidth * 0.25);
+    mesh.position.copy(carTransform.position)
+      .addScaledVector(carTransform.right, offset)
+      .addScaledVector(carTransform.tangent, 18);
+    mesh.position.y = 0.12;
+    mesh.rotation.x = -Math.PI / 2;
+    scene.add(mesh);
+    webs.push({ mesh: mesh, life: 5.0, maxLife: 5.0 });
+  }
 
   // Build a single leg: 2 segments + foot sphere
   function buildLeg(angle, isLeft, isRight) {
@@ -120,6 +144,8 @@ var spider = (function() {
   function hide() {
     if (group) group.visible = false;
     state.active = false;
+    webs.forEach(function(w) { scene.remove(w.mesh); w.mesh.geometry.dispose(); w.mesh.material.dispose(); });
+    webs.length = 0;
   }
 
   function update(dt, carTransform, speed) {
@@ -193,6 +219,9 @@ var spider = (function() {
       if (state.phaseTimer > 2.0) {
         state.phase      = 'attack';
         state.phaseTimer = 0;
+        // Spawn web hazard on road
+        var wSide = state.attackSide === 'left' ? -1 : state.attackSide === 'right' ? 1 : 0;
+        spawnWeb(carTransform, wSide);
       }
     }
 
@@ -238,9 +267,26 @@ var spider = (function() {
         state.phaseTimer = 0;
       }
     }
+
+    // Update webs
+    for (var w = webs.length - 1; w >= 0; w--) {
+      var wb = webs[w];
+      wb.life -= dt;
+      if (wb.life <= 0) {
+        scene.remove(wb.mesh);
+        wb.mesh.geometry.dispose();
+        wb.mesh.material.dispose();
+        webs.splice(w, 1);
+        continue;
+      }
+      var fadeAlpha = wb.life < 1.5 ? wb.life / 1.5 : 1.0;
+      if (wb.mesh.material.uniforms && wb.mesh.material.uniforms.alpha) {
+        wb.mesh.material.uniforms.alpha.value = fadeAlpha;
+      }
+    }
   }
 
-  self = { build: build, show: show, hide: hide, update: update, group: group, state: state };
+  self = { build: build, show: show, hide: hide, update: update, group: group, state: state, webs: webs };
   return self;
 })();
 
@@ -391,7 +437,7 @@ var godzilla = (function() {
     debris.forEach(function(d) {
       scene.remove(d.mesh);
     });
-    debris = [];
+    debris.length = 0;
   }
 
   function spawnBeam(side) {
@@ -491,11 +537,7 @@ var godzilla = (function() {
         state.phaseTimer = 0;
         state.beamCount++;
         spawnBeam(state.beamSide);
-
-        // After 2 beams, third destroys building = rubble
-        if (state.beamCount === 3) {
-          spawnRubble(carTransform);
-        }
+        spawnRubble(carTransform);
       }
     }
 
@@ -556,6 +598,33 @@ var godzilla = (function() {
 // ──────────────────────────────────────────────
 var crabs = (function() {
   var crabList = [];
+  var particles = [];
+  var PARTICLE_LIMIT = 80;
+
+  function spawnCrabParticle(crab) {
+    if (particles.length >= PARTICLE_LIMIT) return;
+    var colors = [new THREE.Color(0xff8800), new THREE.Color(0xffaa00), new THREE.Color(0xffcc44)];
+    var col = colors[Math.floor(Math.random() * colors.length)];
+    var geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array([0, 0, 0]), 3));
+    geo.setAttribute('alpha', new THREE.BufferAttribute(new Float32Array([1.0]), 1));
+    var mat = new THREE.ShaderMaterial({
+      vertexShader: crabParticleVS, fragmentShader: crabParticleFS,
+      uniforms: { pColor: { value: col }, time: { value: 0 } },
+      transparent: true, depthWrite: false
+    });
+    var mesh = new THREE.Points(geo, mat);
+    mesh.position.copy(crab.position);
+    mesh.position.x += (Math.random() - 0.5) * 1.0;
+    mesh.position.y += Math.random() * 0.3;
+    mesh.position.z += (Math.random() - 0.5) * 1.0;
+    scene.add(mesh);
+    particles.push({
+      mesh: mesh, life: 1.2 + Math.random() * 0.5, maxLife: 1.5,
+      vel: new THREE.Vector3((Math.random() - 0.5) * 2, 1.5 + Math.random(), (Math.random() - 0.5) * 2)
+    });
+  }
+
   var state = {
     active:       false,
     spawnTimer:   0,
@@ -703,14 +772,16 @@ var crabs = (function() {
     state.bossCrab     = null;
     state.bossActive   = false;
     state.bossCleared  = false;
-    crabList           = [];
+    crabList.length    = 0;
     dbg('Crab encounter STARTED');
   }
 
   function hide() {
     state.active = false;
     crabList.forEach(function(c) { scene.remove(c); });
-    crabList = [];
+    crabList.length = 0;
+    particles.forEach(function(p) { scene.remove(p.mesh); p.mesh.geometry.dispose(); p.mesh.material.dispose(); });
+    particles.length = 0;
     state.bossCrab = null;
   }
 
@@ -786,6 +857,14 @@ var crabs = (function() {
         crab.position.addScaledVector(crossDir, crab.userData.crossSpeed * dt);
         crab.userData.progress += dt / 8;
 
+        // Sand particles
+        if (!crab.userData.particleTimer) crab.userData.particleTimer = 0;
+        crab.userData.particleTimer += dt;
+        if (crab.userData.particleTimer > 0.15) {
+          crab.userData.particleTimer = 0;
+          spawnCrabParticle(crab);
+        }
+
         // Leg waggle
         var wp = crab.userData.walkPhase;
         crab.children.forEach(function(child, ci) {
@@ -801,9 +880,29 @@ var crabs = (function() {
         }
       }
     }
+
+    // Update particles
+    for (var p = particles.length - 1; p >= 0; p--) {
+      var pt = particles[p];
+      pt.life -= dt;
+      if (pt.life <= 0) {
+        scene.remove(pt.mesh);
+        pt.mesh.geometry.dispose();
+        pt.mesh.material.dispose();
+        particles.splice(p, 1);
+        continue;
+      }
+      pt.mesh.position.addScaledVector(pt.vel, dt);
+      pt.vel.y -= dt * 3;
+      var alpAttr = pt.mesh.geometry.attributes.alpha;
+      if (alpAttr) {
+        alpAttr.array[0] = pt.life / pt.maxLife;
+        alpAttr.needsUpdate = true;
+      }
+    }
   }
 
-  return { show: show, hide: hide, update: update, state: state };
+  return { show: show, hide: hide, update: update, state: state, getCrabs: function() { return crabList; } };
 })();
 
 // ═══ MONSTER MANAGER ═══

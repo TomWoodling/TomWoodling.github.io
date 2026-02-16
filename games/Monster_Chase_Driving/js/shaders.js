@@ -153,6 +153,72 @@ var warnFS = [
   '}'
 ].join('\n');
 
+// --- Car Ground Glow ---
+var carGlowVS = 'varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }';
+
+var carGlowFS = [
+  'uniform vec3 glowColor;',
+  'uniform float time;',
+  'varying vec2 vUv;',
+  'void main() {',
+  '  float d = length(vUv - vec2(0.5)) * 2.0;',
+  '  float glow = smoothstep(1.0, 0.0, d);',
+  '  glow = pow(glow, 2.0);',
+  '  float pulse = 0.85 + 0.15 * sin(time * 2.0);',
+  '  float a = glow * 0.5 * pulse;',
+  '  gl_FragColor = vec4(glowColor * glow * pulse, a);',
+  '}'
+].join('\n');
+
+// --- Spider Web ---
+var webVS = 'varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }';
+
+var webFS = [
+  'uniform float time;',
+  'uniform vec3 webColor;',
+  'uniform float alpha;',
+  'varying vec2 vUv;',
+  'void main() {',
+  '  vec2 c = vUv - vec2(0.5);',
+  '  float r = length(c);',
+  '  float ang = atan(c.y, c.x);',
+  '  float rings = smoothstep(0.015, 0.0, abs(fract(r * 6.0) - 0.5) - 0.45);',
+  '  float spokes = smoothstep(0.02, 0.0, abs(fract(ang / 3.14159 * 4.0) - 0.5) - 0.47);',
+  '  float spiral = smoothstep(0.02, 0.0, abs(fract(r * 4.0 - ang / 6.28318) - 0.5) - 0.46);',
+  '  float web = max(max(rings, spokes), spiral);',
+  '  float mask = smoothstep(0.5, 0.35, r);',
+  '  web *= mask;',
+  '  float pulse = 0.7 + 0.3 * sin(time * 4.0 + r * 10.0);',
+  '  float a = web * alpha * pulse;',
+  '  gl_FragColor = vec4(webColor * a * 1.5, a * 0.85);',
+  '}'
+].join('\n');
+
+// --- Crab Sand Particle ---
+var crabParticleVS = [
+  'attribute float alpha;',
+  'varying float vAlpha;',
+  'void main() {',
+  '  vAlpha = alpha;',
+  '  vec4 mv = modelViewMatrix * vec4(position, 1.0);',
+  '  gl_PointSize = 4.0 * (300.0 / -mv.z);',
+  '  gl_Position = projectionMatrix * mv;',
+  '}'
+].join('\n');
+
+var crabParticleFS = [
+  'uniform vec3 pColor;',
+  'uniform float time;',
+  'varying float vAlpha;',
+  'void main() {',
+  '  float d = length(gl_PointCoord - vec2(0.5));',
+  '  if (d > 0.5) discard;',
+  '  float glow = smoothstep(0.5, 0.0, d);',
+  '  float pulse = 0.8 + 0.2 * sin(time * 3.0);',
+  '  gl_FragColor = vec4(pColor * glow * pulse, vAlpha * glow);',
+  '}'
+].join('\n');
+
 // --- Synthwave Sun ---
 function makeSun() {
   var m = new THREE.ShaderMaterial({

@@ -59,6 +59,41 @@ function activateBoost() {
   boostState.timer  = C.boostDuration;
 }
 
+// Collision
+var hitState = { cooldown: 0, flashing: false, flashTimer: 0 };
+
+function checkHazardCollisions(carPos) {
+  if (hitState.cooldown > 0 || boostState.active) return false;
+  var d = C.collisionCheckDist;
+
+  // Spider webs
+  if (activeBiome === 'countryside' && spider.state.active) {
+    for (var i = 0; i < spider.webs.length; i++) {
+      if (spider.webs[i].mesh.position.distanceTo(carPos) < d) return true;
+    }
+  }
+
+  // Godzilla beams + rubble
+  if (activeBiome === 'city' && godzilla.state.active) {
+    for (var i = 0; i < godzilla.debris.length; i++) {
+      var db = godzilla.debris[i];
+      if (db.isBeam && db.mesh.position.distanceTo(carPos) < d + 2) return true;
+      if (db.isRubble && db.mesh.position.y < 2.0 && db.mesh.position.distanceTo(carPos) < d) return true;
+    }
+  }
+
+  // Crabs
+  if (activeBiome === 'beach' && crabs.state.active) {
+    var cl = crabs.getCrabs();
+    for (var i = 0; i < cl.length; i++) {
+      if (cl[i].userData.done) continue;
+      if (cl[i].position.distanceTo(carPos) < d + 1) return true;
+    }
+  }
+
+  return false;
+}
+
 // ═══ HUD HELPERS ═══
 function showBiomeTransition(bk) {
   var el = document.getElementById('biome-transition');
@@ -195,16 +230,48 @@ function update() {
     // Monster update
     monsterManager.update(dt, transform, speed, boostState.active);
 
+    // Collision detection
+    if (hitState.cooldown > 0) {
+      hitState.cooldown -= dt;
+    } else if (checkHazardCollisions(transform.position)) {
+      speed = C.collisionSlowSpeed;
+      hitState.cooldown = C.collisionCooldown;
+      hitState.flashing = true;
+      hitState.flashTimer = 1.0;
+      dbg('HIT! Speed dropped to ' + C.collisionSlowSpeed, 'warn');
+    }
+
+    // Car flash on hit
+    if (hitState.flashing) {
+      hitState.flashTimer -= dt;
+      if (hitState.flashTimer <= 0) {
+        hitState.flashing = false;
+        car.visible = true;
+      } else {
+        car.visible = (Math.floor(hitState.flashTimer * 20) % 2 === 0);
+      }
+    }
+
     // Camera
     var boostExtra = boostState.active ? C.boostCamExtra * (boostState.timer / C.boostDuration) : 0;
     var lookAhead  = getRoadLookAhead(15 + (speed / C.maxSpeed) * 10);
     var camDist    = C.camDist + (speed / C.maxSpeed) * 2 + boostExtra;
 
-    // If a pursuing monster is very close, pull camera back further for drama
+    // If a pursuing monster is active, pull camera back to keep it in frame
     var monsterClose = false;
+    var monsterCamH  = 0;
     if (activeBiome === 'countryside' && spider.state.active && spider.group) {
-      var spiderDist = spider.group.position.distanceTo(transform.position);
-      if (spiderDist < 30) { camDist += 4; monsterClose = true; }
+      // Pull camera way back so the spider is visible behind the car
+      camDist += 14;
+      monsterCamH = 3.5;
+      monsterClose = true;
+      // Periodic dramatic zoom-out pulse (~8s cycle)
+      var pursuitPulse = Math.sin(time * 0.8) * 0.5 + 0.5; // 0‥1
+      if (pursuitPulse > 0.7) {
+        var pulseStr = (pursuitPulse - 0.7) / 0.3; // ramp 0‥1 during pulse
+        camDist     += 6 * pulseStr;
+        monsterCamH += 2 * pulseStr;
+      }
     }
     if (activeBiome === 'city' && godzilla.state.active && godzilla.group) {
       var gzDist = godzilla.group.position.distanceTo(transform.position);
@@ -213,7 +280,7 @@ function update() {
 
     var ip = new THREE.Vector3(
       transform.position.x - transform.tangent.x * camDist + transform.right.x * roadState.lateral * 0.3,
-      C.camH + (speed / C.maxSpeed) * 0.5 + (monsterClose ? 1.5 : 0),
+      C.camH + (speed / C.maxSpeed) * 0.5 + (monsterClose ? 1.5 : 0) + monsterCamH,
       transform.position.z - transform.tangent.z * camDist + transform.right.z * roadState.lateral * 0.3
     );
     var it = new THREE.Vector3(
