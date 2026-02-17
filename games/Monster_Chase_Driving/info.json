@@ -1,6 +1,5 @@
 {
   "name": "Monster Chase",
   "description": "Synthwave monster escape — Spider, Godzilla, Crabs across 3 biomes",
-  "version": "0.1.0",
-  "based_on": "Mobile_Synth_Driving"
+  "cover": "monster_chase.png"
 }
