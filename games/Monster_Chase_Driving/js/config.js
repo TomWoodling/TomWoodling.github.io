@@ -45,7 +45,7 @@ var C = {
   boostFrequency:   0.12,
 
   // Monster
-  spiderFollowDist:  15,   // world units behind player
+  spiderFollowDist:  12,   // world units behind player
   godzillaFollowDist:55,
   crabSpawnInterval: 8,    // seconds between crab groups
 

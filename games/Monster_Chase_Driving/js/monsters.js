@@ -168,7 +168,7 @@ var spider = (function() {
       var target = carTransform.position.clone()
         .addScaledVector(carTransform.tangent, -C.spiderFollowDist);
       target.y = state.baseY;
-      group.position.lerp(target, dt * 1.5);
+      group.position.lerp(target, dt * 2.5);
 
       // Face car
       var dir = carTransform.position.clone().sub(group.position).normalize();
@@ -486,6 +486,25 @@ var godzilla = (function() {
     dbg('Rubble spawned!', 'warn');
   }
 
+  // Immediate ground-level chunks scattered close to the car — actual road obstacles
+  function spawnRoadDebris(transform) {
+    for (var i = 0; i < 5; i++) {
+      var size = 0.8 + Math.random() * 0.9;
+      var rMat = neonMat(new THREE.Color(0xff4488), 2.0);
+      var rMesh = new THREE.Mesh(new THREE.BoxGeometry(size, size * 0.5, size), rMat);
+      var lateralOff = (Math.random() - 0.5) * (C.roadWidth - 1.5);
+      var fwdOff = 5 + Math.random() * 10; // 5-15 m ahead of car
+      rMesh.position.copy(transform.position)
+        .addScaledVector(transform.right, lateralOff)
+        .addScaledVector(transform.tangent, fwdOff);
+      rMesh.position.y = 0.4;
+      rMesh.rotation.y = Math.random() * Math.PI;
+      scene.add(rMesh);
+      debris.push({ mesh: rMesh, isRoadDebris: true, life: 5.0 });
+    }
+    dbg('Road debris scattered!', 'warn');
+  }
+
   function update(dt, carTransform, speed) {
     if (!state.active || !group || !carTransform) return;
 
@@ -538,6 +557,7 @@ var godzilla = (function() {
         state.beamCount++;
         spawnBeam(state.beamSide);
         spawnRubble(carTransform);
+        spawnRoadDebris(carTransform);
       }
     }
 
@@ -584,6 +604,13 @@ var godzilla = (function() {
         if (d.mesh.position.y <= 0.6) {
           d.mesh.position.y = 0.6; // rest on road
         }
+      }
+      if (d.isRoadDebris) {
+        // Slow pulse glow then fade in last second
+        if (d.life < 1.0 && d.mesh.material && d.mesh.material.uniforms && d.mesh.material.uniforms.opacity) {
+          d.mesh.material.uniforms.opacity.value = d.life;
+        }
+        d.mesh.rotation.y += dt * 0.5;
       }
     }
   }
@@ -720,11 +747,11 @@ var crabs = (function() {
 
   function spawnNormalCrab(transform) {
     var crab = buildCrab(false);
-    // Spawn on one side of road, walk across
+    // Spawn further ahead so crabs are on-screen when car arrives
     var startSide = Math.random() > 0.5 ? -1 : 1;
     crab.position.copy(transform.position)
       .addScaledVector(transform.right, startSide * (C.roadWidth / 2 + 6))
-      .addScaledVector(transform.tangent, 20 + Math.random() * 20);
+      .addScaledVector(transform.tangent, 45 + Math.random() * 35);
     crab.position.y = 0;
 
     // Face perpendicular to road (walking sideways)
@@ -746,7 +773,7 @@ var crabs = (function() {
     var crab = buildCrab(true);
     crab.position.copy(transform.position)
       .addScaledVector(transform.right, -1 * (C.roadWidth + 8))
-      .addScaledVector(transform.tangent, 30);
+      .addScaledVector(transform.tangent, 55);
     crab.position.y = 0;
     crab.rotation.y = transform.angle + Math.PI / 2;
 
@@ -788,19 +815,20 @@ var crabs = (function() {
   function update(dt, carTransform, speed, boostActive) {
     if (!state.active || !carTransform) return;
 
-    // Leg animation for all crabs
+    // Leg animation for all crabs — faster during dance
     crabList.forEach(function(crab) {
-      crab.userData.walkPhase = (crab.userData.walkPhase || 0) + dt * 4;
+      var legRate = crab.userData.dancing ? 14 : 4;
+      crab.userData.walkPhase = (crab.userData.walkPhase || 0) + dt * legRate;
     });
 
     // Spawn normal crabs
-    if (state.crabsSpawned < 5) {
+    if (state.crabsSpawned < 9) {
       state.spawnTimer += dt;
       if (state.spawnTimer > C.crabSpawnInterval) {
         state.spawnTimer = 0;
         spawnNormalCrab(carTransform);
       }
-    } else if (!state.bossActive && !state.bossCleared && state.crabsSpawned >= 5) {
+    } else if (!state.bossActive && !state.bossCleared && state.crabsSpawned >= 9) {
       // All normals done, spawn boss
       state.bossActive = true;
       spawnBossCrab(carTransform);
@@ -854,8 +882,29 @@ var crabs = (function() {
         }
       } else {
         // Normal crab: walk across road
-        crab.position.addScaledVector(crossDir, crab.userData.crossSpeed * dt);
-        crab.userData.progress += dt / 8;
+        // Check for brake-triggered dance
+        var distToCar = crab.position.distanceTo(carTransform.position);
+        if (!crab.userData.dancing && !crab.userData.danced && distToCar < 14 && InputState.braking) {
+          crab.userData.dancing   = true;
+          crab.userData.danceTimer = 0;
+          dbg('Crab DANCING!');
+        }
+
+        if (crab.userData.dancing) {
+          crab.userData.danceTimer += dt;
+          // Rapid lateral shimmy — left-right wiggle in place
+          var shimmy = Math.sin(crab.userData.danceTimer * 9) * 3.5 * dt;
+          crab.position.addScaledVector(carTransform.right, shimmy);
+          // Exaggerated leg waggle done below via walkPhase (already fast)
+          if (crab.userData.danceTimer > 3.0) {
+            crab.userData.dancing = false;
+            crab.userData.danced  = true;  // only dance once
+            crab.userData.crossSpeed *= 1.8; // scurry off quickly after
+          }
+        } else {
+          crab.position.addScaledVector(crossDir, crab.userData.crossSpeed * dt);
+          crab.userData.progress += dt / 8;
+        }
 
         // Sand particles
         if (!crab.userData.particleTimer) crab.userData.particleTimer = 0;

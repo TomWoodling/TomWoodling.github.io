@@ -79,6 +79,7 @@ function checkHazardCollisions(carPos) {
       var db = godzilla.debris[i];
       if (db.isBeam && db.mesh.position.distanceTo(carPos) < d + 2) return true;
       if (db.isRubble && db.mesh.position.y < 2.0 && db.mesh.position.distanceTo(carPos) < d) return true;
+      if (db.isRoadDebris && db.mesh.position.distanceTo(carPos) < d) return true;
     }
   }
 
@@ -260,10 +261,12 @@ function update() {
     // If a pursuing monster is active, pull camera back to keep it in frame
     var monsterClose = false;
     var monsterCamH  = 0;
-    if (activeBiome === 'countryside' && spider.state.active && spider.group) {
-      // Pull camera way back so the spider is visible behind the car
-      camDist += 14;
-      monsterCamH = 3.5;
+    if (activeBiome === 'countryside' && spider.state.active && spider.group && !boostState.active) {
+      // Compute how far back camera must be so spider is always in frame
+      var spiderFromCar = spider.group.position.distanceTo(transform.position);
+      var neededCamDist = spiderFromCar + 10; // +10 keeps spider comfortably in lower frame
+      if (camDist < neededCamDist) camDist = neededCamDist;
+      monsterCamH = 3.5 + Math.min(spiderFromCar * 0.08, 2.0);
       monsterClose = true;
       // Periodic dramatic zoom-out pulse (~8s cycle)
       var pursuitPulse = Math.sin(time * 0.8) * 0.5 + 0.5; // 0‥1
