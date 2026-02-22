@@ -5,6 +5,7 @@ var audio = {
   masterVol: 0.5,
   fadeDur:   3,
   ready:     false,
+  unlocked:  false,  // set true once a user gesture has permitted audio
 
   init: function() {
     if (this.ready) return;
@@ -71,7 +72,7 @@ var audio = {
       if (t.cur < t.target)      t.cur = Math.min(t.cur + r * dt, t.target);
       else if (t.cur > t.target) t.cur = Math.max(t.cur - r * dt, 0);
       t.el.volume = t.cur;
-      if (t.target > 0 && t.ok && t.el.paused) {
+      if (t.target > 0 && t.ok && t.el.paused && self.unlocked) {
         t.el.play().catch(function(e) { dbg('Resume err: ' + e.message, 'err'); });
       }
       if (t.cur <= 0 && t.target <= 0 && !t.el.paused) t.el.pause();
@@ -83,6 +84,10 @@ var audio = {
     if (this.current) this.tracks[this.current].target = v;
   }
 };
+
+// Re-arm audio permission after any user gesture (covers background/foreground cycles on mobile)
+document.addEventListener('touchstart', function() { audio.unlocked = true; }, { passive: true, once: false });
+document.addEventListener('click',      function() { audio.unlocked = true; }, { once: false });
 
 document.getElementById('vol-slider').addEventListener('input', function(e) {
   audio.setVol(parseFloat(e.target.value));

@@ -120,6 +120,7 @@ function startGame() {
   overlay.classList.add('hidden');
   gameStarted = true;
   audio.init();
+  audio.unlocked = true;
   audio.switchTo(activeBiome);
 
   monsterManager.init();
@@ -261,7 +262,7 @@ function update() {
     // If a pursuing monster is active, pull camera back to keep it in frame
     var monsterClose = false;
     var monsterCamH  = 0;
-    if (activeBiome === 'countryside' && spider.state.active && spider.group && !boostState.active) {
+    if (activeBiome === 'countryside' && spider.state.active && spider.state.phase !== 'done' && spider.group && !boostState.active) {
       // Compute how far back camera must be so spider is always in frame
       var spiderFromCar = spider.group.position.distanceTo(transform.position);
       var neededCamDist = spiderFromCar + 10; // +10 keeps spider comfortably in lower frame
