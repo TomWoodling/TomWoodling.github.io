@@ -1,6 +1,5 @@
 {
-  "name": "Advanced Driving",
-  "description": "An advanced rolling road three.js game where you can take a chill ride and listen to more mubert tunes!",
-  "version": "0.1.0",
-  "based_on": "Mobile_Synth_Driving"
+  "title": "Advanced Driving",
+  "description": "Drive along the rolling three.js road and enjoy the scenery and tunes!  This one should be a bit more advanced than the others (hence the name).",
+  "cover": "adv_drive.png"
 }
