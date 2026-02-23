@@ -189,11 +189,12 @@ function buildRoadSegment(startPos, startDir) {
         time:        { value: 0 }
       },
       // depthWrite:true ensures the ground blocks objects behind it.
-      // transparent:true is still needed so the far-edge fade blends into fog.
+      // DoubleSide because the winding differs between left/right strips.
+      // transparent:true so the far-edge alpha fade composites against fog.
       transparent: true,
       depthWrite:  true,
       depthTest:   true,
-      side:        THREE.FrontSide
+      side:        THREE.DoubleSide
     });
     group.add(new THREE.Mesh(gGeo, gMat));
   });

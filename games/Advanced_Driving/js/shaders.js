@@ -104,9 +104,10 @@ var gFS = [
   '  float solidFade = 1.0 - smoothstep(60.0, 160.0, vEyeDist);',
   '  float pulse = 0.8 + 0.2 * sin(time * 0.5 + u.x * 0.5);',
   '  grid *= gridFade * pulse;',
-  // Solid fill stays visible up to ~160m, grid lines a bit further
-  '  vec3 col = groundTint + gridColor * grid * 1.8;',
-  '  float a = max(solidFade * 0.92, grid * gridFade);',
+  // Solid fill: tint at low intensity so ground reads as dark-coloured, not bright.
+  // Grid lines bright on top. Solid fades with distance, grid a bit further.
+  '  vec3 col = groundTint * 0.35 + gridColor * grid * 1.2;',
+  '  float a = max(solidFade * 0.88, grid * gridFade);',
   '  gl_FragColor = vec4(col, a);',
   '}'
 ].join('\n');
