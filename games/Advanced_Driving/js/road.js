@@ -183,7 +183,11 @@ function buildRoadSegment(startPos, startDir) {
     var gGeo = createGroundStrip(curve, side, C.groundExtent, C.roadSegments);
     var gMat = new THREE.ShaderMaterial({
       vertexShader: gVS, fragmentShader: gFS,
-      uniforms: { gridColor: { value: palette.neonP.clone() }, time: { value: 0 } },
+      uniforms: {
+        gridColor:   { value: palette.neonP.clone() },
+        groundTint:  { value: palette.groundTint.clone() },
+        time:        { value: 0 }
+      },
       transparent: true, depthWrite: false
     });
     group.add(new THREE.Mesh(gGeo, gMat));

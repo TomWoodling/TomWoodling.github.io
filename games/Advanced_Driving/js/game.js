@@ -9,23 +9,19 @@ renderer.toneMappingExposure = 1.2;
 document.body.prepend(renderer.domElement);
 
 var scene = new THREE.Scene();
-scene.fog = new THREE.FogExp2(SKY_BASE.getHex(), 0.007);
+scene.fog = new THREE.FogExp2(SKY_BASE.getHex(), 0.006);
 scene.background = SKY_BASE.clone();
 
 var camera = new THREE.PerspectiveCamera(65, window.innerWidth / window.innerHeight, 0.5, 600);
 
 // ─── LIGHTS ───────────────────────────────────
-// Brighter ambient so the GLB car's PBR materials read well,
-// while keeping the synthwave dusk feel.
 var ambientLight = new THREE.AmbientLight(0x221133, 0.9);
 scene.add(ambientLight);
 
-// Warm directional key light from above-left (catches car bodywork)
 var dirLight = new THREE.DirectionalLight(0xffccaa, 0.8);
 dirLight.position.set(-8, 18, 5);
 scene.add(dirLight);
 
-// Cool fill from the right (synthwave rim)
 var fillLight = new THREE.DirectionalLight(0x4466ff, 0.4);
 fillLight.position.set(10, 6, -5);
 scene.add(fillLight);
@@ -49,7 +45,6 @@ scene.add(sun);
   })));
 })();
 
-// Init
 initRoad();
 initCarGLB();
 
@@ -61,6 +56,32 @@ var time  = 0;
 
 var camPos = new THREE.Vector3(0, C.camH, -C.camDist);
 var camTgt = new THREE.Vector3(0, 1.2, 15);
+
+// ─── RANDOM MONSTER EVENT SCHEDULER ──────────
+// Fires encounters randomly, independently of road palette.
+// Guarantees no overlap and a minimum gap between events.
+var monsterScheduler = {
+  nextEventIn:  45 + Math.random() * 30,  // first encounter 45–75s in
+  eventRunning: false,
+
+  update: function(dt, transform) {
+    if (!gameStarted || !transform) return;
+    if (this.eventRunning) {
+      if (!monsterManager.active) {
+        this.eventRunning = false;
+        // Random gap between encounters: 30–70s
+        this.nextEventIn = 30 + Math.random() * 40;
+        dbg('Next encounter in ' + Math.round(this.nextEventIn) + 's');
+      }
+      return;
+    }
+    this.nextEventIn -= dt;
+    if (this.nextEventIn <= 0) {
+      this.eventRunning = true;
+      monsterManager._activateNext(transform);
+    }
+  }
+};
 
 // Boost
 var boostState = { active: false, timer: 0 };
@@ -76,14 +97,11 @@ function checkHazardCollisions(carPos) {
   if (hitState.cooldown > 0 || boostState.active) return false;
   var d = C.collisionCheckDist;
 
-  // Spider webs
   if (spider.state.active) {
     for (var i = 0; i < spider.webs.length; i++) {
       if (spider.webs[i].mesh.position.distanceTo(carPos) < d) return true;
     }
   }
-
-  // Godzilla beams + rubble
   if (godzilla.state.active) {
     for (var i = 0; i < godzilla.debris.length; i++) {
       var db = godzilla.debris[i];
@@ -92,8 +110,6 @@ function checkHazardCollisions(carPos) {
       if (db.isRoadDebris && db.mesh.position.distanceTo(carPos) < d) return true;
     }
   }
-
-  // Crabs
   if (crabs.state.active) {
     var cl = crabs.getCrabs();
     for (var i = 0; i < cl.length; i++) {
@@ -101,7 +117,6 @@ function checkHazardCollisions(carPos) {
       if (cl[i].position.distanceTo(carPos) < d + 1) return true;
     }
   }
-
   return false;
 }
 
@@ -123,7 +138,6 @@ function startGame() {
   audio.init();
   audio.unlocked = true;
   audio.play();
-
   monsterManager.init();
 
   var retryCount = 0;
@@ -154,8 +168,6 @@ window.addEventListener('resize', function() {
 
 // ═══ GAME LOOP ═══
 var clock = new THREE.Clock();
-
-// Working colour used for fog/sky lerp — starts at sky base
 var currentFogColor = SKY_BASE.clone();
 
 function update() {
@@ -182,7 +194,6 @@ function update() {
   }
 
   pollInput();
-
   audio.update(dt);
 
   // Boost
@@ -213,20 +224,18 @@ function update() {
     else steer -= Math.sign(steer) * C.steerReturn * dt;
   }
 
-  // Road update
   var transform = updateRoad(dt, speed, steer);
 
   if (transform) {
-    // Car position and lean
     car.position.copy(transform.position);
     car.rotation.y = transform.angle - steer * 0.3;
     car.rotation.z = steer * 0.05;
 
-    // Wheels
     var spd = speed / 3.6;
     carWheels.forEach(function(w) { w.rotation.x += spd * dt * 3; });
 
-    // Monster update
+    // Monster scheduler (random encounters) + active monster tick
+    monsterScheduler.update(dt, transform);
     monsterManager.update(dt, transform, speed, boostState.active);
 
     // Collision detection
@@ -240,7 +249,6 @@ function update() {
       dbg('HIT! Speed dropped to ' + C.collisionSlowSpeed, 'warn');
     }
 
-    // Car flash on hit
     if (hitState.flashing) {
       hitState.flashTimer -= dt;
       if (hitState.flashTimer <= 0) {
@@ -256,7 +264,6 @@ function update() {
     var lookAhead  = getRoadLookAhead(15 + (speed / C.maxSpeed) * 10);
     var camDist    = C.camDist + (speed / C.maxSpeed) * 2 + boostExtra;
 
-    // Pull camera back if a pursuing monster is close
     var monsterClose = false;
     var monsterCamH  = 0;
     if (spider.state.active && spider.state.phase !== 'done' && spider.group && !boostState.active) {
@@ -298,7 +305,6 @@ function update() {
     camera.fov = THREE.MathUtils.lerp(camera.fov, targetFov, dt * 2);
     camera.updateProjectionMatrix();
 
-    // Sun follows car at horizon distance
     sun.position.copy(transform.position);
     sun.position.y = 15;
     sun.position.addScaledVector(transform.tangent, 350);
@@ -309,11 +315,9 @@ function update() {
   document.getElementById('speed-val').textContent = Math.floor(speed);
   document.getElementById('dist-val').textContent  = (roadState.totalDist / 1000).toFixed(1);
 
-  // Track name in biome-name slot
   var be = document.getElementById('biome-name');
   if (be) be.textContent = audio.trackName();
 
-  // Boost indicator
   var boostEl = document.getElementById('boost-indicator');
   if (boostEl) {
     if (boostState.active) {
@@ -324,7 +328,6 @@ function update() {
     }
   }
 
-  // Monster threat indicator
   var threatEl = document.getElementById('monster-threat');
   if (threatEl && transform) {
     var threatened = false;
@@ -356,14 +359,23 @@ function update() {
   }
 
   // ─── FOG / SKY ────────────────────────────
-  // Blend the scene fog toward the current segment's palette fog colour,
-  // tinted against the fixed synthwave sky base. This keeps the
-  // sunset feel while letting each segment have its own colour.
-  var targetFog = SKY_BASE.clone().lerp(activePalette.fogColor, 0.55);
-  currentFogColor.lerp(targetFog, dt * 0.4);
+  // The palette fogColor is the tint target — always a visible colour.
+  // We blend it slightly toward SKY_BASE so there's always some purple
+  // synthwave in the atmosphere regardless of palette.
+  // The background is SKY_BASE lifted by the palette tint and brightened
+  // so it reads clearly above the ground plane.
+  var targetFog = activePalette.fogColor.clone().lerp(SKY_BASE, 0.35);
+  currentFogColor.lerp(targetFog, dt * 0.5);
   scene.fog.color.copy(currentFogColor);
-  // Sky stays as a slightly lighter version of the same tint
-  scene.background.copy(currentFogColor).lerp(SKY_BASE, 0.35);
+
+  // Sky: start from SKY_BASE, tint toward palette, then brighten so it's
+  // always noticeably lighter than the fog.
+  var skyTarget = SKY_BASE.clone().lerp(activePalette.fogColor, 0.3);
+  scene.background.lerp(skyTarget, dt * 0.5);
+  // Clamp channels so sky stays visible without washing out
+  scene.background.r = Math.min(scene.background.r * 1.7, 0.35);
+  scene.background.g = Math.min(scene.background.g * 1.7, 0.25);
+  scene.background.b = Math.min(scene.background.b * 1.7, 0.55);
 
   updateShaderTime(time);
   renderer.render(scene, camera);

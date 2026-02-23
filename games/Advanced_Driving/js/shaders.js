@@ -71,6 +71,7 @@ var rFS = [
 ].join('\n');
 
 // --- Ground Grid ---
+// Solid tinted ground + bright neon grid lines on top.
 var gVS = [
   'varying vec3 vWP;',
   'void main() {',
@@ -82,17 +83,26 @@ var gVS = [
 
 var gFS = [
   'uniform vec3 gridColor;',
+  'uniform vec3 groundTint;',
   'uniform float time;',
   'varying vec3 vWP;',
   'void main() {',
   '  vec2 u = vWP.xz * 0.08;',
-  '  float g = max(',
-  '    smoothstep(0.015, 0.0, abs(fract(u.x) - 0.5) - 0.48),',
-  '    smoothstep(0.015, 0.0, abs(fract(u.y) - 0.5) - 0.48)',
+  // Grid lines
+  '  float grid = max(',
+  '    smoothstep(0.02, 0.0, abs(fract(u.x) - 0.5) - 0.47),',
+  '    smoothstep(0.02, 0.0, abs(fract(u.y) - 0.5) - 0.47)',
   '  );',
-  '  float f = exp(-pow(length(vWP.xz) * 0.005, 2.0));',
-  '  g *= f;',
-  '  gl_FragColor = vec4(gridColor * g * 0.3 * (0.8 + 0.2 * sin(time * 0.5)), g * 0.4 * f);',
+  // Distance fade for grid lines only
+  '  float distFade = exp(-pow(length(vWP.xz) * 0.004, 2.0));',
+  '  float pulse = 0.8 + 0.2 * sin(time * 0.5 + u.x * 0.5);',
+  '  grid *= distFade * pulse;',
+  // Horizon fade for the solid ground (full opacity near, fade far)
+  '  float horizonFade = clamp(1.0 - length(vWP.xz) * 0.003, 0.0, 1.0);',
+  // Combine: solid ground fill + bright grid lines on top
+  '  vec3 col = groundTint + gridColor * grid * 1.8;',
+  '  float a = max(0.85 * horizonFade, grid * distFade);',
+  '  gl_FragColor = vec4(col, a);',
   '}'
 ].join('\n');
 

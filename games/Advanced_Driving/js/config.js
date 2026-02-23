@@ -61,52 +61,55 @@ var C = {
 };
 
 // ═══ PALETTES ═══
-// Visual look-and-feel options for road segments.
-// Each segment picks one at random. Add new entries freely — road.js
-// will pick from this array without any other changes needed.
+// fogColor is the tint blended INTO the sky base — keep it visible (not near-black).
 var PALETTES = [
   {
-    id:       'countryside',
-    fogColor: new THREE.Color(0x050010),
-    neonP:    new THREE.Color(0x00ff88),
-    neonS:    new THREE.Color(0x00ffff),
+    id:         'countryside',
+    fogColor:   new THREE.Color(0x1a0050),  // deep violet
+    groundTint: new THREE.Color(0x001a10),  // dark green ground
+    neonP:      new THREE.Color(0x00ff88),
+    neonS:      new THREE.Color(0x00ffff),
   },
   {
-    id:       'city',
-    fogColor: new THREE.Color(0x0a0020),
-    neonP:    new THREE.Color(0xff00ff),
-    neonS:    new THREE.Color(0xff4488),
+    id:         'city',
+    fogColor:   new THREE.Color(0x280040),  // deep magenta-purple
+    groundTint: new THREE.Color(0x1a0030),  // dark purple ground
+    neonP:      new THREE.Color(0xff00ff),
+    neonS:      new THREE.Color(0xff4488),
   },
   {
-    id:       'beach',
-    fogColor: new THREE.Color(0x000a1a),
-    neonP:    new THREE.Color(0xff8800),
-    neonS:    new THREE.Color(0xffaa00),
+    id:         'beach',
+    fogColor:   new THREE.Color(0x200a00),  // deep amber
+    groundTint: new THREE.Color(0x150800),  // dark sand ground
+    neonP:      new THREE.Color(0xff8800),
+    neonS:      new THREE.Color(0xffaa00),
   },
   {
-    id:       'alien',
-    fogColor: new THREE.Color(0x060014),
-    neonP:    new THREE.Color(0xaa00ff),
-    neonS:    new THREE.Color(0xff00cc),
+    id:         'alien',
+    fogColor:   new THREE.Color(0x220050),  // electric purple
+    groundTint: new THREE.Color(0x10002a),  // void purple ground
+    neonP:      new THREE.Color(0xaa00ff),
+    neonS:      new THREE.Color(0xff00cc),
   },
   {
-    id:       'mountain',
-    fogColor: new THREE.Color(0x000818),
-    neonP:    new THREE.Color(0x00ccff),
-    neonS:    new THREE.Color(0x0066ff),
+    id:         'mountain',
+    fogColor:   new THREE.Color(0x001830),  // deep teal-blue
+    groundTint: new THREE.Color(0x000e20),  // dark blue ground
+    neonP:      new THREE.Color(0x00ccff),
+    neonS:      new THREE.Color(0x0066ff),
   },
   {
-    id:       'techno',
-    fogColor: new THREE.Color(0x020010),
-    neonP:    new THREE.Color(0xffff00),
-    neonS:    new THREE.Color(0xff8800),
+    id:         'techno',
+    fogColor:   new THREE.Color(0x251800),  // deep gold-amber
+    groundTint: new THREE.Color(0x180e00),  // dark gold ground
+    neonP:      new THREE.Color(0xffff00),
+    neonS:      new THREE.Color(0xff8800),
   },
 ];
 
-// Sky colour — single warm dusk value that persists across all palettes.
-// We modulate it slightly with the current palette's fog tint.
-var SKY_BASE = new THREE.Color(0x18003e);  // rich synthwave purple
-var SKY_HORIZON = new THREE.Color(0x3a0a1a); // warm dark rose at horizon
+// Sky colour — must be visibly coloured so lerp produces a readable sky.
+var SKY_BASE    = new THREE.Color(0x2a0550);  // synthwave purple dusk
+var SKY_HORIZON = new THREE.Color(0x6a1030);  // warm magenta-rose
 
 // ═══ PROP TYPES ═══
 // Which scenery props can appear on any segment.

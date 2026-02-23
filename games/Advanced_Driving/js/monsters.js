@@ -972,15 +972,8 @@ var monsterManager = {
 
   update: function(dt, carTransform, speed, boostActive) {
     if (!gameStarted || !carTransform) return;
-
-    this.cooldownTimer += dt;
-
-    // Activate the next monster after the cooldown
-    if (!this.active && this.cooldownTimer > C.monsterCooldown) {
-      this._activateNext(carTransform);
-    }
-
-    // Tick whichever monster is active
+    // Activation is now handled by monsterScheduler in game.js.
+    // This method only ticks the currently active monster.
     var current = MONSTER_ROSTER[(this.rosterIdx - 1 + MONSTER_ROSTER.length) % MONSTER_ROSTER.length];
     if (this.active) {
       if (current === 'spider')   spider.update(dt, carTransform, speed);
