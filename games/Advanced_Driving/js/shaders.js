@@ -72,12 +72,17 @@ var rFS = [
 
 // --- Ground Grid ---
 // Solid tinted ground + bright neon grid lines on top.
+// Fades are camera-space (eye distance) not world-origin distance,
+// so the ground stays visible as the player drives forward.
 var gVS = [
   'varying vec3 vWP;',
+  'varying float vEyeDist;',
   'void main() {',
   '  vec4 w = modelMatrix * vec4(position, 1.0);',
   '  vWP = w.xyz;',
-  '  gl_Position = projectionMatrix * viewMatrix * w;',
+  '  vec4 mv = modelViewMatrix * vec4(position, 1.0);',
+  '  vEyeDist = -mv.z;',   // positive distance from camera
+  '  gl_Position = projectionMatrix * mv;',
   '}'
 ].join('\n');
 
@@ -86,6 +91,7 @@ var gFS = [
   'uniform vec3 groundTint;',
   'uniform float time;',
   'varying vec3 vWP;',
+  'varying float vEyeDist;',
   'void main() {',
   '  vec2 u = vWP.xz * 0.08;',
   // Grid lines
@@ -93,15 +99,14 @@ var gFS = [
   '    smoothstep(0.02, 0.0, abs(fract(u.x) - 0.5) - 0.47),',
   '    smoothstep(0.02, 0.0, abs(fract(u.y) - 0.5) - 0.47)',
   '  );',
-  // Distance fade for grid lines only
-  '  float distFade = exp(-pow(length(vWP.xz) * 0.004, 2.0));',
+  // Camera-relative fades — vEyeDist is metres from camera, not world origin
+  '  float gridFade = exp(-pow(vEyeDist * 0.0035, 2.0));',
+  '  float solidFade = 1.0 - smoothstep(60.0, 160.0, vEyeDist);',
   '  float pulse = 0.8 + 0.2 * sin(time * 0.5 + u.x * 0.5);',
-  '  grid *= distFade * pulse;',
-  // Horizon fade for the solid ground (full opacity near, fade far)
-  '  float horizonFade = clamp(1.0 - length(vWP.xz) * 0.003, 0.0, 1.0);',
-  // Combine: solid ground fill + bright grid lines on top
+  '  grid *= gridFade * pulse;',
+  // Solid fill stays visible up to ~160m, grid lines a bit further
   '  vec3 col = groundTint + gridColor * grid * 1.8;',
-  '  float a = max(0.85 * horizonFade, grid * distFade);',
+  '  float a = max(solidFade * 0.92, grid * gridFade);',
   '  gl_FragColor = vec4(col, a);',
   '}'
 ].join('\n');

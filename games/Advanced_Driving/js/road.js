@@ -188,7 +188,12 @@ function buildRoadSegment(startPos, startDir) {
         groundTint:  { value: palette.groundTint.clone() },
         time:        { value: 0 }
       },
-      transparent: true, depthWrite: false
+      // depthWrite:true ensures the ground blocks objects behind it.
+      // transparent:true is still needed so the far-edge fade blends into fog.
+      transparent: true,
+      depthWrite:  true,
+      depthTest:   true,
+      side:        THREE.FrontSide
     });
     group.add(new THREE.Mesh(gGeo, gMat));
   });
