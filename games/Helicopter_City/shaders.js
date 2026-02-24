@@ -215,8 +215,9 @@ function makeSun(scene) {
   }
 
   var tex = new THREE.CanvasTexture(canvas);
+  // Note: SpriteMaterial doesn't accept renderOrder — set it on the Sprite object instead
   var mat = new THREE.SpriteMaterial({
-    map: tex, transparent: true, depthWrite: false, renderOrder: -1
+    map: tex, transparent: true, depthWrite: false,
   });
   var sprite = new THREE.Sprite(mat);
   sprite.scale.set(180, 180, 1);

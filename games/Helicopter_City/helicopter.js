@@ -124,33 +124,37 @@ function initHelicopter(scene, modelPath) {
           if (child.isMesh) { child.castShadow = false; child.receiveShadow = false; }
         });
 
+        // Add model to pivot first so world transforms are valid for Box3
+        _modelPivot.rotation.set(0, Math.PI, 0, 'YXZ');
+        _modelPivot.add(model);
+
         // Auto-scale to 5 units on longest axis
+        // Measure in world space (model is now in scene graph)
         var box  = new THREE.Box3().setFromObject(model);
         var size = new THREE.Vector3();
         box.getSize(size);
         var maxDim = Math.max(size.x, size.y, size.z);
         if (maxDim > 0) model.scale.setScalar(5.0 / maxDim);
 
-        // Re-centre pivot at body midpoint
+        // Re-centre: move the model so its bounding box midpoint sits at pivot origin
         box.setFromObject(model);
         var centre = new THREE.Vector3();
         box.getCenter(centre);
-        model.position.sub(centre);
+        // centre is in world space but pivot has no offset yet, so this is correct
+        model.position.x -= centre.x;
+        model.position.y -= centre.y;
+        model.position.z -= centre.z;
 
-        // Blender exports with -90 X baked in (Z-up -> Y-up conversion).
-        // After that, the nose (Blender -Y) lands at Three.js +Z (facing camera).
-        // rotateY(PI) flips it to face -Z = correct Three.js "forward".
-        // This base correction lives permanently on _modelPivot; tilt is added
-        // each frame on top of it using Euler order YXZ.
-        _modelPivot.rotation.set(0, Math.PI, 0, 'YXZ');
-
-        _modelPivot.add(model);
         _heliBody = model;
         _loaded   = true;
 
-        // Measure AFTER recentre but BEFORE adding to pivot (pre-correction space)
-        box.setFromObject(model);
-        _addRotors(_modelPivot, box);
+        // Measure final box in model-local space for rotor placement.
+        // Temporarily remove from pivot to get clean local coords.
+        _modelPivot.remove(model);
+        var localBox = new THREE.Box3().setFromObject(model);
+        _modelPivot.add(model);
+
+        _addRotors(_modelPivot, localBox);
 
         console.log('[Heli] Loaded. Box min:', box.min.toArray().map(function(v){ return v.toFixed(2); }),
                     'max:', box.max.toArray().map(function(v){ return v.toFixed(2); }));
