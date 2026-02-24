@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Helicopter City</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #06000e;
+      overflow: hidden;
+      font-family: monospace;
+    }
+    #canvas-container {
+      position: fixed;
+      top: 0; left: 0;
+      width: 100vw; height: 100vh;
+    }
+    #canvas-container canvas {
+      display: block;
+    }
+    #hud {
+      position: fixed;
+      top: 0; left: 0;
+      width: 100vw; height: 100vh;
+      pointer-events: none;
+      z-index: 10;
+    }
+    #loading {
+      position: fixed;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      color: #00ffcc;
+      font-size: 22px;
+      font-family: monospace;
+      letter-spacing: 3px;
+      z-index: 100;
+      text-align: center;
+      animation: pulse 1.2s infinite alternate;
+    }
+    #loading .sub {
+      font-size: 13px;
+      color: #aa44ff;
+      margin-top: 12px;
+      letter-spacing: 2px;
+    }
+    @keyframes pulse {
+      from { opacity: 0.5; }
+      to   { opacity: 1.0; }
+    }
+  </style>
+</head>
+<body>
+
+  <div id="loading">
+    HELICOPTER CITY
+    <div class="sub">LOADING CITY GRID...</div>
+    <div class="sub" style="margin-top:20px; font-size:11px; color:#664488;">PRESS ANY KEY TO START &amp; UNMUTE</div>
+  </div>
+
+  <div id="canvas-container"></div>
+  <canvas id="hud"></canvas>
+
+  <!-- Three.js r128 (matching skill baseline) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+  <!-- GLTFLoader + DRACOLoader for compressed helicopter models -->
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/DRACOLoader.js"></script>
+
+  <!-- Game modules — ORDER MATTERS -->
+  <script src="config.js"></script>
+  <script src="shaders.js"></script>
+  <script src="city.js"></script>
+  <script src="traffic.js"></script>
+  <script src="helicopter.js"></script>
+  <script src="missions.js"></script>
+  <script src="hud.js"></script>
+  <script src="input.js"></script>
+  <script src="game.js"></script>
+
+  <script>
+    // Hide loading screen once DOM is ready and boot has been called
+    window.addEventListener('DOMContentLoaded', function() {
+      setTimeout(function() {
+        var el = document.getElementById('loading');
+        if (el) el.style.display = 'none';
+      }, 800);
+    });
+  </script>
+
+</body>
+</html>
