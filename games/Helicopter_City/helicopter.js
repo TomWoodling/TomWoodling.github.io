@@ -259,11 +259,11 @@ function updateHelicopter(dt, input) {
 
   // ── Movement forces ────────────────────────────────────────────────────────
   // See coordinate contract at top of file for derivation.
-  // At yaw=0: fwd pushes -Z, lat pushes +X.
+  // At yaw=0: fwd pushes +Z, lat pushes +X.
   var sinY = Math.sin(s.yaw);
   var cosY = Math.cos(s.yaw);
   var fx =  lat * cosY + fwd * sinY;
-  var fz = -fwd * cosY + lat * sinY;
+  var fz =  fwd * cosY + lat * sinY;
   fx *= C.HELI_LATERAL;
   fz *= C.HELI_LATERAL;
   var fy = up * C.HELI_THRUST - C.HELI_HOVER_GRAVITY;
