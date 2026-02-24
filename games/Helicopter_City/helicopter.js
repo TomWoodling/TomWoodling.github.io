@@ -41,10 +41,10 @@ var _loaded      = false;
 function _makePlaceholder() {
   var g = new THREE.Group();
 
-  var bodyGeo = new THREE.CapsuleGeometry(1.0, 2.8, 8, 12);
+  var bodyGeo = new THREE.SphereGeometry(1.0, 12, 8);
+  bodyGeo.applyMatrix4(new THREE.Matrix4().makeScale(2.8, 1.0, 1.0));
   var bodyMat = new THREE.MeshStandardMaterial({ color: 0xffcc00, metalness: 0.3, roughness: 0.5 });
   var body    = new THREE.Mesh(bodyGeo, bodyMat);
-  body.rotation.z = Math.PI / 2;
   g.add(body);
 
   var tailGeo = new THREE.CylinderGeometry(0.2, 0.35, 4.0, 8);
