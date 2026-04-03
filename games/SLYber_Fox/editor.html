@@ -1,0 +1,1057 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>SLYber Fox — Level Editor</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #111;
+      color: #ccc;
+      font-family: 'Courier New', monospace;
+      display: flex;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    /* Toolbar */
+    #toolbar {
+      width: 200px;
+      background: #1a1a2e;
+      padding: 10px;
+      overflow-y: auto;
+      border-right: 1px solid #333;
+      flex-shrink: 0;
+    }
+    #toolbar h3 {
+      color: #00ffcc;
+      font-size: 12px;
+      letter-spacing: 2px;
+      margin: 12px 0 6px;
+    }
+    #toolbar h3:first-child { margin-top: 0; }
+    .tool-btn {
+      display: block;
+      width: 100%;
+      padding: 6px 8px;
+      margin: 2px 0;
+      background: #222;
+      border: 1px solid #333;
+      color: #aaa;
+      font-family: inherit;
+      font-size: 11px;
+      cursor: pointer;
+      text-align: left;
+      border-radius: 2px;
+    }
+    .tool-btn:hover { background: #2a2a3e; border-color: #555; }
+    .tool-btn.active { background: #1a3a2e; border-color: #00ffcc; color: #00ffcc; }
+
+    /* Canvas */
+    #editor-canvas {
+      flex: 1;
+      cursor: crosshair;
+    }
+
+    /* Properties panel */
+    #properties {
+      width: 260px;
+      background: #1a1a2e;
+      padding: 10px;
+      overflow-y: auto;
+      border-left: 1px solid #333;
+      flex-shrink: 0;
+    }
+    #properties h3 {
+      color: #00ffcc;
+      font-size: 12px;
+      letter-spacing: 2px;
+      margin-bottom: 8px;
+    }
+    .prop-row {
+      display: flex;
+      align-items: center;
+      margin: 4px 0;
+    }
+    .prop-row label {
+      width: 80px;
+      font-size: 11px;
+      color: #888;
+      flex-shrink: 0;
+    }
+    .prop-row input, .prop-row select {
+      flex: 1;
+      padding: 3px 6px;
+      background: #222;
+      border: 1px solid #444;
+      color: #ccc;
+      font-family: inherit;
+      font-size: 11px;
+      border-radius: 2px;
+    }
+    #prop-content { font-size: 11px; }
+    #no-selection { color: #555; font-size: 11px; font-style: italic; }
+
+    /* Action buttons */
+    .action-btn {
+      display: block;
+      width: 100%;
+      padding: 8px;
+      margin: 4px 0;
+      background: #222;
+      border: 1px solid #444;
+      color: #ccc;
+      font-family: inherit;
+      font-size: 11px;
+      cursor: pointer;
+      border-radius: 2px;
+    }
+    .action-btn:hover { background: #2a2a3e; }
+    .action-btn.primary { border-color: #00ffcc; color: #00ffcc; }
+    .action-btn.danger { border-color: #ff4444; color: #ff4444; }
+
+    /* Status bar */
+    #statusbar {
+      position: fixed;
+      bottom: 0; left: 0; right: 0;
+      height: 24px;
+      background: #0d0d1a;
+      border-top: 1px solid #333;
+      display: flex;
+      align-items: center;
+      padding: 0 10px;
+      font-size: 10px;
+      color: #666;
+      z-index: 100;
+    }
+    #statusbar span { margin-right: 20px; }
+
+    /* Waypoint mode indicator */
+    #waypoint-mode {
+      position: fixed;
+      top: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(255, 100, 0, 0.9);
+      color: white;
+      padding: 8px 16px;
+      border-radius: 4px;
+      font-size: 12px;
+      letter-spacing: 2px;
+      display: none;
+      z-index: 100;
+    }
+  </style>
+</head>
+<body>
+  <div id="toolbar">
+    <h3>TOOLS</h3>
+    <button class="tool-btn" data-tool="select" id="btn-select">Select / Move</button>
+    <button class="tool-btn" data-tool="delete" id="btn-delete">Delete</button>
+
+    <h3>ORBS</h3>
+    <button class="tool-btn" data-tool="orb-red">Red Orb (Patrol)</button>
+    <button class="tool-btn" data-tool="orb-blue">Blue Orb (Area)</button>
+    <button class="tool-btn" data-tool="orb-yellow">Yellow Orb (Timed)</button>
+    <button class="tool-btn" data-tool="orb-green">Green Orb (Safe)</button>
+
+    <h3>STRUCTURES</h3>
+    <button class="tool-btn" data-tool="building">Building</button>
+    <button class="tool-btn" data-tool="wall">Wall</button>
+    <button class="tool-btn" data-tool="henhouse">HEN House</button>
+    <button class="tool-btn" data-tool="streetlight">Street Light</button>
+    <button class="tool-btn" data-tool="distraction">Distraction</button>
+
+    <h3>ZONES</h3>
+    <button class="tool-btn" data-tool="trigger">Trigger Area</button>
+    <button class="tool-btn" data-tool="playerspawn">Player Spawn</button>
+
+    <h3>FILE</h3>
+    <button class="action-btn primary" id="btn-export">Export JSON</button>
+    <button class="action-btn" id="btn-import">Import JSON</button>
+    <input type="file" id="file-input" accept=".json" style="display:none">
+    <button class="action-btn" id="btn-test">Test in Game</button>
+    <button class="action-btn" id="btn-new">New Level</button>
+    <button class="action-btn" id="btn-load-default">Load Default</button>
+  </div>
+
+  <canvas id="editor-canvas"></canvas>
+
+  <div id="properties">
+    <h3>PROPERTIES</h3>
+    <div id="no-selection">Click an object to select it</div>
+    <div id="prop-content" style="display:none"></div>
+  </div>
+
+  <div id="statusbar">
+    <span id="status-tool">Tool: Select</span>
+    <span id="status-pos">X: 0  Z: 0</span>
+    <span id="status-objects">Objects: 0</span>
+    <span id="status-help">Scroll=zoom  MiddleDrag=pan  Del=delete  Ctrl+Z=undo</span>
+  </div>
+
+  <div id="waypoint-mode">WAYPOINT MODE — Click to add waypoints, Right-click to finish</div>
+
+<script>
+// ============================
+// SLYber Fox Level Editor
+// ============================
+
+var canvas = document.getElementById('editor-canvas');
+var ctx = canvas.getContext('2d');
+
+// --- State ---
+var currentTool = 'select';
+var objects = [];       // all placed objects
+var selectedObj = null;
+var dragging = false;
+var dragStart = { x: 0, z: 0 };
+var dragObjStart = { x: 0, z: 0 };
+var panning = false;
+var panStart = { mx: 0, my: 0 };
+
+// Waypoint mode for red orbs
+var waypointMode = false;
+var waypointTarget = null;
+
+// Camera (top-down orthographic)
+var cam = { x: 0, z: 20, zoom: 4 }; // zoom = units per pixel
+
+// Undo stack
+var undoStack = [];
+var maxUndo = 50;
+
+// Grid
+var gridSize = 1;
+var snapToGrid = true;
+
+// Player spawn
+var playerSpawn = { x: 0, z: -15 };
+
+// --- Resize ---
+function resize() {
+  var toolbarW = 200;
+  var propsW = 260;
+  canvas.width = window.innerWidth - toolbarW - propsW;
+  canvas.height = window.innerHeight - 24; // statusbar
+  draw();
+}
+window.addEventListener('resize', resize);
+
+// --- Coordinate conversion ---
+function screenToWorld(sx, sy) {
+  var cx = canvas.width / 2;
+  var cy = canvas.height / 2;
+  return {
+    x: (sx - cx) / cam.zoom + cam.x,
+    z: (sy - cy) / cam.zoom + cam.z,
+  };
+}
+
+function worldToScreen(wx, wz) {
+  var cx = canvas.width / 2;
+  var cy = canvas.height / 2;
+  return {
+    x: (wx - cam.x) * cam.zoom + cx,
+    y: (wz - cam.z) * cam.zoom + cy,
+  };
+}
+
+function snap(val) {
+  return snapToGrid ? Math.round(val / gridSize) * gridSize : val;
+}
+
+// --- Drawing ---
+function draw() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = '#0a0a18';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  drawGrid();
+  drawObjects();
+  drawPlayerSpawn();
+  drawSelection();
+
+  // Status
+  document.getElementById('status-objects').textContent = 'Objects: ' + objects.length;
+}
+
+function drawGrid() {
+  var tl = screenToWorld(0, 0);
+  var br = screenToWorld(canvas.width, canvas.height);
+  var step = gridSize;
+
+  // Adaptive grid step
+  if (cam.zoom < 1.5) step = 10;
+  else if (cam.zoom < 4) step = 5;
+  else step = 1;
+
+  ctx.strokeStyle = 'rgba(255,255,255,0.04)';
+  ctx.lineWidth = 1;
+
+  var startX = Math.floor(tl.x / step) * step;
+  var startZ = Math.floor(tl.z / step) * step;
+
+  for (var x = startX; x <= br.x; x += step) {
+    var s = worldToScreen(x, 0);
+    ctx.beginPath();
+    ctx.moveTo(s.x, 0);
+    ctx.lineTo(s.x, canvas.height);
+    ctx.stroke();
+  }
+  for (var z = startZ; z <= br.z; z += step) {
+    var s = worldToScreen(0, z);
+    ctx.beginPath();
+    ctx.moveTo(0, s.y);
+    ctx.lineTo(canvas.width, s.y);
+    ctx.stroke();
+  }
+
+  // Origin cross
+  ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+  var o = worldToScreen(0, 0);
+  ctx.beginPath(); ctx.moveTo(o.x, 0); ctx.lineTo(o.x, canvas.height); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(0, o.y); ctx.lineTo(canvas.width, o.y); ctx.stroke();
+}
+
+function drawObjects() {
+  for (var i = 0; i < objects.length; i++) {
+    var obj = objects[i];
+    var s = worldToScreen(obj.x, obj.z);
+
+    switch (obj.objType) {
+      case 'orb-red':
+        drawCircle(s.x, s.y, 6 * cam.zoom, '#ff3333', '#ff333344');
+        // Draw waypoint path
+        if (obj.waypoints && obj.waypoints.length > 1) {
+          ctx.strokeStyle = '#ff333366';
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          var ws = worldToScreen(obj.waypoints[0].x, obj.waypoints[0].z);
+          ctx.moveTo(ws.x, ws.y);
+          for (var wi = 1; wi < obj.waypoints.length; wi++) {
+            ws = worldToScreen(obj.waypoints[wi].x, obj.waypoints[wi].z);
+            ctx.lineTo(ws.x, ws.y);
+          }
+          // Close loop
+          ws = worldToScreen(obj.waypoints[0].x, obj.waypoints[0].z);
+          ctx.lineTo(ws.x, ws.y);
+          ctx.stroke();
+          // Draw waypoint dots
+          for (var wi = 0; wi < obj.waypoints.length; wi++) {
+            ws = worldToScreen(obj.waypoints[wi].x, obj.waypoints[wi].z);
+            drawCircle(ws.x, ws.y, 3 * cam.zoom, '#ff6666', null);
+          }
+        }
+        drawLabel(s.x, s.y - 10, 'RED', '#ff3333');
+        break;
+
+      case 'orb-blue':
+        var range = (obj.detectRange || 12) * cam.zoom;
+        drawCircle(s.x, s.y, range, null, '#2244aa15');
+        drawCircle(s.x, s.y, 8 * cam.zoom, '#3366ff', '#3366ff44');
+        drawLabel(s.x, s.y - 12, 'BLUE', '#3366ff');
+        break;
+
+      case 'orb-yellow':
+        drawCircle(s.x, s.y, 6 * cam.zoom, '#ffcc00', '#ffcc0044');
+        drawLabel(s.x, s.y - 10, 'YLW', '#ffcc00');
+        break;
+
+      case 'orb-green':
+        var safeR = (obj.radius || 8) * cam.zoom;
+        drawCircle(s.x, s.y, safeR, '#00ff6633', '#00ff6610');
+        drawCircle(s.x, s.y, 6 * cam.zoom, '#00ff66', '#00ff6644');
+        drawLabel(s.x, s.y - 10, 'SAFE', '#00ff66');
+        break;
+
+      case 'building':
+        drawRect(s.x, s.y, (obj.w || 6) * cam.zoom, (obj.d || 6) * cam.zoom, '#333355', '#22224488');
+        drawLabel(s.x, s.y, 'BLD', '#556677');
+        break;
+
+      case 'wall':
+        drawRect(s.x, s.y, (obj.w || 1) * cam.zoom, (obj.d || 10) * cam.zoom, '#444466', '#33335588');
+        break;
+
+      case 'henhouse':
+        drawRect(s.x, s.y, 6 * cam.zoom, 6 * cam.zoom, '#00ffcc', '#00ffcc22');
+        drawLabel(s.x, s.y, obj.id || 'HEN', '#00ffcc');
+        break;
+
+      case 'streetlight':
+        drawCircle(s.x, s.y, 3 * cam.zoom, '#ffaa44', '#ffaa4444');
+        break;
+
+      case 'distraction':
+        drawRect(s.x, s.y, 2 * cam.zoom, 2 * cam.zoom, '#ffaa00', '#ffaa0044');
+        drawLabel(s.x, s.y - 6, obj.distractType || 'bin', '#ffaa00');
+        break;
+
+      case 'trigger':
+        var tw = (obj.w || 6) * cam.zoom;
+        var td = (obj.d || 6) * cam.zoom;
+        ctx.setLineDash([4, 4]);
+        drawRect(s.x, s.y, tw, td, '#ffff0088', '#ffff0010');
+        ctx.setLineDash([]);
+        drawLabel(s.x, s.y, obj.id || 'TRG', '#ffff00');
+        break;
+    }
+  }
+}
+
+function drawPlayerSpawn() {
+  var s = worldToScreen(playerSpawn.x, playerSpawn.z);
+  drawCircle(s.x, s.y, 5 * cam.zoom, '#ff8833', '#ff883344');
+  drawLabel(s.x, s.y - 10, 'SPAWN', '#ff8833');
+}
+
+function drawSelection() {
+  if (!selectedObj) return;
+  var s = worldToScreen(selectedObj.x, selectedObj.z);
+  var size = getObjSize(selectedObj);
+  ctx.strokeStyle = '#ffffff';
+  ctx.lineWidth = 2;
+  ctx.setLineDash([4, 4]);
+  ctx.strokeRect(s.x - size.w / 2 - 4, s.y - size.h / 2 - 4, size.w + 8, size.h + 8);
+  ctx.setLineDash([]);
+}
+
+function drawCircle(x, y, r, stroke, fill) {
+  ctx.beginPath();
+  ctx.arc(x, y, Math.max(r, 2), 0, Math.PI * 2);
+  if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+  if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = 1.5; ctx.stroke(); }
+}
+
+function drawRect(x, y, w, h, stroke, fill) {
+  if (fill) { ctx.fillStyle = fill; ctx.fillRect(x - w / 2, y - h / 2, w, h); }
+  if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = 1; ctx.strokeRect(x - w / 2, y - h / 2, w, h); }
+}
+
+function drawLabel(x, y, text, color) {
+  ctx.font = '9px Courier New';
+  ctx.fillStyle = color || '#888';
+  ctx.textAlign = 'center';
+  ctx.fillText(text, x, y);
+}
+
+function getObjSize(obj) {
+  switch (obj.objType) {
+    case 'building': return { w: (obj.w || 6) * cam.zoom, h: (obj.d || 6) * cam.zoom };
+    case 'wall': return { w: (obj.w || 1) * cam.zoom, h: (obj.d || 10) * cam.zoom };
+    case 'henhouse': return { w: 6 * cam.zoom, h: 6 * cam.zoom };
+    case 'trigger': return { w: (obj.w || 6) * cam.zoom, h: (obj.d || 6) * cam.zoom };
+    case 'distraction': return { w: 2 * cam.zoom, h: 2 * cam.zoom };
+    default: return { w: 12 * cam.zoom, h: 12 * cam.zoom };
+  }
+}
+
+// --- Hit testing ---
+function hitTest(wx, wz) {
+  for (var i = objects.length - 1; i >= 0; i--) {
+    var obj = objects[i];
+    var hitR = 3;
+    switch (obj.objType) {
+      case 'building': hitR = Math.max(obj.w || 6, obj.d || 6) / 2; break;
+      case 'wall': hitR = Math.max(obj.w || 1, obj.d || 10) / 2; break;
+      case 'henhouse': hitR = 3; break;
+      case 'trigger': hitR = Math.max(obj.w || 6, obj.d || 6) / 2; break;
+      default: hitR = 3;
+    }
+    var dx = wx - obj.x;
+    var dz = wz - obj.z;
+    if (Math.abs(dx) < hitR && Math.abs(dz) < hitR) return obj;
+  }
+  return null;
+}
+
+// --- Undo ---
+function pushUndo() {
+  undoStack.push(JSON.stringify({ objects: objects, playerSpawn: playerSpawn }));
+  if (undoStack.length > maxUndo) undoStack.shift();
+}
+
+function undo() {
+  if (undoStack.length === 0) return;
+  var state = JSON.parse(undoStack.pop());
+  objects = state.objects;
+  playerSpawn = state.playerSpawn;
+  selectedObj = null;
+  updateProperties();
+  draw();
+}
+
+// --- Object creation ---
+function createObject(tool, wx, wz) {
+  var obj = { objType: tool, x: snap(wx), z: snap(wz) };
+
+  switch (tool) {
+    case 'orb-red':
+      obj.waypoints = [{ x: obj.x, z: obj.z }];
+      break;
+    case 'orb-blue':
+      obj.detectRange = 12;
+      break;
+    case 'orb-yellow':
+      obj.onDuration = 4;
+      obj.offDuration = 3;
+      break;
+    case 'orb-green':
+      obj.radius = 8;
+      break;
+    case 'building':
+      obj.w = 6; obj.h = 8; obj.d = 6;
+      obj.color = '#111122';
+      break;
+    case 'wall':
+      obj.w = 1; obj.h = 3; obj.d = 20;
+      break;
+    case 'henhouse':
+      obj.id = 'HEN_' + (countType('henhouse') + 1);
+      obj.locked = countType('henhouse') > 0;
+      obj.powerupId = '';
+      obj.missionText = '';
+      break;
+    case 'streetlight':
+      break;
+    case 'distraction':
+      obj.distractType = 'bin';
+      break;
+    case 'trigger':
+      obj.id = 'trigger_' + (countType('trigger') + 1);
+      obj.w = 6; obj.d = 6;
+      obj.event = 'dialogue';
+      obj.data = '';
+      obj.once = true;
+      break;
+  }
+  return obj;
+}
+
+function countType(type) {
+  var c = 0;
+  for (var i = 0; i < objects.length; i++) {
+    if (objects[i].objType === type) c++;
+  }
+  return c;
+}
+
+// --- Properties panel ---
+function updateProperties() {
+  var content = document.getElementById('prop-content');
+  var noSel = document.getElementById('no-selection');
+
+  if (!selectedObj) {
+    content.style.display = 'none';
+    noSel.style.display = 'block';
+    return;
+  }
+  noSel.style.display = 'none';
+  content.style.display = 'block';
+
+  var html = '<div class="prop-row"><label>Type:</label><span>' + selectedObj.objType + '</span></div>';
+  html += '<div class="prop-row"><label>X:</label><input type="number" data-prop="x" value="' + selectedObj.x + '" step="1"></div>';
+  html += '<div class="prop-row"><label>Z:</label><input type="number" data-prop="z" value="' + selectedObj.z + '" step="1"></div>';
+
+  switch (selectedObj.objType) {
+    case 'orb-red':
+      html += '<div class="prop-row"><label>Waypoints:</label><span>' + (selectedObj.waypoints ? selectedObj.waypoints.length : 0) + '</span></div>';
+      html += '<button class="action-btn" id="btn-edit-waypoints">Edit Waypoints</button>';
+      break;
+    case 'orb-blue':
+      html += '<div class="prop-row"><label>Range:</label><input type="number" data-prop="detectRange" value="' + (selectedObj.detectRange || 12) + '" step="1"></div>';
+      break;
+    case 'orb-yellow':
+      html += '<div class="prop-row"><label>On (sec):</label><input type="number" data-prop="onDuration" value="' + (selectedObj.onDuration || 4) + '" step="0.5"></div>';
+      html += '<div class="prop-row"><label>Off (sec):</label><input type="number" data-prop="offDuration" value="' + (selectedObj.offDuration || 3) + '" step="0.5"></div>';
+      break;
+    case 'orb-green':
+      html += '<div class="prop-row"><label>Radius:</label><input type="number" data-prop="radius" value="' + (selectedObj.radius || 8) + '" step="1"></div>';
+      break;
+    case 'building':
+      html += '<div class="prop-row"><label>Width:</label><input type="number" data-prop="w" value="' + (selectedObj.w || 6) + '" step="1"></div>';
+      html += '<div class="prop-row"><label>Height:</label><input type="number" data-prop="h" value="' + (selectedObj.h || 8) + '" step="1"></div>';
+      html += '<div class="prop-row"><label>Depth:</label><input type="number" data-prop="d" value="' + (selectedObj.d || 6) + '" step="1"></div>';
+      break;
+    case 'wall':
+      html += '<div class="prop-row"><label>Width:</label><input type="number" data-prop="w" value="' + (selectedObj.w || 1) + '" step="1"></div>';
+      html += '<div class="prop-row"><label>Height:</label><input type="number" data-prop="h" value="' + (selectedObj.h || 3) + '" step="1"></div>';
+      html += '<div class="prop-row"><label>Depth:</label><input type="number" data-prop="d" value="' + (selectedObj.d || 20) + '" step="1"></div>';
+      break;
+    case 'henhouse':
+      html += '<div class="prop-row"><label>ID:</label><input type="text" data-prop="id" value="' + (selectedObj.id || '') + '"></div>';
+      html += '<div class="prop-row"><label>Locked:</label><select data-prop="locked"><option value="false"' + (!selectedObj.locked ? ' selected' : '') + '>No</option><option value="true"' + (selectedObj.locked ? ' selected' : '') + '>Yes</option></select></div>';
+      html += '<div class="prop-row"><label>Power-up:</label><select data-prop="powerupId"><option value="">None</option><option value="speed"' + (selectedObj.powerupId === 'speed' ? ' selected' : '') + '>OVERCLOCK</option><option value="silent"' + (selectedObj.powerupId === 'silent' ? ' selected' : '') + '>SILENT_PAW</option><option value="pulse"' + (selectedObj.powerupId === 'pulse' ? ' selected' : '') + '>PULSE_BARK</option></select></div>';
+      html += '<div class="prop-row"><label>Mission:</label><input type="text" data-prop="missionText" value="' + (selectedObj.missionText || '') + '"></div>';
+      break;
+    case 'distraction':
+      html += '<div class="prop-row"><label>Type:</label><select data-prop="distractType"><option value="bin"' + (selectedObj.distractType === 'bin' ? ' selected' : '') + '>Bin</option><option value="panel"' + (selectedObj.distractType === 'panel' ? ' selected' : '') + '>Panel</option><option value="crate"' + (selectedObj.distractType === 'crate' ? ' selected' : '') + '>Crate</option></select></div>';
+      break;
+    case 'trigger':
+      html += '<div class="prop-row"><label>ID:</label><input type="text" data-prop="id" value="' + (selectedObj.id || '') + '"></div>';
+      html += '<div class="prop-row"><label>Width:</label><input type="number" data-prop="w" value="' + (selectedObj.w || 6) + '" step="1"></div>';
+      html += '<div class="prop-row"><label>Depth:</label><input type="number" data-prop="d" value="' + (selectedObj.d || 6) + '" step="1"></div>';
+      html += '<div class="prop-row"><label>Event:</label><select data-prop="event"><option value="dialogue"' + (selectedObj.event === 'dialogue' ? ' selected' : '') + '>Dialogue</option><option value="spawnOrb"' + (selectedObj.event === 'spawnOrb' ? ' selected' : '') + '>Spawn Orb</option><option value="unlock"' + (selectedObj.event === 'unlock' ? ' selected' : '') + '>Unlock HEN</option><option value="custom"' + (selectedObj.event === 'custom' ? ' selected' : '') + '>Custom</option></select></div>';
+      html += '<div class="prop-row"><label>Data:</label><input type="text" data-prop="data" value="' + (selectedObj.data || '') + '"></div>';
+      html += '<div class="prop-row"><label>Once:</label><select data-prop="once"><option value="true"' + (selectedObj.once !== false ? ' selected' : '') + '>Yes</option><option value="false"' + (selectedObj.once === false ? ' selected' : '') + '>No</option></select></div>';
+      break;
+  }
+
+  html += '<button class="action-btn danger" id="btn-delete-obj" style="margin-top:10px">Delete Selected</button>';
+  content.innerHTML = html;
+
+  // Bind inputs
+  var inputs = content.querySelectorAll('input, select');
+  for (var i = 0; i < inputs.length; i++) {
+    inputs[i].addEventListener('change', onPropChange);
+  }
+
+  // Bind delete button
+  var delBtn = document.getElementById('btn-delete-obj');
+  if (delBtn) {
+    delBtn.addEventListener('click', function() {
+      if (selectedObj) {
+        pushUndo();
+        var idx = objects.indexOf(selectedObj);
+        if (idx !== -1) objects.splice(idx, 1);
+        selectedObj = null;
+        updateProperties();
+        draw();
+      }
+    });
+  }
+
+  // Bind waypoint edit button
+  var wpBtn = document.getElementById('btn-edit-waypoints');
+  if (wpBtn) {
+    wpBtn.addEventListener('click', function() {
+      enterWaypointMode(selectedObj);
+    });
+  }
+}
+
+function onPropChange(e) {
+  if (!selectedObj) return;
+  pushUndo();
+  var prop = e.target.getAttribute('data-prop');
+  var val = e.target.value;
+
+  // Type conversion
+  if (prop === 'locked' || prop === 'once') {
+    val = val === 'true';
+  } else if (['x', 'z', 'w', 'h', 'd', 'detectRange', 'radius', 'onDuration', 'offDuration'].indexOf(prop) !== -1) {
+    val = parseFloat(val) || 0;
+  }
+
+  selectedObj[prop] = val;
+  draw();
+}
+
+// --- Waypoint mode ---
+function enterWaypointMode(obj) {
+  waypointMode = true;
+  waypointTarget = obj;
+  obj.waypoints = [{ x: obj.x, z: obj.z }];
+  document.getElementById('waypoint-mode').style.display = 'block';
+  draw();
+}
+
+function exitWaypointMode() {
+  waypointMode = false;
+  waypointTarget = null;
+  document.getElementById('waypoint-mode').style.display = 'none';
+  updateProperties();
+  draw();
+}
+
+// --- Input handling ---
+canvas.addEventListener('mousedown', function(e) {
+  var world = screenToWorld(e.offsetX, e.offsetY);
+
+  // Middle mouse = pan
+  if (e.button === 1) {
+    panning = true;
+    panStart = { mx: e.clientX, my: e.clientY };
+    e.preventDefault();
+    return;
+  }
+
+  // Right click in waypoint mode = finish
+  if (e.button === 2 && waypointMode) {
+    exitWaypointMode();
+    e.preventDefault();
+    return;
+  }
+
+  if (e.button !== 0) return;
+
+  // Waypoint mode: add waypoint
+  if (waypointMode && waypointTarget) {
+    pushUndo();
+    waypointTarget.waypoints.push({ x: snap(world.x), z: snap(world.z) });
+    draw();
+    return;
+  }
+
+  if (currentTool === 'select') {
+    var hit = hitTest(world.x, world.z);
+    selectedObj = hit;
+    updateProperties();
+    if (hit) {
+      dragging = true;
+      dragStart = { x: world.x, z: world.z };
+      dragObjStart = { x: hit.x, z: hit.z };
+    }
+    draw();
+  } else if (currentTool === 'delete') {
+    var hit = hitTest(world.x, world.z);
+    if (hit) {
+      pushUndo();
+      var idx = objects.indexOf(hit);
+      if (idx !== -1) objects.splice(idx, 1);
+      if (selectedObj === hit) { selectedObj = null; updateProperties(); }
+      draw();
+    }
+  } else if (currentTool === 'playerspawn') {
+    pushUndo();
+    playerSpawn = { x: snap(world.x), z: snap(world.z) };
+    draw();
+  } else {
+    // Place object
+    pushUndo();
+    var obj = createObject(currentTool, world.x, world.z);
+    objects.push(obj);
+    selectedObj = obj;
+    updateProperties();
+
+    // Auto enter waypoint mode for red orbs
+    if (currentTool === 'orb-red') {
+      enterWaypointMode(obj);
+    }
+
+    draw();
+  }
+});
+
+canvas.addEventListener('mousemove', function(e) {
+  var world = screenToWorld(e.offsetX, e.offsetY);
+  document.getElementById('status-pos').textContent = 'X: ' + snap(world.x).toFixed(0) + '  Z: ' + snap(world.z).toFixed(0);
+
+  if (panning) {
+    cam.x -= (e.clientX - panStart.mx) / cam.zoom;
+    cam.z -= (e.clientY - panStart.my) / cam.zoom;
+    panStart = { mx: e.clientX, my: e.clientY };
+    draw();
+    return;
+  }
+
+  if (dragging && selectedObj) {
+    pushUndo();
+    undoStack.pop(); // don't create undo for every pixel
+    selectedObj.x = snap(dragObjStart.x + (world.x - dragStart.x));
+    selectedObj.z = snap(dragObjStart.z + (world.z - dragStart.z));
+    updateProperties();
+    draw();
+  }
+});
+
+canvas.addEventListener('mouseup', function() {
+  dragging = false;
+  panning = false;
+});
+
+canvas.addEventListener('wheel', function(e) {
+  var delta = e.deltaY > 0 ? 0.85 : 1.18;
+  cam.zoom = Math.max(0.5, Math.min(30, cam.zoom * delta));
+  e.preventDefault();
+  draw();
+}, { passive: false });
+
+canvas.addEventListener('contextmenu', function(e) { e.preventDefault(); });
+
+// --- Keyboard shortcuts ---
+window.addEventListener('keydown', function(e) {
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+
+  if (e.code === 'Delete' || e.code === 'Backspace') {
+    if (selectedObj) {
+      pushUndo();
+      var idx = objects.indexOf(selectedObj);
+      if (idx !== -1) objects.splice(idx, 1);
+      selectedObj = null;
+      updateProperties();
+      draw();
+    }
+  }
+  if (e.ctrlKey && e.code === 'KeyZ') {
+    undo();
+    e.preventDefault();
+  }
+  if (e.code === 'Escape') {
+    if (waypointMode) {
+      exitWaypointMode();
+    } else {
+      selectedObj = null;
+      updateProperties();
+      setTool('select');
+      draw();
+    }
+  }
+});
+
+// --- Tool selection ---
+function setTool(tool) {
+  currentTool = tool;
+  var btns = document.querySelectorAll('.tool-btn');
+  for (var i = 0; i < btns.length; i++) {
+    btns[i].classList.toggle('active', btns[i].getAttribute('data-tool') === tool);
+  }
+  document.getElementById('status-tool').textContent = 'Tool: ' + tool;
+}
+
+var toolBtns = document.querySelectorAll('.tool-btn');
+for (var i = 0; i < toolBtns.length; i++) {
+  toolBtns[i].addEventListener('click', function() {
+    setTool(this.getAttribute('data-tool'));
+  });
+}
+
+// --- Export / Import ---
+function exportLevel() {
+  var data = {
+    version: 1,
+    playerSpawn: playerSpawn,
+    buildings: [],
+    walls: [],
+    henHouses: [],
+    orbs: [],
+    triggers: [],
+    distractions: [],
+    streetLights: [],
+    dogPatrols: [],
+  };
+
+  for (var i = 0; i < objects.length; i++) {
+    var obj = objects[i];
+    switch (obj.objType) {
+      case 'orb-red':
+        data.orbs.push({ type: 'red', x: obj.x, z: obj.z, waypoints: obj.waypoints || [] });
+        break;
+      case 'orb-blue':
+        data.orbs.push({ type: 'blue', x: obj.x, z: obj.z, detectRange: obj.detectRange });
+        break;
+      case 'orb-yellow':
+        data.orbs.push({ type: 'yellow', x: obj.x, z: obj.z, onDuration: obj.onDuration, offDuration: obj.offDuration });
+        break;
+      case 'orb-green':
+        data.orbs.push({ type: 'green', x: obj.x, z: obj.z, radius: obj.radius });
+        break;
+      case 'building':
+        data.buildings.push({ x: obj.x, z: obj.z, w: obj.w, h: obj.h, d: obj.d, color: obj.color });
+        break;
+      case 'wall':
+        data.walls.push({ x: obj.x, z: obj.z, w: obj.w, h: obj.h, d: obj.d });
+        break;
+      case 'henhouse':
+        data.henHouses.push({
+          id: obj.id, x: obj.x, z: obj.z, locked: obj.locked,
+          powerupId: obj.powerupId || null, missionText: obj.missionText || '',
+        });
+        break;
+      case 'streetlight':
+        data.streetLights.push({ x: obj.x, z: obj.z });
+        break;
+      case 'distraction':
+        data.distractions.push({ x: obj.x, z: obj.z, type: obj.distractType || 'bin' });
+        break;
+      case 'trigger':
+        data.triggers.push({
+          id: obj.id, x: obj.x, z: obj.z, w: obj.w, d: obj.d,
+          event: obj.event, data: obj.data, once: obj.once,
+        });
+        break;
+    }
+  }
+
+  // Generate dog patrols from red orbs (reuse their waypoints)
+  for (var i = 0; i < data.orbs.length; i++) {
+    if (data.orbs[i].type === 'red' && data.orbs[i].waypoints.length > 1) {
+      data.dogPatrols.push({ waypoints: data.orbs[i].waypoints });
+    }
+  }
+
+  return JSON.stringify(data, null, 2);
+}
+
+function importLevel(jsonStr) {
+  var data = JSON.parse(jsonStr);
+  objects = [];
+  playerSpawn = data.playerSpawn || { x: 0, z: -15 };
+
+  // Import orbs
+  var orbData = data.orbs || [];
+  for (var i = 0; i < orbData.length; i++) {
+    var o = orbData[i];
+    var obj = { objType: 'orb-' + o.type, x: o.x, z: o.z };
+    if (o.type === 'red') obj.waypoints = o.waypoints || [];
+    if (o.type === 'blue') obj.detectRange = o.detectRange || 12;
+    if (o.type === 'yellow') { obj.onDuration = o.onDuration || 4; obj.offDuration = o.offDuration || 3; }
+    if (o.type === 'green') obj.radius = o.radius || 8;
+    objects.push(obj);
+  }
+
+  // Import buildings
+  var blds = data.buildings || [];
+  for (var i = 0; i < blds.length; i++) {
+    objects.push({ objType: 'building', x: blds[i].x, z: blds[i].z, w: blds[i].w, h: blds[i].h, d: blds[i].d, color: blds[i].color });
+  }
+
+  // Import walls
+  var walls = data.walls || [];
+  for (var i = 0; i < walls.length; i++) {
+    objects.push({ objType: 'wall', x: walls[i].x, z: walls[i].z, w: walls[i].w, h: walls[i].h, d: walls[i].d });
+  }
+
+  // Import HEN houses
+  var hens = data.henHouses || [];
+  for (var i = 0; i < hens.length; i++) {
+    objects.push({ objType: 'henhouse', x: hens[i].x, z: hens[i].z, id: hens[i].id, locked: hens[i].locked, powerupId: hens[i].powerupId, missionText: hens[i].missionText });
+  }
+
+  // Import street lights
+  var lights = data.streetLights || [];
+  for (var i = 0; i < lights.length; i++) {
+    objects.push({ objType: 'streetlight', x: lights[i].x, z: lights[i].z });
+  }
+
+  // Import distractions
+  var distr = data.distractions || [];
+  for (var i = 0; i < distr.length; i++) {
+    objects.push({ objType: 'distraction', x: distr[i].x, z: distr[i].z, distractType: distr[i].type });
+  }
+
+  // Import triggers
+  var trigs = data.triggers || [];
+  for (var i = 0; i < trigs.length; i++) {
+    objects.push({ objType: 'trigger', x: trigs[i].x, z: trigs[i].z, w: trigs[i].w, d: trigs[i].d, id: trigs[i].id, event: trigs[i].event, data: trigs[i].data, once: trigs[i].once });
+  }
+
+  selectedObj = null;
+  undoStack = [];
+  updateProperties();
+  draw();
+}
+
+// Load default level data
+function loadDefaultLevel() {
+  // Replicate what LevelLoader.loadDefault() sets up
+  var json = {
+    version: 1,
+    playerSpawn: { x: 0, z: -15 },
+    buildings: [],
+    walls: [],
+    henHouses: [
+      { id: 'HEN_1', x: 40, z: 20, locked: false, powerupId: 'speed', missionText: 'Find the OVERCLOCK node in the warehouse district.' },
+      { id: 'HEN_2', x: -35, z: 45, locked: true, powerupId: 'silent', missionText: 'Locate SILENT_PAW in the old factory.' },
+      { id: 'HEN_3', x: 20, z: -40, locked: true, powerupId: 'pulse', missionText: 'Reach PULSE_BARK at the comm tower.' },
+      { id: 'HEN_4', x: 0, z: 75, locked: true, powerupId: null, missionText: 'Infiltrate the central HEN mainframe.' },
+    ],
+    orbs: [
+      { type: 'red', x: -15, z: 5, waypoints: [{ x: -15, z: 5 }, { x: 15, z: 5 }, { x: 15, z: -5 }, { x: -15, z: -5 }] },
+      { type: 'red', x: -20, z: 25, waypoints: [{ x: -20, z: 25 }, { x: 20, z: 25 }, { x: 20, z: 40 }, { x: -20, z: 40 }] },
+      { type: 'red', x: -15, z: 55, waypoints: [{ x: -15, z: 55 }, { x: 15, z: 55 }, { x: 15, z: 75 }, { x: -15, z: 75 }] },
+      { type: 'blue', x: 0, z: 10 },
+      { type: 'blue', x: -30, z: 50 },
+      { type: 'blue', x: 25, z: -30 },
+      { type: 'yellow', x: 35, z: 18 },
+      { type: 'yellow', x: -28, z: 42 },
+      { type: 'yellow', x: 15, z: -35 },
+      { type: 'yellow', x: 5, z: 68 },
+      { type: 'green', x: 0, z: -10 },
+      { type: 'green', x: -10, z: 30 },
+      { type: 'green', x: 30, z: 55 },
+      { type: 'green', x: -25, z: 65 },
+    ],
+    triggers: [
+      { id: 'tutorial_start', x: 0, z: -13, w: 10, d: 8, event: 'dialogue', data: 'game_start', once: true },
+      { id: 'hen1_approach', x: 40, z: 20, w: 16, d: 16, event: 'dialogue', data: 'hen_1_approach', once: true },
+    ],
+    distractions: [
+      { x: 12, z: -5, type: 'bin' },
+      { x: -8, z: 20, type: 'panel' },
+      { x: 25, z: 15, type: 'crate' },
+      { x: -20, z: 35, type: 'bin' },
+      { x: 5, z: 50, type: 'panel' },
+      { x: 30, z: 45, type: 'crate' },
+      { x: -15, z: 60, type: 'bin' },
+      { x: 10, z: 70, type: 'panel' },
+    ],
+    streetLights: [],
+    dogPatrols: [],
+  };
+  importLevel(JSON.stringify(json));
+}
+
+// --- Button handlers ---
+document.getElementById('btn-export').addEventListener('click', function() {
+  var json = exportLevel();
+  var blob = new Blob([json], { type: 'application/json' });
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url;
+  a.download = 'level.json';
+  a.click();
+  URL.revokeObjectURL(url);
+});
+
+document.getElementById('btn-import').addEventListener('click', function() {
+  document.getElementById('file-input').click();
+});
+
+document.getElementById('file-input').addEventListener('change', function(e) {
+  var file = e.target.files[0];
+  if (!file) return;
+  var reader = new FileReader();
+  reader.onload = function(ev) {
+    try {
+      importLevel(ev.target.result);
+    } catch (err) {
+      alert('Error loading JSON: ' + err.message);
+    }
+  };
+  reader.readAsText(file);
+  e.target.value = '';
+});
+
+document.getElementById('btn-test').addEventListener('click', function() {
+  var json = exportLevel();
+  // Store in localStorage for the game to read
+  localStorage.setItem('slyberFoxTestLevel', json);
+  window.open('index.html?level=localstorage', '_blank');
+});
+
+document.getElementById('btn-new').addEventListener('click', function() {
+  if (confirm('Clear all objects?')) {
+    pushUndo();
+    objects = [];
+    playerSpawn = { x: 0, z: -15 };
+    selectedObj = null;
+    updateProperties();
+    draw();
+  }
+});
+
+document.getElementById('btn-load-default').addEventListener('click', function() {
+  if (objects.length === 0 || confirm('Load default level? Current objects will be replaced.')) {
+    loadDefaultLevel();
+  }
+});
+
+// --- Init ---
+resize();
+setTool('select');
+loadDefaultLevel();
+</script>
+</body>
+</html>
