@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>The SLYber Fox — The Hen Heist</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #080614;
+      overflow: hidden;
+      font-family: 'Courier New', monospace;
+      color: #ccddee;
+    }
+    #game-canvas {
+      display: block;
+      width: 100vw;
+      height: 100vh;
+    }
+    #ui-overlay {
+      position: fixed;
+      top: 0; left: 0;
+      width: 100vw; height: 100vh;
+      pointer-events: none;
+      z-index: 10;
+    }
+    #ui-overlay > * { pointer-events: auto; }
+
+    /* Hen counter */
+    #hen-counter-container {
+      position: absolute;
+      bottom: 70px; left: 30px;
+      width: 220px;
+    }
+    #hen-counter-label {
+      font-size: 11px;
+      letter-spacing: 3px;
+      color: #ffcc00;
+      margin-bottom: 4px;
+    }
+    #hen-counter-text {
+      font-size: 18px;
+      font-weight: bold;
+      color: #ffcc00;
+      text-shadow: 0 0 10px rgba(255,204,0,0.4);
+    }
+
+    /* Energy bar */
+    #energy-container {
+      position: absolute;
+      bottom: 30px; left: 30px;
+      width: 220px;
+    }
+    #energy-label {
+      font-size: 11px;
+      letter-spacing: 3px;
+      color: #00ffcc;
+      margin-bottom: 4px;
+    }
+    #energy-bar-bg {
+      width: 100%; height: 10px;
+      background: rgba(0,255,204,0.1);
+      border: 1px solid rgba(0,255,204,0.3);
+      border-radius: 2px;
+    }
+    #energy-bar-fill {
+      height: 100%;
+      width: 100%;
+      background: #00ffcc;
+      border-radius: 1px;
+      transition: width 0.15s, background-color 0.3s;
+      box-shadow: 0 0 8px #00ffcc88;
+    }
+    .low-energy #energy-bar-fill {
+      animation: pulse-energy 0.6s infinite;
+    }
+    @keyframes pulse-energy {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+
+    /* Mission box */
+    #mission-box {
+      position: absolute;
+      top: 20px; right: 20px;
+      text-align: right;
+      max-width: 350px;
+    }
+    #mission-label {
+      font-size: 10px;
+      letter-spacing: 4px;
+      color: #555577;
+      margin-bottom: 4px;
+    }
+    #mission-text {
+      font-size: 13px;
+      color: #8899bb;
+      line-height: 1.4;
+    }
+
+    /* Power-up bar */
+    #powerup-bar {
+      position: absolute;
+      top: 20px; left: 20px;
+      display: flex;
+      gap: 8px;
+    }
+    .powerup-slot {
+      padding: 4px 10px;
+      font-size: 10px;
+      letter-spacing: 2px;
+      border: 1px solid rgba(0,255,204,0.2);
+      border-radius: 2px;
+      background: rgba(0,0,0,0.4);
+      transition: all 0.3s;
+    }
+    .powerup-slot.active {
+      border-color: #00ffcc;
+      color: #00ffcc;
+      background: rgba(0,255,204,0.1);
+      box-shadow: 0 0 12px rgba(0,255,204,0.3);
+    }
+    .powerup-slot.inactive {
+      color: #334455;
+      border-color: rgba(51,68,85,0.3);
+    }
+
+    /* Dialogue box */
+    #dialogue-box {
+      position: absolute;
+      bottom: 80px; left: 50%;
+      transform: translateX(-50%);
+      width: 500px; max-width: 90vw;
+      background: rgba(10,8,20,0.92);
+      border: 1px solid rgba(0,255,204,0.25);
+      border-radius: 4px;
+      padding: 16px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    #dialogue-speaker {
+      font-size: 11px;
+      letter-spacing: 3px;
+      color: #00ffcc;
+    }
+    #dialogue-text {
+      font-size: 14px;
+      color: #bbccdd;
+      line-height: 1.5;
+    }
+    #dialogue-hint {
+      font-size: 10px;
+      color: #445566;
+      text-align: right;
+    }
+
+    /* Danger vignette (rooster zone) */
+    #detection-vignette {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      pointer-events: none;
+      box-shadow: inset 0 0 80px 20px rgba(255,0,50,0.5);
+      opacity: 0;
+      transition: opacity 0.5s;
+    }
+
+    /* Push warning */
+    #detection-warning {
+      position: absolute;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      font-size: 18px;
+      font-weight: bold;
+      letter-spacing: 4px;
+      color: #ff3333;
+      text-shadow: 0 0 20px rgba(255,0,0,0.6), 0 0 40px rgba(255,0,0,0.3);
+      animation: pulse-warning 0.8s infinite;
+      pointer-events: none;
+    }
+    @keyframes pulse-warning {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+
+    /* Title screen */
+    #title-screen {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: rgba(8,6,20,0.85);
+      z-index: 20;
+    }
+    #title-text {
+      font-size: 64px;
+      font-weight: bold;
+      letter-spacing: 12px;
+      color: #00ffcc;
+      text-shadow: 0 0 40px rgba(0,255,204,0.5), 0 0 80px rgba(0,255,204,0.2);
+      margin-bottom: 12px;
+    }
+    #title-sub {
+      font-size: 20px;
+      letter-spacing: 6px;
+      color: #ffcc00;
+      text-shadow: 0 0 20px rgba(255,204,0,0.4);
+      margin-bottom: 50px;
+    }
+    #title-start {
+      font-size: 14px;
+      letter-spacing: 3px;
+      color: #88aacc;
+      animation: blink 1.5s infinite;
+    }
+    @keyframes blink {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.3; }
+    }
+
+    /* Game over */
+    #gameover-screen {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: rgba(0,20,15,0.85);
+      z-index: 20;
+    }
+    #gameover-text {
+      font-size: 48px;
+      font-weight: bold;
+      letter-spacing: 8px;
+      color: #00ffcc;
+      text-shadow: 0 0 40px rgba(0,255,204,0.6);
+      margin-bottom: 16px;
+    }
+    #gameover-sub {
+      font-size: 15px;
+      color: #88bbaa;
+      letter-spacing: 3px;
+    }
+
+    /* Loading indicator */
+    #loading-text {
+      position: absolute;
+      bottom: 50%;
+      left: 50%;
+      transform: translate(-50%, 50%);
+      font-size: 14px;
+      color: #556677;
+      letter-spacing: 4px;
+      z-index: 15;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="game-canvas"></canvas>
+  <div id="ui-overlay"></div>
+
+  <!-- Three.js r128 -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/DRACOLoader.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/utils/SkeletonUtils.js"></script>
+
+  <!-- Game scripts (order matters: config first, game.js last) -->
+  <script src="config.js"></script>
+  <script src="leveldata.js"></script>
+  <script src="worldgen.js"></script>
+  <script src="city.js"></script>
+  <script src="dialogue.js"></script>
+  <script src="ui.js"></script>
+  <script src="fox.js"></script>
+  <script src="hen.js"></script>
+  <script src="rooster.js"></script>
+  <script src="scout.js"></script>
+  <script src="progression.js"></script>
+  <script src="trigger.js"></script>
+  <script src="game.js"></script>
+</body>
+</html>

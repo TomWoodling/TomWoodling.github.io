@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Model Rotation Finder</title>
+<style>
+  body { margin: 0; background: #1a1a2e; color: #eee; font-family: monospace; overflow: hidden; }
+  #controls {
+    position: absolute; top: 10px; left: 10px; z-index: 10;
+    background: rgba(0,0,0,0.85); padding: 15px; border-radius: 8px;
+    min-width: 320px;
+  }
+  #controls label { display: block; margin: 8px 0 2px; font-size: 13px; }
+  #controls input[type=range] { width: 280px; }
+  #controls select { padding: 4px; background: #333; color: #eee; border: 1px solid #555; }
+  #output {
+    position: absolute; bottom: 10px; left: 10px; z-index: 10;
+    background: rgba(0,0,0,0.9); padding: 15px; border-radius: 8px;
+    font-size: 14px; white-space: pre; min-width: 400px;
+  }
+  #output button { margin-top: 8px; padding: 6px 16px; cursor: pointer; background: #4a6; color: #fff; border: none; border-radius: 4px; font-size: 13px; }
+  .val { color: #6cf; }
+  h3 { margin: 0 0 10px; color: #f93; }
+  #hint { position: absolute; top: 10px; right: 10px; z-index: 10; background: rgba(0,0,0,0.7); padding: 10px; border-radius: 6px; font-size: 12px; color: #aaa; max-width: 220px; }
+</style>
+</head>
+<body>
+<div id="controls">
+  <h3>Model Rotation Finder</h3>
+  <label>Model:
+    <select id="modelSelect">
+      <option value="art/cyberfox_compressed.glb">Fox</option>
+      <option value="art/golden_hen_compressed.glb">Hen</option>
+      <option value="art/mecha_rooster_compressed.glb">Rooster</option>
+    </select>
+  </label>
+  <label>Euler Order:
+    <select id="order">
+      <option>XYZ</option><option>YXZ</option><option>ZXY</option>
+      <option>XZY</option><option>YZX</option><option>ZYX</option>
+    </select>
+  </label>
+  <label>X: <span id="xval" class="val">0</span> deg</label>
+  <input type="range" id="rx" min="-180" max="180" value="0" step="5">
+  <label>Y: <span id="yval" class="val">0</span> deg</label>
+  <input type="range" id="ry" min="-180" max="180" value="0" step="5">
+  <label>Z: <span id="zval" class="val">0</span> deg</label>
+  <input type="range" id="rz" min="-180" max="180" value="0" step="5">
+</div>
+<div id="hint">
+  Goal: fox standing upright, facing <b>-Z</b> (toward the blue axis arrow / away from camera).<br><br>
+  Red = +X<br>Green = +Y (up)<br>Blue = +Z
+</div>
+<div id="output">
+  <span id="code-output"></span>
+  <button onclick="copyCode()">Copy to clipboard</button>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/DRACOLoader.js"></script>
+<script>
+var scene = new THREE.Scene();
+scene.background = new THREE.Color(0x1a1a2e);
+
+var camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 100);
+camera.position.set(0, 2, 6);
+
+var renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+document.body.appendChild(renderer.domElement);
+
+var controls = new THREE.OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 0.8, 0);
+controls.update();
+
+// Lighting
+scene.add(new THREE.AmbientLight(0xffffff, 0.8));
+var dir = new THREE.DirectionalLight(0xffffff, 1.0);
+dir.position.set(5, 10, 5);
+scene.add(dir);
+
+// Grid + axes
+scene.add(new THREE.GridHelper(10, 10, 0x444466, 0x333355));
+scene.add(new THREE.AxesHelper(3));
+
+// Forward arrow (-Z direction, cyan)
+var fwdArrow = new THREE.ArrowHelper(
+  new THREE.Vector3(0, 0, -1), new THREE.Vector3(0, 0.01, 0),
+  2, 0x00ffff, 0.3, 0.15
+);
+scene.add(fwdArrow);
+
+// Load model
+var innerModel = null;
+var currentMixer = null;
+var dracoLoader = new THREE.DRACOLoader();
+dracoLoader.setDecoderPath('https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/libs/draco/');
+var loader = new THREE.GLTFLoader();
+loader.setDRACOLoader(dracoLoader);
+
+// Bounding box helper
+var bboxHelper = null;
+var bboxInfo = document.createElement('div');
+bboxInfo.style.cssText = 'position:absolute;bottom:10px;right:10px;z-index:10;background:rgba(0,0,0,0.9);padding:15px;border-radius:8px;font-size:13px;white-space:pre;color:#afc;';
+document.body.appendChild(bboxInfo);
+
+function loadModel(path) {
+  // Remove old model
+  if (innerModel) { scene.remove(innerModel); innerModel = null; }
+  if (bboxHelper) { scene.remove(bboxHelper); bboxHelper = null; }
+  currentMixer = null;
+
+  loader.load(path, function(gltf) {
+    innerModel = gltf.scene;
+    scene.add(innerModel);
+    updateRotation();
+
+    // Show bounding box
+    var bbox = new THREE.Box3().setFromObject(innerModel);
+    bboxHelper = new THREE.Box3Helper(bbox, 0x00ff88);
+    scene.add(bboxHelper);
+    bboxInfo.textContent =
+      'Bounding Box (no rotation):\n' +
+      '  min: (' + bbox.min.x.toFixed(3) + ', ' + bbox.min.y.toFixed(3) + ', ' + bbox.min.z.toFixed(3) + ')\n' +
+      '  max: (' + bbox.max.x.toFixed(3) + ', ' + bbox.max.y.toFixed(3) + ', ' + bbox.max.z.toFixed(3) + ')\n' +
+      '  size: (' + (bbox.max.x-bbox.min.x).toFixed(3) + ', ' + (bbox.max.y-bbox.min.y).toFixed(3) + ', ' + (bbox.max.z-bbox.min.z).toFixed(3) + ')\n' +
+      '  base offset (min.y): ' + bbox.min.y.toFixed(3);
+
+    // Play idle anim if available
+    if (gltf.animations.length > 0) {
+      currentMixer = new THREE.AnimationMixer(innerModel);
+      var idle = gltf.animations.find(function(a) { return a.name === 'Idle'; }) || gltf.animations[0];
+      currentMixer.clipAction(idle).play();
+    }
+  });
+}
+
+loadModel('art/cyberfox_compressed.glb');
+
+var modelSelectEl = document.getElementById('modelSelect');
+modelSelectEl.addEventListener('change', function() {
+  loadModel(modelSelectEl.value);
+});
+
+// Sliders
+var rxEl = document.getElementById('rx');
+var ryEl = document.getElementById('ry');
+var rzEl = document.getElementById('rz');
+var orderEl = document.getElementById('order');
+
+rxEl.addEventListener('input', updateRotation);
+ryEl.addEventListener('input', updateRotation);
+rzEl.addEventListener('input', updateRotation);
+orderEl.addEventListener('change', updateRotation);
+
+function updateRotation() {
+  if (!innerModel) return;
+  var xd = parseInt(rxEl.value);
+  var yd = parseInt(ryEl.value);
+  var zd = parseInt(rzEl.value);
+  var ord = orderEl.value;
+
+  document.getElementById('xval').textContent = xd;
+  document.getElementById('yval').textContent = yd;
+  document.getElementById('zval').textContent = zd;
+
+  innerModel.rotation.order = ord;
+  innerModel.rotation.x = xd * Math.PI / 180;
+  innerModel.rotation.y = yd * Math.PI / 180;
+  innerModel.rotation.z = zd * Math.PI / 180;
+
+  // Build code
+  var lines = [];
+  if (ord !== 'XYZ') lines.push("innerModel.rotation.order = '" + ord + "';");
+  if (xd !== 0) lines.push("innerModel.rotation.x = " + radStr(xd) + ";");
+  if (yd !== 0) lines.push("innerModel.rotation.y = " + radStr(yd) + ";");
+  if (zd !== 0) lines.push("innerModel.rotation.z = " + radStr(zd) + ";");
+  document.getElementById('code-output').textContent = lines.join('\n') || '// no rotation needed';
+}
+
+function radStr(deg) {
+  if (deg === 90) return 'Math.PI / 2';
+  if (deg === -90) return '-Math.PI / 2';
+  if (deg === 180 || deg === -180) return 'Math.PI';
+  if (deg === 45) return 'Math.PI / 4';
+  if (deg === -45) return '-Math.PI / 4';
+  return (deg * Math.PI / 180).toFixed(4) + ' /* ' + deg + ' deg */';
+}
+
+function copyCode() {
+  var text = document.getElementById('code-output').textContent;
+  navigator.clipboard.writeText(text);
+}
+
+// Render
+function animate() {
+  requestAnimationFrame(animate);
+  if (currentMixer) currentMixer.update(0.016);
+  renderer.render(scene, camera);
+}
+animate();
+
+window.addEventListener('resize', function() {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+</script>
+</body>
+</html>

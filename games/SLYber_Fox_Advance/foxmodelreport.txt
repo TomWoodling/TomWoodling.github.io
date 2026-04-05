@@ -1,0 +1,78 @@
+3D MODEL ORIENTATION REPORT
+========================
+
+File: cyberfox_compressed.glb
+Meshes: 1 | Verts: 40.079 | Tris: 18.890
+Materials: 1 | Skinned: 1
+Texture Formats: none | WebP: false
+
+DIMENSIONS
+Size: (0.606, 1.650, 3.266)
+Bounds: (-0.306, 0.000, -1.640) to (0.300, 1.650, 1.626)
+Center: (-0.003, 0.825, -0.007)
+Scale: meters (likely)
+
+ORIENTATION
+Up Axis: +Z (high)
+Forward: +X (medium)
+Normal Dist: {"+X":"31.6%","-X":"30.4%","+Z":"20.5%","-Z":"17.5%"}
+
+PIVOT & GROUNDING
+Centered XZ: true | Grounded: true
+Pivot: base-center (ideal)
+
+SKELETON (48 bones)
+Root: root
+root
+  Hips
+    Spine_1
+      Spine_2
+        Spine_2001
+          Spine_3
+            Spine_4
+              Head
+                Headtip
+                Ear_L
+                  Ear_Tip_L
+                Chin
+                  Chin_Tip
+                Ear_R
+                  Ear_Tip_R
+          Front_Leg_Shoulder_L
+            Front_Leg_Upper_L
+              Front_Leg_Lower_L
+                Front_Leg_Ankle_L
+                  Front_Leg_Foot_L
+                    Front_Leg_Tip_L
+          Front_Leg_Shoulder_R
+            Front_Leg_Upper_R
+              Front_Leg_Lower_R
+                Front_Leg_Ankle_R
+                  Front_Leg_Foot_R
+                    Front_Leg_Tip_R
+        Stomach
+          Stomach_tip
+    Tail_Base
+
+ANIMATIONS (13)
+  Bark: 2.88s
+  Bite: 0.83s
+  Death: 1.17s
+  Fall: 0.54s
+  Fetch: 1.00s
+  Howl: 2.33s
+  Idle: 1.33s
+  Idle Alert: 1.63s
+  Jump: 2.17s
+  Run: 0.50s
+  Sit: 1.33s
+  Sneak: 1.33s
+  Walk: 1.00s
+
+CHARACTER CONTROLLER SETUP
+- Model uses Z-up (common in Blender default export). Rotate -90 deg around X to convert to Y-up.
+- Model faces +X. Rotate -90 deg around Y so it faces -Z (Three.js convention).
+
+Code:
+model.rotation.x = -Math.PI / 2;
+model.rotation.y = -Math.PI / 2;
