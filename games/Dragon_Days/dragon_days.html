@@ -1,0 +1,1225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Dragon Days — Phase 1</title>
+<style>
+  html, body { margin: 0; padding: 0; overflow: hidden; background: #1a1030; font-family: system-ui, sans-serif; color: #fff; }
+  canvas { display: block; }
+  #hud {
+    position: absolute; top: 12px; left: 12px;
+    background: rgba(20, 10, 40, 0.55);
+    padding: 10px 14px; border-radius: 8px;
+    font-size: 13px; line-height: 1.5;
+    border: 1px solid rgba(255, 180, 255, 0.25);
+    backdrop-filter: blur(6px);
+    pointer-events: none;
+  }
+  #hud .title { font-weight: 700; font-size: 15px; color: #ffb8ff; margin-bottom: 4px; letter-spacing: 0.5px; }
+  #hud .stat { color: #ffe8a0; }
+  #hud .key { color: #a8f0ff; font-family: monospace; }
+  #loader {
+    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    background: radial-gradient(circle at center, #3a1a5a, #0f0820);
+    font-size: 20px; letter-spacing: 2px; color: #ffb8ff;
+    z-index: 10;
+  }
+  #loader.hidden { display: none; }
+  #hint {
+    position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%);
+    background: rgba(20, 10, 40, 0.55); padding: 8px 14px; border-radius: 6px;
+    font-size: 12px; border: 1px solid rgba(255, 180, 255, 0.2);
+    pointer-events: none;
+  }
+  #minimap {
+    position: absolute; top: 12px; right: 12px;
+    border-radius: 50%;
+    border: 2px solid rgba(255, 180, 255, 0.4);
+    background: rgba(20, 10, 40, 0.55);
+    box-shadow: 0 0 20px rgba(255, 120, 200, 0.25);
+    pointer-events: none;
+  }
+  #popup {
+    position: absolute; top: 40%; left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 42px; font-weight: 900;
+    color: #ffd94a;
+    text-shadow: 0 0 20px rgba(255, 120, 200, 0.8), 3px 3px 0 #8a2a5a;
+    letter-spacing: 3px;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.2s ease-out, transform 0.5s cubic-bezier(0.2, 1.5, 0.4, 1);
+    font-family: 'Impact', system-ui, sans-serif;
+  }
+  #popup.show {
+    opacity: 1;
+    transform: translate(-50%, -55%) scale(1.1);
+  }
+</style>
+</head>
+<body>
+<div id="loader">SUMMONING THE DRAGON…</div>
+<div id="hud">
+  <div class="title">🐲 DRAGON DAYS</div>
+  <div class="section">AIR: <span class="key">W/S</span> pitch • <span class="key">A/D</span> yaw • <span class="key">Q/E</span> roll</div>
+  <div class="section">GROUND: <span class="key">W/S</span> walk • <span class="key">A/D</span> turn</div>
+  <div><span class="key">SHIFT</span> flap/takeoff/climb • <span class="key">SPACE</span> sprint</div>
+  <div>State: <span class="stat" id="state">—</span></div>
+  <div>Speed: <span class="stat" id="speed">0</span> • Alt: <span class="stat" id="alt">0</span></div>
+  <div>Birds nearby: <span class="stat" id="birds">0</span></div>
+  <div>Scattered: <span class="stat" id="score">0</span></div>
+</div>
+<canvas id="minimap" width="200" height="200"></canvas>
+<div id="popup"></div>
+<div id="hint">SHIFT = flap/takeoff/climb • SPACE = sprint • F = toggle debug markers</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/DRACOLoader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/utils/SkeletonUtils.js"></script>
+
+<script>
+// ============================================================
+// DRAGON DAYS — Phase 1
+// Stack: Three.js r128 + Draco GLB
+// Aesthetic: Moebius / Superflat — flat saturated color, bold skies
+// Flight: in-between physics (real lift/drag/gravity, forgiving tuning)
+// ============================================================
+
+// ---------- SCENE, CAMERA, RENDERER ----------
+const scene = new THREE.Scene();
+// Moebius skies — gradient fog blending into horizon
+scene.background = new THREE.Color(0xffd9e8); // soft pink horizon
+scene.fog = new THREE.Fog(0xffd9e8, 300, 1800);
+
+const camera = new THREE.PerspectiveCamera(65, window.innerWidth / window.innerHeight, 0.5, 2000);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.outputEncoding = THREE.sRGBEncoding;
+renderer.toneMapping = THREE.NoToneMapping; // keep colors flat & saturated (Moebius vibe)
+document.body.appendChild(renderer.domElement);
+
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+// ---------- LIGHTING ----------
+// Flat-shaded Superflat look: strong directional + soft hemisphere, no shadows (keeps silhouettes clean)
+const hemi = new THREE.HemisphereLight(0xffd0f0, 0x4a2a6a, 0.7);
+scene.add(hemi);
+
+const sun = new THREE.DirectionalLight(0xfff2c0, 1.4);
+sun.position.set(80, 160, 60);
+scene.add(sun);
+
+// ---------- SKY DOME (painted gradient) ----------
+(function buildSkyDome() {
+  const skyGeo = new THREE.SphereGeometry(1500, 32, 16);
+  const skyMat = new THREE.ShaderMaterial({
+    uniforms: {
+      topColor:    { value: new THREE.Color(0x8a5cff) }, // violet zenith
+      midColor:    { value: new THREE.Color(0xff7ab8) }, // hot pink band
+      bottomColor: { value: new THREE.Color(0xffd9e8) }, // pink horizon
+    },
+    vertexShader: `
+      varying vec3 vWorld;
+      void main() {
+        vWorld = (modelMatrix * vec4(position, 1.0)).xyz;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `,
+    fragmentShader: `
+      uniform vec3 topColor;
+      uniform vec3 midColor;
+      uniform vec3 bottomColor;
+      varying vec3 vWorld;
+      void main() {
+        float h = normalize(vWorld).y;
+        vec3 col;
+        if (h > 0.3) {
+          col = mix(midColor, topColor, smoothstep(0.3, 1.0, h));
+        } else {
+          col = mix(bottomColor, midColor, smoothstep(-0.2, 0.3, h));
+        }
+        gl_FragColor = vec4(col, 1.0);
+      }
+    `,
+    side: THREE.BackSide,
+    depthWrite: false,
+  });
+  scene.add(new THREE.Mesh(skyGeo, skyMat));
+})();
+
+// ---------- TERRAIN HEIGHT FUNCTION ----------
+// Shared by the chunked terrain builder and by flight/ground-clamp code.
+
+function simpleNoise(x, z) {
+  // Layered sine hash — cheap, smooth, deterministic.
+  const n1 = Math.sin(x * 0.012) * Math.cos(z * 0.013) * 18;
+  const n2 = Math.sin(x * 0.035 + 1.3) * Math.cos(z * 0.031 - 0.7) * 6;
+  const n3 = Math.sin(x * 0.08) * Math.cos(z * 0.09) * 1.5;
+  const ridge = Math.pow(Math.abs(Math.sin(x * 0.004 + z * 0.003)), 2.0) * 35;
+  return n1 + n2 + n3 + ridge;
+}
+
+function terrainHeight(x, z) {
+  return simpleNoise(x, z);
+}
+
+// ---------- CHUNKED LOD TERRAIN ----------
+// World is effectively infinite: a grid of chunks around the dragon.
+// Near chunks use high detail; distant chunks use coarse geometry.
+// Chunks spawn/despawn as the player moves.
+const CHUNK_SIZE = 400;           // world units per chunk
+const CHUNK_VIEW_RADIUS = 3;      // chunks visible in each direction from player (so 7x7 = 49 chunks)
+const LOD_NEAR_SEGS = 80;         // detail for the chunk the player is in
+const LOD_MID_SEGS = 40;          // detail for +/- 1 chunk
+const LOD_FAR_SEGS = 16;          // detail beyond that
+const TREES_PER_CHUNK_NEAR = 60;  // trees in the closest chunks
+const TREES_PER_CHUNK_MID = 30;   // fewer trees as distance grows
+const TREES_PER_CHUNK_FAR = 0;    // no trees in far LOD (hidden in fog anyway)
+
+// Height band colors — shared globally
+const bandColors = [
+  new THREE.Color(0x3aa86a), // lowlands green
+  new THREE.Color(0x7acf5a), // meadow
+  new THREE.Color(0xe8c96a), // tan highlands
+  new THREE.Color(0xb85a6a), // crimson peaks
+  new THREE.Color(0xf0e0ff), // snowy summits
+];
+
+function colorForHeight(h) {
+  if (h < 2) return bandColors[0];
+  if (h < 10) return bandColors[1];
+  if (h < 22) return bandColors[2];
+  if (h < 35) return bandColors[3];
+  return bandColors[4];
+}
+
+// Shared materials
+const terrainMat = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
+const trunkGeo = new THREE.CylinderGeometry(0.4, 0.5, 2.5, 6);
+const leafGeo = new THREE.ConeGeometry(2.2, 6, 7);
+const trunkMat = new THREE.MeshLambertMaterial({ color: 0x5a3a2a, flatShading: true });
+const leafMat = new THREE.MeshLambertMaterial({ color: 0x2a7a4a, flatShading: true });
+
+// Water — one big sheet at y=0 that never moves (covers well beyond view distance)
+(function buildWater() {
+  const waterSize = CHUNK_SIZE * (CHUNK_VIEW_RADIUS * 2 + 3);
+  const waterGeo = new THREE.PlaneGeometry(waterSize, waterSize);
+  waterGeo.rotateX(-Math.PI / 2);
+  const waterMat = new THREE.MeshBasicMaterial({ color: 0x4a9ae0, transparent: true, opacity: 0.85 });
+  const water = new THREE.Mesh(waterGeo, waterMat);
+  water.position.y = 0.5;
+  water.name = 'water';
+  water.renderOrder = -1;
+  scene.add(water);
+  // We'll keep the water centered on the player each frame (see update loop)
+  window.__water = water;
+})();
+
+// Seeded PRNG so tree placement per chunk is deterministic (chunks look the same each time).
+function chunkRand(cx, cz, salt) {
+  let s = (cx * 73856093) ^ (cz * 19349663) ^ (salt * 83492791);
+  s = (s ^ (s >>> 16)) >>> 0;
+  return () => {
+    s = (s * 1664525 + 1013904223) >>> 0;
+    return s / 0xffffffff;
+  };
+}
+
+// Build a single chunk mesh group. cx, cz are integer chunk coords.
+function buildChunk(cx, cz, segs, treeCount) {
+  const group = new THREE.Group();
+  group.userData = { cx, cz, segs };
+
+  // Terrain plane for this chunk
+  const geo = new THREE.PlaneGeometry(CHUNK_SIZE, CHUNK_SIZE, segs, segs);
+  geo.rotateX(-Math.PI / 2);
+  const pos = geo.attributes.position;
+  const colors = new Float32Array(pos.count * 3);
+  const worldOx = cx * CHUNK_SIZE;
+  const worldOz = cz * CHUNK_SIZE;
+  for (let i = 0; i < pos.count; i++) {
+    const wx = pos.getX(i) + worldOx;
+    const wz = pos.getZ(i) + worldOz;
+    const h = terrainHeight(wx, wz);
+    pos.setY(i, h);
+    const c = colorForHeight(h);
+    colors[i * 3] = c.r;
+    colors[i * 3 + 1] = c.g;
+    colors[i * 3 + 2] = c.b;
+  }
+  geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  geo.computeVertexNormals();
+  const terrainMesh = new THREE.Mesh(geo, terrainMat);
+  terrainMesh.position.set(worldOx, 0, worldOz);
+  group.add(terrainMesh);
+
+  // Trees for this chunk (instanced) — deterministic per chunk
+  if (treeCount > 0) {
+    const trunks = new THREE.InstancedMesh(trunkGeo, trunkMat, treeCount);
+    const leaves = new THREE.InstancedMesh(leafGeo, leafMat, treeCount);
+    const dummy = new THREE.Object3D();
+    const rand = chunkRand(cx, cz, 1);
+    let placed = 0;
+    let tries = 0;
+    while (placed < treeCount && tries < treeCount * 5) {
+      tries++;
+      const lx = (rand() - 0.5) * CHUNK_SIZE;
+      const lz = (rand() - 0.5) * CHUNK_SIZE;
+      const wx = lx + worldOx;
+      const wz = lz + worldOz;
+      const h = terrainHeight(wx, wz);
+      if (h < 3 || h > 28) continue;
+      const scale = 0.8 + rand() * 0.9;
+      dummy.position.set(wx, h + 1.2 * scale, wz);
+      dummy.rotation.y = rand() * Math.PI * 2;
+      dummy.scale.setScalar(scale);
+      dummy.updateMatrix();
+      trunks.setMatrixAt(placed, dummy.matrix);
+      dummy.position.y = h + 2.5 * scale + 3 * scale;
+      dummy.updateMatrix();
+      leaves.setMatrixAt(placed, dummy.matrix);
+      placed++;
+    }
+    trunks.count = placed;
+    leaves.count = placed;
+    if (placed > 0) { group.add(trunks); group.add(leaves); }
+  }
+
+  return group;
+}
+
+// Chunk manager: keeps a cache keyed by "cx,cz" and rebuilds when needed LOD changes.
+const chunks = new Map(); // key -> { group, lodSegs }
+
+function chunkKey(cx, cz) { return cx + ',' + cz; }
+
+function desiredLodFor(dist) {
+  // dist in chunk units (Chebyshev)
+  if (dist <= 0) return { segs: LOD_NEAR_SEGS, trees: TREES_PER_CHUNK_NEAR };
+  if (dist <= 1) return { segs: LOD_MID_SEGS,  trees: TREES_PER_CHUNK_MID };
+  return            { segs: LOD_FAR_SEGS,  trees: TREES_PER_CHUNK_FAR };
+}
+
+function updateChunks(playerX, playerZ) {
+  const pcx = Math.floor(playerX / CHUNK_SIZE + 0.5);
+  const pcz = Math.floor(playerZ / CHUNK_SIZE + 0.5);
+  const needed = new Set();
+  for (let dz = -CHUNK_VIEW_RADIUS; dz <= CHUNK_VIEW_RADIUS; dz++) {
+    for (let dx = -CHUNK_VIEW_RADIUS; dx <= CHUNK_VIEW_RADIUS; dx++) {
+      const cx = pcx + dx;
+      const cz = pcz + dz;
+      const dist = Math.max(Math.abs(dx), Math.abs(dz));
+      const lod = desiredLodFor(dist);
+      const key = chunkKey(cx, cz);
+      needed.add(key);
+      const existing = chunks.get(key);
+      if (!existing || existing.lodSegs !== lod.segs) {
+        // Rebuild (or build) at the correct LOD
+        if (existing) { scene.remove(existing.group); existing.group.traverse(o => { if (o.geometry) o.geometry.dispose(); }); }
+        const group = buildChunk(cx, cz, lod.segs, lod.trees);
+        scene.add(group);
+        chunks.set(key, { group, lodSegs: lod.segs });
+      }
+    }
+  }
+  // Evict chunks out of view
+  for (const key of Array.from(chunks.keys())) {
+    if (!needed.has(key)) {
+      const entry = chunks.get(key);
+      scene.remove(entry.group);
+      entry.group.traverse(o => { if (o.geometry) o.geometry.dispose(); });
+      chunks.delete(key);
+    }
+  }
+}
+
+// Kick off initial world around origin so there's something visible before the dragon loads
+updateChunks(0, 0);
+
+// ---------- DRAGON LOADING ----------
+const dracoLoader = new THREE.DRACOLoader();
+dracoLoader.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.6/');
+const gltfLoader = new THREE.GLTFLoader();
+gltfLoader.setDRACOLoader(dracoLoader);
+
+// Phase 1 uses a placeholder path — user will drop the file next to this html.
+// Expected: ./Models/Betterdragon_compressed.glb  (relative to index.html)
+const DRAGON_PATH = './Models/Betterdragon_compressed.glb';
+
+let dragon = null;
+let dragonMixer = null;
+const dragonActions = {}; // { Idle, Walk, 'Fly Flap', 'Fly Glide' }
+let currentAction = null;
+
+function crossfadeTo(name, duration = 0.25) {
+  const next = dragonActions[name];
+  if (!next || next === currentAction) return;
+  next.reset().play();
+  next.setEffectiveWeight(1);
+  if (currentAction) {
+    currentAction.crossFadeTo(next, duration, false);
+  }
+  currentAction = next;
+}
+
+gltfLoader.load(DRAGON_PATH, (gltf) => {
+  dragon = gltf.scene;
+  // Dragon is +Y up, +Z forward (Mesh2Motion export).
+  // We'll use the rig's local +Z as forward throughout the physics code to match.
+  // Scale the model 10x - user tuned.
+  const DRAGON_SCALE = 20.0;
+  dragon.scale.setScalar(DRAGON_SCALE);
+  // Wrap in a group so we can move/rotate the wrapper independently of any model tweaks.
+  const rig = new THREE.Group();
+  rig.add(dragon);
+  rig.position.set(0, 35, 0); // start airborne so flight feels immediate
+  scene.add(rig);
+  dragon.userData.rig = rig;
+
+  // Flat-shade the dragon materials so it matches the Superflat world.
+  // Keep textures, just switch to flat shading and kill tone mapping on its mats.
+  dragon.traverse(o => {
+    if (o.isMesh && o.material) {
+      const mats = Array.isArray(o.material) ? o.material : [o.material];
+      mats.forEach(m => {
+        m.flatShading = true;
+        if (m.map) m.map.encoding = THREE.sRGBEncoding;
+        m.needsUpdate = true;
+      });
+    }
+  });
+
+  dragonMixer = new THREE.AnimationMixer(dragon);
+  gltf.animations.forEach(clip => {
+    dragonActions[clip.name] = dragonMixer.clipAction(clip);
+  });
+  console.log('Dragon animations loaded:', Object.keys(dragonActions));
+
+  // Start on Fly Glide since we spawn airborne
+  if (dragonActions['Fly Glide']) crossfadeTo('Fly Glide', 0);
+  else if (dragonActions['Idle']) crossfadeTo('Idle', 0);
+
+  document.getElementById('loader').classList.add('hidden');
+}, (ev) => {
+  // progress
+}, (err) => {
+  console.error('Dragon load failed:', err);
+  document.getElementById('loader').innerHTML =
+    'Dragon not found.<br/>Place <code>Betterdragon_compressed.glb</code> in a <code>Models/</code> folder next to this HTML.';
+});
+
+// ---------- BIRDS: NEON ROC & RAVEN ----------
+// Two enemy bird types, each with Idle / Walk / Flap / Glide animations.
+// State machine: Patrol (lazy circle) → Flee (when dragon is near) → optional Perch (rare).
+// Birds are tied to a "home chunk" and despawn when player leaves the surrounding zone,
+// but are independent of terrain chunk LOD rebuilds so their state is preserved.
+const ROC_PATH = './Models/NeonRoc_compressed.glb';
+const RAVEN_PATH = './Models/Raven_compressed.glb';
+
+// Debug markers toggle (F key). Declared here so spawnBird can safely read it.
+let showDebugMarkers = true;
+
+const birdTemplates = {
+  roc:   { gltf: null, ready: false },
+  raven: { gltf: null, ready: false },
+};
+
+function loadBirdTemplate(key, path, scale) {
+  gltfLoader.load(path, (gltf) => {
+    // Flat-shade materials to match world
+    gltf.scene.traverse(o => {
+      if (o.isMesh && o.material) {
+        const mats = Array.isArray(o.material) ? o.material : [o.material];
+        mats.forEach(m => { m.flatShading = true; m.needsUpdate = true; });
+      }
+    });
+    birdTemplates[key].gltf = gltf;
+    birdTemplates[key].scale = scale;
+    birdTemplates[key].ready = true;
+    console.log(`${key} template loaded. Animations:`, gltf.animations.map(a => a.name));
+  }, undefined, (err) => {
+    console.warn(`${key} model not found at ${path} — birds of this type disabled.`, err);
+  });
+}
+loadBirdTemplate('roc', ROC_PATH, 4.0);     // rocs bigger and more intimidating
+loadBirdTemplate('raven', RAVEN_PATH, 1.8); // ravens smaller, nimbler
+
+// Create one bird instance from a template, with its own mixer + actions
+function spawnBird(template, position) {
+  if (!template.ready) return null;
+  // CRITICAL: Use THREE.SkeletonUtils.clone for skinned meshes.
+  // Plain scene.clone(true) clones the SkinnedMesh but leaves bone references pointing
+  // at the ORIGINAL skeleton, so all clones render wherever the template's skeleton is
+  // (usually origin) regardless of where we position the cloned scene. SkeletonUtils
+  // rebuilds the skeleton bindings so each clone has its own skeleton.
+  let birdScene;
+  if (THREE.SkeletonUtils && THREE.SkeletonUtils.clone) {
+    birdScene = THREE.SkeletonUtils.clone(template.gltf.scene);
+  } else {
+    console.warn('SkeletonUtils missing — falling back to scene.clone; birds may render at origin.');
+    birdScene = template.gltf.scene.clone(true);
+  }
+  birdScene.scale.setScalar(template.scale);
+  birdScene.position.copy(position);
+  // Disable frustum culling on bird meshes — skinned meshes often report stale bounding
+  // boxes from their bind pose and get culled incorrectly once animated.
+  birdScene.traverse(o => {
+    if (o.isMesh || o.isSkinnedMesh) {
+      o.frustumCulled = false;
+    }
+  });
+  // Debug position marker: a bright glowing dot that sits on the bird.
+  // Makes it easy to visually verify spawn location even if the skinned mesh fails to render.
+  // Set birdScene.userData.debug = false later to hide these if they're annoying.
+  const markerGeo = new THREE.SphereGeometry(2.5, 8, 6);
+  const markerMat = new THREE.MeshBasicMaterial({ color: 0xff00ff, transparent: true, opacity: 0.6 });
+  const marker = new THREE.Mesh(markerGeo, markerMat);
+  marker.position.set(0, 4, 0); // float slightly above the bird
+  // Use unscaled world marker: add at bird scene's parent level by setting small scale
+  marker.scale.setScalar(1 / template.scale); // compensate so marker stays ~2.5 units in world
+  marker.visible = showDebugMarkers;
+  birdScene.add(marker);
+  birdScene.userData.debugMarker = marker;
+  const mixer = new THREE.AnimationMixer(birdScene);
+  const actions = {};
+  template.gltf.animations.forEach(clip => {
+    actions[clip.name] = mixer.clipAction(clip);
+  });
+  const bird = {
+    scene: birdScene, mixer, actions,
+    currentAction: null,
+    // Movement
+    velocity: new THREE.Vector3(),
+    heading: Math.random() * Math.PI * 2,
+    // State machine
+    state: 'patrol',
+    stateTimer: Math.random() * 3,
+    // Patrol: lazy circular wander
+    circleCenter: position.clone(),
+    circleRadius: 40 + Math.random() * 40,
+    circlePhase: Math.random() * Math.PI * 2,
+    circleSpeed: 0.2 + Math.random() * 0.3, // rad/sec
+    // Altitude to maintain over terrain (feet off ground)
+    targetAlt: 25 + Math.random() * 40,
+  };
+  // Start on Glide
+  if (actions['Glide']) {
+    actions['Glide'].play();
+    bird.currentAction = actions['Glide'];
+  } else if (actions['Idle']) {
+    actions['Idle'].play();
+    bird.currentAction = actions['Idle'];
+  }
+  return bird;
+}
+
+function birdCrossfade(bird, name, duration = 0.25) {
+  const next = bird.actions[name];
+  if (!next || next === bird.currentAction) return;
+  next.reset().play();
+  next.setEffectiveWeight(1);
+  if (bird.currentAction) bird.currentAction.crossFadeTo(next, duration, false);
+  bird.currentAction = next;
+}
+
+// Bird manager — flocks keyed by home chunk coord
+const birdFlocks = new Map(); // "cx,cz" -> [birds]
+const BIRD_VIEW_RADIUS = 2;   // chunks around player where birds are alive (5x5)
+const BIRD_DETECT_RANGE = 120; // dragon must be this close for birds to flee
+const BIRD_FLEE_RANGE = 220;   // once fleeing, they keep fleeing until this far
+
+// --- Scoring ---
+const gameState = {
+  scattered: 0,
+  popupHideTimer: 0,
+};
+const popupEl = document.getElementById('popup');
+const scatterMessages = ['SCATTERED!', 'TOO SLOW!', 'BEGONE!', 'AWAY, FOUL BIRD!', 'DISPERSED!', 'ROC ROLLED!', 'FEATHERS FLY!'];
+
+function onBirdScattered(bird) {
+  gameState.scattered++;
+  document.getElementById('score').textContent = gameState.scattered;
+  // Pick a message - rocs get the bigger shouts
+  let msg;
+  if (bird.kind === 'roc') msg = ['ROC ROLLED!', 'BIG BIRD DOWN!', 'MIGHTY SCATTER!'][Math.floor(Math.random() * 3)];
+  else msg = scatterMessages[Math.floor(Math.random() * scatterMessages.length)];
+  popupEl.textContent = msg;
+  popupEl.classList.add('show');
+  gameState.popupHideTimer = 0.9;
+}
+
+function updatePopup(dt) {
+  if (gameState.popupHideTimer > 0) {
+    gameState.popupHideTimer -= dt;
+    if (gameState.popupHideTimer <= 0) {
+      popupEl.classList.remove('show');
+    }
+  }
+}
+
+function ensureFlocksAround(px, pz) {
+  const pcx = Math.floor(px / CHUNK_SIZE + 0.5);
+  const pcz = Math.floor(pz / CHUNK_SIZE + 0.5);
+  const needed = new Set();
+  for (let dz = -BIRD_VIEW_RADIUS; dz <= BIRD_VIEW_RADIUS; dz++) {
+    for (let dx = -BIRD_VIEW_RADIUS; dx <= BIRD_VIEW_RADIUS; dx++) {
+      const cx = pcx + dx;
+      const cz = pcz + dz;
+      const key = cx + ',' + cz;
+      needed.add(key);
+      if (!birdFlocks.has(key)) {
+        // Deterministic flock for this chunk
+        const rand = chunkRand(cx, cz, 7);
+        // Chunk's bird count (0 in most chunks, a few in some, occasional big flock)
+        const roll = rand();
+        let count = 0;
+        if (roll > 0.65) count = 1 + Math.floor(rand() * 3);       // 1-3 birds
+        else if (roll > 0.9) count = 3 + Math.floor(rand() * 4);   // big flock
+        const flock = [];
+        for (let i = 0; i < count; i++) {
+          // Pick type per bird
+          const isRoc = rand() < 0.3; // 30% roc, 70% raven
+          const tmpl = isRoc ? birdTemplates.roc : birdTemplates.raven;
+          if (!tmpl.ready) continue;
+          const lx = (rand() - 0.5) * CHUNK_SIZE * 0.8;
+          const lz = (rand() - 0.5) * CHUNK_SIZE * 0.8;
+          const wx = cx * CHUNK_SIZE + lx;
+          const wz = cz * CHUNK_SIZE + lz;
+          const h = terrainHeight(wx, wz);
+          const alt = 25 + rand() * 40;
+          const pos = new THREE.Vector3(wx, h + alt, wz);
+          const bird = spawnBird(tmpl, pos);
+          if (bird) {
+            bird.kind = isRoc ? 'roc' : 'raven';
+            bird.targetAlt = alt;
+            scene.add(bird.scene);
+            flock.push(bird);
+            if (!window.__firstBirdLogged) {
+              window.__firstBirdLogged = true;
+              console.log(`First ${bird.kind} spawned at`,
+                          bird.scene.position.x.toFixed(1),
+                          bird.scene.position.y.toFixed(1),
+                          bird.scene.position.z.toFixed(1),
+                          'scale=', tmpl.scale,
+                          'SkeletonUtils=', !!(THREE.SkeletonUtils && THREE.SkeletonUtils.clone));
+            }
+          }
+        }
+        birdFlocks.set(key, flock);
+      }
+    }
+  }
+  // Evict distant flocks
+  for (const key of Array.from(birdFlocks.keys())) {
+    if (!needed.has(key)) {
+      const flock = birdFlocks.get(key);
+      for (const b of flock) {
+        scene.remove(b.scene);
+        // mixer has no explicit dispose — allow GC by dropping refs
+      }
+      birdFlocks.delete(key);
+    }
+  }
+}
+
+// Update a single bird's AI + position
+const _birdFwd = new THREE.Vector3();
+const _birdToDragon = new THREE.Vector3();
+function updateBird(bird, dt, dragonPos) {
+  const toDragon = _birdToDragon.subVectors(dragonPos, bird.scene.position);
+  const distToDragon = toDragon.length();
+
+  // State transitions
+  if (bird.state === 'patrol' && distToDragon < BIRD_DETECT_RANGE) {
+    bird.state = 'flee';
+    bird.stateTimer = 0;
+    // SCORING: first scatter counts (subsequent flees don't re-score)
+    if (!bird.hasBeenScattered) {
+      bird.hasBeenScattered = true;
+      onBirdScattered(bird);
+    }
+  } else if (bird.state === 'flee' && distToDragon > BIRD_FLEE_RANGE) {
+    bird.state = 'patrol';
+    bird.stateTimer = 0;
+  }
+  bird.stateTimer += dt;
+
+  // Animation + movement per state
+  if (bird.state === 'flee') {
+    // FLEE: flap hard in direction away from dragon, slight climb
+    birdCrossfade(bird, 'Flap', 0.15);
+    const away = toDragon.clone().negate();
+    away.y = 0;
+    if (away.lengthSq() > 1e-6) away.normalize();
+    const fleeSpeed = bird.kind === 'roc' ? 22 : 28; // ravens faster
+    bird.velocity.x = away.x * fleeSpeed;
+    bird.velocity.z = away.z * fleeSpeed;
+    // Gain a bit of altitude to escape
+    const groundY = terrainHeight(bird.scene.position.x, bird.scene.position.z);
+    const currentAlt = bird.scene.position.y - groundY;
+    const desiredAlt = bird.targetAlt + 15;
+    bird.velocity.y = (desiredAlt - currentAlt) * 1.5;
+  } else {
+    // PATROL: lazy circle around home center, slow flap occasionally
+    bird.circlePhase += bird.circleSpeed * dt;
+    const cx = bird.circleCenter.x + Math.cos(bird.circlePhase) * bird.circleRadius;
+    const cz = bird.circleCenter.z + Math.sin(bird.circlePhase) * bird.circleRadius;
+    const dx = cx - bird.scene.position.x;
+    const dz = cz - bird.scene.position.z;
+    const patrolSpeed = bird.kind === 'roc' ? 10 : 14;
+    const len = Math.hypot(dx, dz);
+    if (len > 0.01) {
+      bird.velocity.x = (dx / len) * patrolSpeed;
+      bird.velocity.z = (dz / len) * patrolSpeed;
+    }
+    const groundY = terrainHeight(bird.scene.position.x, bird.scene.position.z);
+    const currentAlt = bird.scene.position.y - groundY;
+    bird.velocity.y = (bird.targetAlt - currentAlt) * 0.8;
+
+    // Alternate glide/flap for visual variety (~70% glide, ~30% flap)
+    const shouldFlap = Math.sin(bird.stateTimer * 0.6 + bird.circlePhase) > 0.5;
+    birdCrossfade(bird, shouldFlap ? 'Flap' : 'Glide', 0.4);
+  }
+
+  // Move
+  bird.scene.position.addScaledVector(bird.velocity, dt);
+
+  // Face velocity direction (horizontal only)
+  if (bird.velocity.x * bird.velocity.x + bird.velocity.z * bird.velocity.z > 0.5) {
+    // Bird models also +Z forward (Mesh2Motion convention)
+    const heading = Math.atan2(bird.velocity.x, bird.velocity.z);
+    bird.scene.rotation.y = heading;
+  }
+
+  bird.mixer.update(dt);
+}
+
+function updateBirds(dt, dragonPos) {
+  ensureFlocksAround(dragonPos.x, dragonPos.z);
+  for (const flock of birdFlocks.values()) {
+    for (const b of flock) updateBird(b, dt, dragonPos);
+  }
+}
+
+// ---------- DRIFTING CLOUDS ----------
+// Flat pink-white planes at multiple altitudes. They drift slowly and wrap around
+// the player so there are always some in view, massively selling the scale of flight.
+const CLOUD_COUNT = 40;
+const CLOUD_WRAP = 1400; // wrap zone around player
+const clouds = [];
+
+(function buildClouds() {
+  // A soft white sprite-like plane. We use a CanvasTexture with a radial gradient
+  // so the cloud has fluffy edges instead of a hard rectangle.
+  const cvs = document.createElement('canvas');
+  cvs.width = 128; cvs.height = 128;
+  const ctx = cvs.getContext('2d');
+  const grad = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
+  grad.addColorStop(0, 'rgba(255, 240, 250, 1)');
+  grad.addColorStop(0.4, 'rgba(255, 220, 240, 0.9)');
+  grad.addColorStop(1, 'rgba(255, 180, 220, 0)');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, 128, 128);
+  const cloudTex = new THREE.CanvasTexture(cvs);
+
+  const cloudMat = new THREE.MeshBasicMaterial({
+    map: cloudTex,
+    transparent: true,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+    opacity: 0.85,
+  });
+
+  for (let i = 0; i < CLOUD_COUNT; i++) {
+    const size = 60 + Math.random() * 160;
+    const geo = new THREE.PlaneGeometry(size, size * (0.5 + Math.random() * 0.4));
+    const mesh = new THREE.Mesh(geo, cloudMat);
+    // Horizontal (facing up) so they look like flat puffs from below; rotate around Y for variety
+    mesh.rotation.x = -Math.PI / 2;
+    mesh.rotation.z = Math.random() * Math.PI * 2;
+    mesh.position.set(
+      (Math.random() - 0.5) * CLOUD_WRAP,
+      100 + Math.random() * 80,
+      (Math.random() - 0.5) * CLOUD_WRAP
+    );
+    mesh.userData.driftX = (Math.random() - 0.5) * 3; // slow drift
+    mesh.userData.driftZ = (Math.random() - 0.5) * 3;
+    mesh.renderOrder = 1;
+    scene.add(mesh);
+    clouds.push(mesh);
+  }
+})();
+
+function updateClouds(dt, dragonPos) {
+  for (const c of clouds) {
+    c.position.x += c.userData.driftX * dt;
+    c.position.z += c.userData.driftZ * dt;
+    // Wrap: if beyond CLOUD_WRAP/2 from dragon, wrap to the other side
+    const dx = c.position.x - dragonPos.x;
+    const dz = c.position.z - dragonPos.z;
+    if (dx > CLOUD_WRAP / 2) c.position.x -= CLOUD_WRAP;
+    else if (dx < -CLOUD_WRAP / 2) c.position.x += CLOUD_WRAP;
+    if (dz > CLOUD_WRAP / 2) c.position.z -= CLOUD_WRAP;
+    else if (dz < -CLOUD_WRAP / 2) c.position.z += CLOUD_WRAP;
+  }
+}
+// A small pool of 60 points that we recycle. Each lives briefly, trailing behind the dragon.
+const STREAK_COUNT = 60;
+const streakPositions = new Float32Array(STREAK_COUNT * 3);
+const streakLives = new Float32Array(STREAK_COUNT); // 0 = dead, >0 = fading
+const streakGeo = new THREE.BufferGeometry();
+streakGeo.setAttribute('position', new THREE.BufferAttribute(streakPositions, 3));
+const streakMat = new THREE.PointsMaterial({
+  color: 0xffffff,
+  size: 2.5,
+  transparent: true,
+  opacity: 0.7,
+  sizeAttenuation: true,
+  depthWrite: false,
+  blending: THREE.AdditiveBlending,
+});
+const streakPoints = new THREE.Points(streakGeo, streakMat);
+streakPoints.frustumCulled = false;
+scene.add(streakPoints);
+
+let streakCursor = 0;
+function updateStreaks(dt, dragonPos, dragonSpeed, sprinting) {
+  // Spawn rate scales with sprint + speed. Only spawn when sprinting or fast.
+  const shouldSpawn = sprinting || dragonSpeed > 40;
+  if (shouldSpawn) {
+    const spawnsThisFrame = Math.min(4, Math.floor(dt * 60 * (sprinting ? 1.5 : 0.4)));
+    for (let i = 0; i < spawnsThisFrame; i++) {
+      // Spawn behind and slightly around the dragon
+      const jitter = 4;
+      streakPositions[streakCursor * 3 + 0] = dragonPos.x + (Math.random() - 0.5) * jitter;
+      streakPositions[streakCursor * 3 + 1] = dragonPos.y + (Math.random() - 0.5) * jitter;
+      streakPositions[streakCursor * 3 + 2] = dragonPos.z + (Math.random() - 0.5) * jitter;
+      streakLives[streakCursor] = 0.6; // seconds
+      streakCursor = (streakCursor + 1) % STREAK_COUNT;
+    }
+  }
+  // Age & hide dead particles (move them far away)
+  for (let i = 0; i < STREAK_COUNT; i++) {
+    if (streakLives[i] > 0) {
+      streakLives[i] -= dt;
+      if (streakLives[i] <= 0) {
+        // Park far below — invisible
+        streakPositions[i * 3 + 1] = -10000;
+      }
+    }
+  }
+  streakGeo.attributes.position.needsUpdate = true;
+  // Opacity scales with max live streak count — subtle, doesn't overwhelm
+  streakMat.opacity = sprinting ? 0.85 : 0.45;
+}
+
+// ---------- MINIMAP ----------
+// Top-down radar view showing terrain colors (sampled), birds, and dragon heading.
+// Radius in world units that the minimap covers.
+const MINIMAP_RADIUS = 350;
+const minimapCanvas = document.getElementById('minimap');
+const mmCtx = minimapCanvas.getContext('2d');
+// Pre-compute a terrain sample grid on the fly each frame (cheap - 40x40 samples)
+const MM_SAMPLE_RES = 48;
+
+function drawMinimap(dragonPos, dragonHeading) {
+  const W = minimapCanvas.width;
+  const H = minimapCanvas.height;
+  const cx = W / 2;
+  const cy = H / 2;
+  // Clear with a subtle dark fill
+  mmCtx.clearRect(0, 0, W, H);
+
+  // Draw terrain: sample a grid around the dragon
+  const step = (MINIMAP_RADIUS * 2) / MM_SAMPLE_RES;
+  const cellSize = W / MM_SAMPLE_RES;
+  for (let iz = 0; iz < MM_SAMPLE_RES; iz++) {
+    for (let ix = 0; ix < MM_SAMPLE_RES; ix++) {
+      const wx = dragonPos.x - MINIMAP_RADIUS + ix * step;
+      const wz = dragonPos.z - MINIMAP_RADIUS + iz * step;
+      const h = terrainHeight(wx, wz);
+      let col;
+      if (h < 1)       col = '#4a9ae0'; // water
+      else if (h < 10) col = '#7acf5a'; // meadow
+      else if (h < 22) col = '#e8c96a'; // highlands
+      else if (h < 35) col = '#b85a6a'; // peaks
+      else             col = '#f0e0ff'; // snow
+      mmCtx.fillStyle = col;
+      mmCtx.fillRect(ix * cellSize, iz * cellSize, cellSize + 0.5, cellSize + 0.5);
+    }
+  }
+
+  // Apply a circular clip so the minimap is round (terrain drawn as square, masked to circle)
+  // Use globalCompositeOperation to punch out non-circular areas
+  mmCtx.save();
+  mmCtx.globalCompositeOperation = 'destination-in';
+  mmCtx.beginPath();
+  mmCtx.arc(cx, cy, W / 2 - 2, 0, Math.PI * 2);
+  mmCtx.fill();
+  mmCtx.restore();
+
+  // Draw birds as dots (red if fleeing, white otherwise)
+  for (const flock of birdFlocks.values()) {
+    for (const b of flock) {
+      const dx = b.scene.position.x - dragonPos.x;
+      const dz = b.scene.position.z - dragonPos.z;
+      const distSq = dx * dx + dz * dz;
+      if (distSq > MINIMAP_RADIUS * MINIMAP_RADIUS) continue;
+      const px = cx + (dx / MINIMAP_RADIUS) * (W / 2);
+      const py = cy + (dz / MINIMAP_RADIUS) * (H / 2);
+      mmCtx.beginPath();
+      mmCtx.arc(px, py, b.state === 'flee' ? 4 : 3, 0, Math.PI * 2);
+      mmCtx.fillStyle = b.state === 'flee' ? '#ff3a3a' : (b.kind === 'roc' ? '#ff9040' : '#202020');
+      mmCtx.fill();
+      mmCtx.strokeStyle = 'rgba(255,255,255,0.6)';
+      mmCtx.lineWidth = 1;
+      mmCtx.stroke();
+    }
+  }
+
+  // Draw dragon at center — triangle pointing in heading direction
+  mmCtx.save();
+  mmCtx.translate(cx, cy);
+  // heading: rotation.y in the scene. Our world +Z is "down" on the minimap (larger z = south).
+  // If dragon faces +Z world and heading=0 is +Z, the triangle should point down (+y in canvas).
+  // So rotate canvas by -heading + PI so triangle points the right way.
+  mmCtx.rotate(-dragonHeading);
+  mmCtx.fillStyle = '#ffd94a';
+  mmCtx.strokeStyle = '#4a2a00';
+  mmCtx.lineWidth = 1.5;
+  mmCtx.beginPath();
+  mmCtx.moveTo(0, -8);   // nose
+  mmCtx.lineTo(-6, 6);   // back-left
+  mmCtx.lineTo(6, 6);    // back-right
+  mmCtx.closePath();
+  mmCtx.fill();
+  mmCtx.stroke();
+  mmCtx.restore();
+
+  // Compass N indicator
+  mmCtx.fillStyle = '#ffb8ff';
+  mmCtx.font = 'bold 10px system-ui, sans-serif';
+  mmCtx.textAlign = 'center';
+  mmCtx.fillText('N', cx, 12);
+}
+
+// ---------- FLIGHT PHYSICS (in-between: real forces, forgiving numbers) ----------
+// The dragon has a velocity vector and an orientation (quaternion).
+// Inputs: pitch/yaw/roll from keys. Flap = thrust + lift impulse. Glide = low drag, gravity pulls.
+const flight = {
+  velocity: new THREE.Vector3(0, 0, 0),
+  speed: 0,
+  // Tunables — "accessible but real"
+  thrustAccel: 22,       // m/s² from flapping
+  flapLiftImpulse: 14,   // extra upward kick when flapping
+  gravity: 9.8,
+  liftCoefficient: 0.7,  // how much forward speed becomes lift (offsets gravity)
+  dragCoefficient: 0.06, // general drag
+  glideDragMultiplier: 0.5,  // gliding is aerodynamic but not drag-free
+  glideThrustAccel: 18,      // stronger forward thrust - this is now a sprint
+  glideGravityMult: 0.55,    // gravity reduced but not so much that you hover
+  glideMaxClimb: 0,          // HARD CAP: gliding cannot gain altitude (y-velocity capped at 0)
+  glideConvertRate: 0.9,     // fraction of upward velocity converted to forward while gliding
+  pitchRate: 1.6,
+  yawRate: 1.1,
+  rollRate: 2.2,
+  maxSpeed: 70,
+  minFlySpeed: 6,        // below this, not enough lift to fly
+  groundClearance: 7.0, // dragon is scaled 10x, needs headroom so belly doesn't clip
+};
+
+const keys = {};
+window.addEventListener('keydown', e => { keys[e.code] = true; });
+window.addEventListener('keyup', e => { keys[e.code] = false; });
+
+// Toggle debug markers on birds with F
+window.addEventListener('keydown', e => {
+  if (e.code === 'KeyF') {
+    showDebugMarkers = !showDebugMarkers;
+    for (const flock of birdFlocks.values()) {
+      for (const b of flock) {
+        if (b.scene.userData.debugMarker) {
+          b.scene.userData.debugMarker.visible = showDebugMarkers;
+        }
+      }
+    }
+  }
+});
+
+// ---------- CHASE CAMERA ----------
+// Dragon faces +Z (Mesh2Motion convention). Camera sits behind = -Z in dragon's local space.
+// Look-ahead is in front of dragon = +Z.
+const cam = {
+  offset: new THREE.Vector3(0, 14, -42),   // behind (-Z) and above; scaled for 10x dragon
+  lookAhead: new THREE.Vector3(0, 4, 24),  // look ahead of the dragon (+Z)
+  pos: new THREE.Vector3(),
+  target: new THREE.Vector3(),
+  smoothPos: 6,
+  smoothLook: 8,
+};
+
+// ---------- STATE MACHINE (for animation choice) ----------
+function pickAnimationState(isFlapping, speed, onGround) {
+  if (onGround) {
+    if (speed > 0.5) return 'Walk';
+    return 'Idle';
+  }
+  // Airborne
+  if (isFlapping) return 'Fly Flap';
+  return 'Fly Glide';
+}
+
+// ---------- AUTO-LEVEL / IDLE TIMER ----------
+const autoLevel = {
+  idleThreshold: 0.7,    // seconds of no input before auto-leveling kicks in
+  idleTimer: 0,
+  airPitchRate: 1.2,     // how fast pitch corrects toward level in flight
+  airRollRate: 2.0,      // how fast roll corrects toward level in flight
+  landPitchRate: 6.0,    // much faster correction when on ground
+  landRollRate: 6.0,
+};
+
+// ---------- MAIN LOOP ----------
+const clock = new THREE.Clock();
+const tmpForward = new THREE.Vector3();
+const tmpUp = new THREE.Vector3();
+const tmpRight = new THREE.Vector3();
+const tmpEuler = new THREE.Euler();
+const tmpQuat = new THREE.Quaternion();
+
+// Shortest-angle helper: wraps delta to [-PI, PI] then moves `max` toward zero.
+function dampAngleToZero(angle, rate, dt) {
+  // Normalize to [-PI, PI]
+  let a = ((angle + Math.PI) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI) - Math.PI;
+  const step = rate * dt;
+  if (Math.abs(a) <= step) return 0;
+  return a - Math.sign(a) * step;
+}
+
+function update(dt) {
+  if (!dragon) return;
+  const rig = dragon.userData.rig;
+
+  // Determine if grounded BEFORE applying controls so we can branch modes
+  const groundH = terrainHeight(rig.position.x, rig.position.z);
+  const airGap = rig.position.y - (groundH + flight.groundClearance);
+  const nowOnGroundPre = airGap <= 0.1;
+  const onGround = nowOnGroundPre;
+
+  // --- Input ---
+  const flapping = !!keys['ShiftLeft'] || !!keys['ShiftRight'];
+  const gliding  = !!keys['Space'];
+
+  let pitchIn = 0, yawIn = 0, rollIn = 0;
+  let walkIn = 0, turnIn = 0;
+
+  if (onGround) {
+    // GROUND MODE: tank-style WASD. W/S walks forward/back, A/D turns left/right.
+    walkIn = (keys['KeyW'] ? 1 : 0) + (keys['KeyS'] ? -1 : 0);
+    turnIn = (keys['KeyA'] ? 1 : 0) + (keys['KeyD'] ? -1 : 0);
+    // No pitch/roll input on ground - we'll also actively level these.
+  } else {
+    // AIR MODE: full flight
+    pitchIn = (keys['KeyW'] ? -1 : 0) + (keys['KeyS'] ? 1 : 0);
+    yawIn   = (keys['KeyA'] ? 1 : 0)  + (keys['KeyD'] ? -1 : 0);
+    rollIn  = (keys['KeyQ'] ? 1 : 0)  + (keys['KeyE'] ? -1 : 0);
+  }
+
+  // --- Idle timer: tracks how long since the player touched a rotation input ---
+  const anyRotInput = pitchIn !== 0 || yawIn !== 0 || rollIn !== 0 || turnIn !== 0;
+  if (anyRotInput) autoLevel.idleTimer = 0;
+  else autoLevel.idleTimer += dt;
+  const shouldAutoLevel = autoLevel.idleTimer >= autoLevel.idleThreshold;
+
+  // --- Apply input rotations ---
+  if (onGround) {
+    // Turn in place; no pitch/roll
+    rig.rotateY(turnIn * flight.yawRate * dt);
+  } else {
+    rig.rotateY(yawIn * flight.yawRate * dt);
+    rig.rotateX(pitchIn * flight.pitchRate * dt);
+    rig.rotateZ(rollIn * flight.rollRate * dt);
+  }
+
+  // --- Auto-righting ---
+  // Extract YXZ euler: yaw (y), then pitch (x), then roll (z).
+  // Yaw is preserved (player's heading); pitch and roll are damped toward 0.
+  if (onGround) {
+    // On ground: always force pitch & roll toward 0 quickly (prevents weird tilted standing)
+    tmpEuler.setFromQuaternion(rig.quaternion, 'YXZ');
+    tmpEuler.x = dampAngleToZero(tmpEuler.x, autoLevel.landPitchRate, dt);
+    tmpEuler.z = dampAngleToZero(tmpEuler.z, autoLevel.landRollRate, dt);
+    rig.quaternion.setFromEuler(tmpEuler);
+  } else if (shouldAutoLevel) {
+    // In air, after idle threshold: gently damp pitch and roll toward level.
+    tmpEuler.setFromQuaternion(rig.quaternion, 'YXZ');
+    tmpEuler.x = dampAngleToZero(tmpEuler.x, autoLevel.airPitchRate, dt);
+    tmpEuler.z = dampAngleToZero(tmpEuler.z, autoLevel.airRollRate, dt);
+    rig.quaternion.setFromEuler(tmpEuler);
+  }
+
+  // --- Forward/up vectors (dragon faces +Z in model space) ---
+  tmpForward.set(0, 0, 1).applyQuaternion(rig.quaternion).normalize();
+  tmpUp.set(0, 1, 0).applyQuaternion(rig.quaternion).normalize();
+
+  if (onGround) {
+    // --- GROUND PHYSICS: simple walk ---
+    const baseWalkSpeed = 8; // m/s
+    // Space acts as sprint on ground too (consistent with air sprint)
+    const walkSpeed = gliding ? baseWalkSpeed * 1.9 : baseWalkSpeed;
+    // Kill vertical velocity, set horizontal to intended walk direction
+    flight.velocity.x = tmpForward.x * walkIn * walkSpeed;
+    flight.velocity.z = tmpForward.z * walkIn * walkSpeed;
+    flight.velocity.y = 0;
+
+    // Takeoff: if player flaps, give an upward kick + forward thrust
+    if (flapping) {
+      flight.velocity.y = 18; // stronger kick for takeoff at 10x dragon scale
+      flight.velocity.addScaledVector(tmpForward, 8);
+      // Nudge position above the grounded threshold so this frame's post-move
+      // clamp treats us as airborne (otherwise it zeros the upward velocity).
+      rig.position.y += 0.5;
+    }
+  } else {
+    // --- AIR PHYSICS ---
+    // Thrust from flapping (climb + power)
+    if (flapping) {
+      flight.velocity.addScaledVector(tmpForward, flight.thrustAccel * dt);
+      flight.velocity.addScaledVector(tmpUp, flight.flapLiftImpulse * dt);
+    }
+    // Active glide/sprint: strong forward thrust, no altitude gain permitted.
+    // Space is the "go fast" button. Energy that would climb becomes speed instead.
+    if (gliding) {
+      flight.velocity.addScaledVector(tmpForward, flight.glideThrustAccel * dt);
+    }
+    // Gravity — reduced while gliding (slower descent for graceful cruise)
+    const gravNow = gliding ? flight.gravity * flight.glideGravityMult : flight.gravity;
+    flight.velocity.y -= gravNow * dt;
+    // Lift proportional to forward airspeed
+    const forwardSpeed = flight.velocity.dot(tmpForward);
+    const lift = Math.max(0, forwardSpeed) * flight.liftCoefficient;
+    flight.velocity.addScaledVector(tmpUp, lift * dt);
+    // Drag — gliding is more aerodynamic than flapping along
+    const dragMult = gliding ? flight.glideDragMultiplier : 1.0;
+    flight.velocity.multiplyScalar(1 - flight.dragCoefficient * dragMult * dt * 10);
+    // --- GLIDE CAP: no altitude gain while sprinting ---
+    // If gliding would lead to any positive y-velocity, convert that upward energy to forward speed.
+    // This is the "energy budget": Space gives you speed, not height.
+    if (gliding && flight.velocity.y > flight.glideMaxClimb) {
+      const surplus = flight.velocity.y - flight.glideMaxClimb;
+      flight.velocity.y = flight.glideMaxClimb;
+      // Roll surplus into forward velocity — scale so the effect is felt but not jarring.
+      // tmpForward is horizontal-ish (depends on pitch); we want pure forward push, not up.
+      const pushVec = tmpForward.clone();
+      pushVec.y = 0;
+      if (pushVec.lengthSq() > 1e-6) {
+        pushVec.normalize();
+        flight.velocity.addScaledVector(pushVec, surplus * flight.glideConvertRate);
+      }
+    }
+    // Clamp
+    const spd = flight.velocity.length();
+    if (spd > flight.maxSpeed) flight.velocity.multiplyScalar(flight.maxSpeed / spd);
+  }
+
+  flight.speed = flight.velocity.length();
+
+  // --- Move rig ---
+  rig.position.addScaledVector(flight.velocity, dt);
+
+  // --- Ground collision (post-move clamp) ---
+  const groundH2 = terrainHeight(rig.position.x, rig.position.z);
+  const targetY = groundH2 + flight.groundClearance;
+
+  if (nowOnGroundPre && !flapping) {
+    // On-ground terrain-follow with a small deadzone so tiny ripples don't cause vertical jitter.
+    const delta = targetY - rig.position.y;
+    const deadzone = 0.3; // within 0.3m, snap (no noisy bobbing)
+    if (Math.abs(delta) < deadzone) {
+      rig.position.y = targetY;
+    } else {
+      // Smoothly follow the ground. Much faster for downhill (delta<0) so we don't hang in the air.
+      const followRate = delta < 0 ? 16 : 8;
+      rig.position.y += delta * (1 - Math.exp(-followRate * dt));
+    }
+    flight.velocity.y = 0;
+  } else {
+    // In air: only clamp if we actually hit the ground
+    if (rig.position.y < targetY) {
+      rig.position.y = targetY;
+      if (flight.velocity.y < 0) flight.velocity.y = 0;
+    }
+  }
+  const nowOnGround = rig.position.y <= groundH2 + flight.groundClearance + 0.1;
+
+  // --- Update chunked world around player ---
+  updateChunks(rig.position.x, rig.position.z);
+  // --- Update birds (Rocs & Ravens) ---
+  updateBirds(dt, rig.position);
+  updatePopup(dt);
+  // --- Speed streaks (sprint feedback) ---
+  updateStreaks(dt, rig.position, flight.speed, gliding);
+  // --- Drifting clouds ---
+  updateClouds(dt, rig.position);
+  // Keep water centered on player so it always extends to the horizon
+  if (window.__water) {
+    window.__water.position.x = rig.position.x;
+    window.__water.position.z = rig.position.z;
+  }
+
+  // --- Animation selection ---
+  const state = pickAnimationState(flapping, flight.speed, nowOnGround);
+  crossfadeTo(state, 0.2);
+  document.getElementById('state').textContent = state + (nowOnGround ? ' (ground)' : ' (air)');
+  document.getElementById('speed').textContent = flight.speed.toFixed(1) + ' m/s';
+  document.getElementById('alt').textContent = (rig.position.y - groundH2).toFixed(1) + ' m';
+  // Bird stats
+  let bTotal = 0, bFleeing = 0;
+  for (const flock of birdFlocks.values()) {
+    for (const b of flock) {
+      bTotal++;
+      if (b.state === 'flee') bFleeing++;
+    }
+  }
+  document.getElementById('birds').textContent = bTotal + (bFleeing > 0 ? ` (${bFleeing} fleeing!)` : '');
+
+  // --- Animation mixer ---
+  const playbackScale = state === 'Fly Flap' ? 1.0 + flight.speed * 0.02 : 1.0;
+  if (currentAction) currentAction.setEffectiveTimeScale(playbackScale);
+  dragonMixer.update(dt);
+
+  // --- Camera ---
+  const desiredPos = cam.offset.clone().applyQuaternion(rig.quaternion).add(rig.position);
+  const desiredLook = cam.lookAhead.clone().applyQuaternion(rig.quaternion).add(rig.position);
+  cam.pos.lerp(desiredPos, 1 - Math.exp(-cam.smoothPos * dt));
+  cam.target.lerp(desiredLook, 1 - Math.exp(-cam.smoothLook * dt));
+  camera.position.copy(cam.pos);
+  camera.lookAt(cam.target);
+
+  // --- FOV punch on sprint: wider FOV at high speed feels faster ---
+  const targetFov = gliding ? 78 : 65;
+  camera.fov += (targetFov - camera.fov) * (1 - Math.exp(-4 * dt));
+  camera.updateProjectionMatrix();
+
+  // --- Minimap ---
+  tmpEuler.setFromQuaternion(rig.quaternion, 'YXZ');
+  drawMinimap(rig.position, tmpEuler.y);
+}
+
+function animate() {
+  const dt = Math.min(clock.getDelta(), 0.05);
+  update(dt);
+  renderer.render(scene, camera);
+  requestAnimationFrame(animate);
+}
+animate();
+</script>
+</body>
+</html>
